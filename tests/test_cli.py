@@ -143,3 +143,9 @@ def test_runtime_files_opt_out_of_host_repo_linters():
     for name in cli.RUNTIME_FILES:
         head = (cli.KIT / "runtime" / name).read_text().splitlines()[:3]
         assert any(line.startswith("# ruff: noqa") for line in head), name
+
+
+def test_exec_accepts_owner_or_dispatch_bot_only():
+    text = (cli.KIT / "repo/.github/workflows/agent-exec.yml").read_text()
+    line = next(ln for ln in text.splitlines() if ln.strip().startswith("if: vars.AUTOPILOT_ENABLED"))
+    assert "github.repository_owner" in line and "github-actions[bot]" in line

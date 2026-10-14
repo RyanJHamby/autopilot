@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   exec:
-    if: vars.AUTOPILOT_ENABLED == 'true' && vars.AUTOPILOT_PAUSED != 'true' && github.actor == github.repository_owner
+    if: vars.AUTOPILOT_ENABLED == 'true' && vars.AUTOPILOT_PAUSED != 'true' && (github.actor == github.repository_owner || github.actor == 'github-actions[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

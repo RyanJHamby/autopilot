@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# ruff: noqa  (kit-managed file; host repo lint rules do not apply)
+# ruff: noqa
+# (kit-managed file: host-repo lint rules do not apply)
 """Autopilot handshake: lint a spec against the contract and say what the system will do.
 
 Copied into each repo as .autopilot/handshake.py (stdlib + PyYAML only, zero tokens).

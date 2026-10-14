@@ -107,3 +107,13 @@ def test_main_against_real_git_repo(tmp_path, monkeypatch):
     g("commit", "-qam", "bad")
     monkeypatch.chdir(tmp_path)
     assert guard.main(["--base", "main", "--agent", "true", "--config", "none.yaml"]) == 1
+
+
+def test_kit_managed_paths_are_exempt_from_comms_but_not_secrets():
+    ch = [
+        FileChange(".autopilot/guard.py", added=["x = r'hooks\\.slack\\.com'"]),
+        FileChange(".claude/settings.json", added=['"Bash(npm publish*)"']),
+    ]
+    assert analyze(ch, agent=False) == []
+    assert "secret" in checks(analyze([FileChange(".autopilot/x.py", added=["AKIAABCDEFGHIJKLMNOP"])], agent=False))
+    assert "comms" in checks(analyze([FileChange("src/x.py", added=["import smtplib"])], agent=False))

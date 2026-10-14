@@ -29,6 +29,16 @@ DEFAULT_PROTECTED = [
     ".github/CODEOWNERS",
 ]
 DEFAULT_MAX_DIFF_LINES = 800
+# Kit-managed files legitimately name messaging/publishing surfaces (regex tables, deny rules).
+# Agents cannot edit these paths (protected), so exempting them from the comms check is safe.
+COMMS_EXEMPT = [
+    ".autopilot/**",
+    ".claude/settings.json",
+    ".claude/agents/**",
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".github/workflows/agent-*.yml",
+]
 
 SECRET_PATTERNS = {
     "AWS access key": r"\bAKIA[0-9A-Z]{16}\b",
@@ -132,7 +142,7 @@ def analyze(
             for name, rx in _SECRET_RES.items():
                 if rx.search(line):
                     out.append(Violation("secret", ch.path, f"possible {name} in added line"))
-            if not _matches(ch.path, comms_allow):
+            if not _matches(ch.path, comms_allow + COMMS_EXEMPT):
                 for name, rx in _COMMS_RES.items():
                     if rx.search(line):
                         out.append(Violation("comms", ch.path, f"{name}: outbound-comms surface added"))

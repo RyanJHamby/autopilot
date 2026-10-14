@@ -6,6 +6,7 @@ Copied into each repo as .autopilot/gate.py. State comes from GitHub itself
 
   gate.py check  --role implementer [--hard]   -> writes allow/model/effort/max_turns/remaining to $GITHUB_OUTPUT
   (counts only agent-exec.yml runs, so gate denials never consume budget)
+  gate.py dispatch [--issue N]                  -> gate each issue, fire agent-exec.yml for allowed ones
   gate.py pick   --limit N                      -> prints issue numbers eligible for the nightly run
 Requires `gh` with GH_TOKEN, and PyYAML.
 """
@@ -116,6 +117,86 @@ def pick_issues(issues: list[dict], open_pr_branches: list[str], limit: int) -> 
     return [i["number"] for i in eligible[:limit]]
 
 
+def cmd_dispatch(cfg: dict, issue: int | None, *, gh=None, run=None, sleep=None, workflow: str = "agent-exec.yml") -> int:
+    """Decide per issue and fire agent-exec.yml for each allowed one. Returns number dispatched."""
+    import time
+
+    gh = gh or _gh
+    run = run or (lambda *a: subprocess.run(list(a), check=True))
+    sleep = sleep or time.sleep
+    dispatched = 0
+    queue = [issue] if issue else None
+    while True:
+        runs_raw = gh(
+            "run", "list", "--workflow", workflow, "--limit", "30", "--json", "createdAt,conclusion,status,displayTitle"
+        )
+        runs = [
+            {
+                "created_at": r["createdAt"],
+                "conclusion": r.get("conclusion"),
+                "status": r["status"],
+                "hard": "[hard]" in (r.get("displayTitle") or ""),
+            }
+            for r in runs_raw
+        ]
+        prs = gh("pr", "list", "--state", "open", "--limit", "100", "--json", "headRefName")
+        branches = [p_["headRefName"] for p_ in prs]
+        n_agent = sum(1 for b in branches if b.startswith("agent/"))
+        if queue is None:
+            probe = decide(cfg, runs, n_agent, role="implementer")
+            if not probe.allow:
+                print(f"::notice::autopilot gate closed: {probe.reason}")
+                return dispatched
+            issues = gh(
+                "issue",
+                "list",
+                "--label",
+                "agent-ready",
+                "--state",
+                "open",
+                "--limit",
+                "100",
+                "--json",
+                "number,labels,createdAt",
+            )
+            queue = pick_issues(issues, branches, probe.remaining)
+        if not queue:
+            return dispatched
+        n = queue.pop(0)
+        info = gh("issue", "view", str(n), "--json", "labels")
+        names = {ln["name"] for ln in info.get("labels", [])}
+        if names & SKIP_LABELS:
+            print(f"::notice::issue #{n} is held ({sorted(names & SKIP_LABELS)}); skipping")
+            if not queue:
+                return dispatched
+            continue
+        d = decide(cfg, runs, n_agent, role="implementer", hard="hard" in names)
+        if not d.allow:
+            print(f"::notice::autopilot gate closed for #{n}: {d.reason}")
+            return dispatched
+        run(
+            "gh",
+            "workflow",
+            "run",
+            workflow,
+            "-f",
+            f"issue={n}",
+            "-f",
+            f"model={d.model}",
+            "-f",
+            f"effort={d.effort}",
+            "-f",
+            f"max_turns={d.max_turns}",
+            "-f",
+            f"hard={str(d.model == 'opus').lower()}",
+        )
+        print(f"dispatched #{n}: {d.model}/{d.effort}, {d.max_turns} turns")
+        dispatched += 1
+        if not queue:
+            return dispatched
+        sleep(10)
+
+
 def _gh(*args: str) -> object:
     out = subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
     return json.loads(out) if out.strip() else []
@@ -148,12 +229,18 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--hard", action="store_true")
     c.add_argument("--workflow", default="agent-exec.yml")
     c.add_argument("--config", default=".autopilot/repo.yaml")
+    dp = sub.add_parser("dispatch")
+    dp.add_argument("--issue", type=int, default=None, help="dispatch this issue; default = pick from agent-ready")
+    dp.add_argument("--config", default=".autopilot/repo.yaml")
     p = sub.add_parser("pick")
     p.add_argument("--limit", type=int, default=1)
     p.add_argument("--config", default=".autopilot/repo.yaml")
     ns = ap.parse_args(argv)
     cfg = _load_cfg(ns.config)
 
+    if ns.cmd == "dispatch":
+        cmd_dispatch(cfg, ns.issue)
+        return 0
     if ns.cmd == "check":
         runs_raw = _gh(
             "run", "list", "--workflow", ns.workflow, "--limit", "30", "--json", "createdAt,conclusion,status,displayTitle"

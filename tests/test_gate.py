@@ -66,3 +66,56 @@ def test_pick_issues_order_and_filters():
     ]
     assert gate.pick_issues(issues, ["agent/4-fix-thing"], 5) == [2, 1]
     assert gate.pick_issues(issues, [], 1) == [2]
+
+
+def test_dispatch_fires_allowed_issues_and_stops_at_cap():
+    L = lambda *n: [{"name": x} for x in n]
+    state = {"runs": [], "fired": []}
+
+    def gh(*a):
+        if a[0] == "run":
+            return state["runs"]
+        if a[0] == "pr":
+            return []
+        if a[:2] == ("issue", "list"):
+            return [
+                {"number": 7, "labels": L("agent-ready"), "createdAt": "2026-10-01"},
+                {"number": 8, "labels": L("agent-ready", "hard"), "createdAt": "2026-10-02"},
+                {"number": 9, "labels": L("agent-ready"), "createdAt": "2026-10-03"},
+            ]
+        if a[:2] == ("issue", "view"):
+            n = int(a[2])
+            return {"labels": L("agent-ready", "hard") if n == 8 else L("agent-ready")}
+        raise AssertionError(a)
+
+    def run(*a):
+        state["fired"].append(a)
+        n = int(a[a.index("-f") + 1].split("=")[1])
+        state["runs"].append(
+            {
+                "createdAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "conclusion": None,
+                "status": "queued",
+                "displayTitle": "agent #%d%s" % (n, " [hard]" if n == 8 else ""),
+            }
+        )
+
+    n = gate.cmd_dispatch({"mode": "standard", "tier": "A"}, None, gh=gh, run=run, sleep=lambda s: None)
+    assert n == 2  # tier A cap = 2/day; third issue is not fired
+    assert [a[5] for a in state["fired"]] == ["issue=7", "issue=8"]
+    assert "model=opus" in state["fired"][1] and "hard=true" in state["fired"][1]
+
+
+def test_dispatch_skips_held_issue():
+    L = lambda *n: [{"name": x} for x in n]
+    fired = []
+
+    def gh(*a):
+        if a[0] == "run" or a[0] == "pr":
+            return []
+        if a[:2] == ("issue", "view"):
+            return {"labels": L("agent-ready", "hold")}
+        raise AssertionError(a)
+
+    n = gate.cmd_dispatch({"mode": "standard", "tier": "A"}, 5, gh=gh, run=lambda *a: fired.append(a), sleep=lambda s: None)
+    assert n == 0 and not fired

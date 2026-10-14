@@ -8,3 +8,7 @@ commit history. Raw outputs for any number quoted in the README live in
 ## 2026-10-13 23:02 EDT (at 8b2614b)
 
 Chose GitHub Actions (not claude.ai routines) as primary runtime: routines attach all claude.ai connectors (Gmail, Calendar, Todoist, Asana) by default and use them unprompted, which violates the no-outbound-action rule. Gate counts agent-exec.yml runs from GitHub itself instead of a committed ledger so an agent cannot forge its own budget.
+
+## 2026-10-14 09:02 EDT (at be75af1)
+
+Built ap CLI + repo templates. Found ~/dev/drillpad is the drillpad-workspace repo, so ap resolves repo identity from the git remote, not the directory. Open verification items V1-V4 listed in README; the pilot must settle them before wave 1.

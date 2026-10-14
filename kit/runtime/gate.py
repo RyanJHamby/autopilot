@@ -9,6 +9,7 @@ Copied into each repo as .autopilot/gate.py. State comes from GitHub itself
   gate.py pick   --limit N                      -> prints issue numbers eligible for the nightly run
 Requires `gh` with GH_TOKEN, and PyYAML.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,11 +39,17 @@ class Decision:
     model: str = ""
     effort: str = ""
     max_turns: int = 0
-    remaining: int = 0        # runs left in today's cap, before this one
+    remaining: int = 0  # runs left in today's cap, before this one
 
     def outputs(self) -> dict[str, str]:
-        return {"allow": str(self.allow).lower(), "reason": self.reason, "model": self.model,
-                "effort": self.effort, "max_turns": str(self.max_turns), "remaining": str(self.remaining)}
+        return {
+            "allow": str(self.allow).lower(),
+            "reason": self.reason,
+            "model": self.model,
+            "effort": self.effort,
+            "max_turns": str(self.max_turns),
+            "remaining": str(self.remaining),
+        }
 
 
 def _merge(base: dict, over: dict) -> dict:
@@ -52,8 +59,9 @@ def _merge(base: dict, over: dict) -> dict:
     return out
 
 
-def decide(cfg: dict, runs: list[dict], open_agent_prs: int, *, role: str, hard: bool = False,
-           now: dt.datetime | None = None) -> Decision:
+def decide(
+    cfg: dict, runs: list[dict], open_agent_prs: int, *, role: str, hard: bool = False, now: dt.datetime | None = None
+) -> Decision:
     """Pure decision function. `runs` = recent completed/queued runs of the agent workflow,
     newest first, each {"created_at": iso8601, "conclusion": str|None, "status": str, "hard": bool}."""
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -91,13 +99,14 @@ def decide(cfg: dict, runs: list[dict], open_agent_prs: int, *, role: str, hard:
 
 def pick_issues(issues: list[dict], open_pr_branches: list[str], limit: int) -> list[int]:
     """Oldest agent-ready issues first (p0 before p1 before unlabeled), skipping held/in-flight ones."""
+
     def prio(i: dict) -> int:
-        names = {l["name"] for l in i.get("labels", [])}
+        names = {ln["name"] for ln in i.get("labels", [])}
         return 0 if "p0" in names else 1 if "p1" in names else 2
 
     eligible = []
     for i in issues:
-        names = {l["name"] for l in i.get("labels", [])}
+        names = {ln["name"] for ln in i.get("labels", [])}
         if "agent-ready" not in names or names & SKIP_LABELS:
             continue
         if any(b.startswith(f"agent/{i['number']}-") for b in open_pr_branches):
@@ -114,6 +123,7 @@ def _gh(*args: str) -> object:
 
 def _load_cfg(path: str) -> dict:
     import yaml  # type: ignore
+
     with open(path) as fh:
         return yaml.safe_load(fh) or {}
 
@@ -145,17 +155,26 @@ def main(argv: list[str] | None = None) -> int:
     cfg = _load_cfg(ns.config)
 
     if ns.cmd == "check":
-        runs_raw = _gh("run", "list", "--workflow", ns.workflow, "--limit", "30",
-                       "--json", "createdAt,conclusion,status,displayTitle")
-        runs = [{"created_at": r["createdAt"], "conclusion": r.get("conclusion"), "status": r["status"],
-                 "hard": "[hard]" in (r.get("displayTitle") or "")} for r in runs_raw]
+        runs_raw = _gh(
+            "run", "list", "--workflow", ns.workflow, "--limit", "30", "--json", "createdAt,conclusion,status,displayTitle"
+        )
+        runs = [
+            {
+                "created_at": r["createdAt"],
+                "conclusion": r.get("conclusion"),
+                "status": r["status"],
+                "hard": "[hard]" in (r.get("displayTitle") or ""),
+            }
+            for r in runs_raw
+        ]
         prs = _gh("pr", "list", "--state", "open", "--limit", "100", "--json", "headRefName")
         n_agent = sum(1 for p_ in prs if p_["headRefName"].startswith("agent/"))
         d = decide(cfg, runs, n_agent, role=ns.role, hard=ns.hard)
         _emit(d)
         return 0
-    issues = _gh("issue", "list", "--label", "agent-ready", "--state", "open", "--limit", "100",
-                 "--json", "number,labels,createdAt")
+    issues = _gh(
+        "issue", "list", "--label", "agent-ready", "--state", "open", "--limit", "100", "--json", "number,labels,createdAt"
+    )
     prs = _gh("pr", "list", "--state", "open", "--limit", "100", "--json", "headRefName")
     for n in pick_issues(issues, [p_["headRefName"] for p_ in prs], ns.limit):
         print(n)

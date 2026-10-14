@@ -4,6 +4,7 @@
 Copied into each repo as .autopilot/handshake.py (stdlib + PyYAML only, zero tokens).
 Verdicts: ACCEPTED (exit 0), NEEDS-WORK (exit 1), REJECTED (exit 2).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -14,42 +15,96 @@ from dataclasses import dataclass, field
 
 PROTECTED = [".github/**", ".autopilot/**", ".claude/**", "AGENTS.md", "CLAUDE.md", ".mcp.json", "CODEOWNERS"]
 RUNNERS = {
-    "pytest", "uv", "uvx", "python", "python3", "pip", "ruff", "mypy", "pyright", "npm", "pnpm", "yarn",
-    "npx", "node", "tsc", "cargo", "rustc", "go", "make", "cmake", "ctest", "bash", "sh", "flutter",
-    "dart", "swift", "xcodebuild", "mvn", "gradle", "./gradlew", "bun", "deno", "ruby", "bundle", "rake",
-    "clang-tidy", "pre-commit", "just",
+    "pytest",
+    "uv",
+    "uvx",
+    "python",
+    "python3",
+    "pip",
+    "ruff",
+    "mypy",
+    "pyright",
+    "npm",
+    "pnpm",
+    "yarn",
+    "npx",
+    "node",
+    "tsc",
+    "cargo",
+    "rustc",
+    "go",
+    "make",
+    "cmake",
+    "ctest",
+    "bash",
+    "sh",
+    "flutter",
+    "dart",
+    "swift",
+    "xcodebuild",
+    "mvn",
+    "gradle",
+    "./gradlew",
+    "bun",
+    "deno",
+    "ruby",
+    "bundle",
+    "rake",
+    "clang-tidy",
+    "pre-commit",
+    "just",
 }
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{2,48}$")
 
 # Spec text that asks for something the Constitution forbids -> REJECTED.
 FORBIDDEN = [
-    (r"\b(send|draft and send|reply to|forward|write)\b[^.\n]{0,40}\b(email|e-mail|gmail|slack|discord|dm|text message|sms)\b",
-     "sends messages to people (Constitution 1)"),
-    (r"\b(post|publish|tweet|share)\b[^.\n]{0,40}\b(linkedin|substack|twitter|x\.com|blog|medium|newsletter|social)\b",
-     "publishes to social/publishing platforms (Constitution 1)"),
-    (r"\b(calendar|inbox|todoist|asana|schedule a meeting|book a)\b[^.\n]{0,40}\b(edit|update|create|add|read|check|clean|triage|modify)\b|\b(edit|update|create|add|read|check|clean|triage|modify)\b[^.\n]{0,40}\b(calendar|inbox|todoist|asana)\b",
-     "touches calendars/inboxes/task managers (Constitution 1)"),
-    (r"\b(contact|reach out to|message|notify|cold[- ]?email|apply to|dm)\b[^.\n]{0,40}\b(recruiter|hiring manager|maintainer|customer|employer|people|users|candidate)s?\b",
-     "contacts people (Constitution 1)"),
-    (r"\b(comment on|open (an )?issue (in|on)|open (a )?pr (to|against)|submit (a )?pr)\b[^.\n]{0,40}\b(upstream|third[- ]party|someone else|external)\b",
-     "acts on repos Ryan does not own (Constitution 1)"),
-    (r"\b(publish|release|upload)\b[^.\n]{0,40}\b(pypi|npm|crates\.io|app store|play store|docker hub|package)\b|\bnpm publish\b|\btwine upload\b",
-     "publishes artifacts (Constitution 1)"),
-    (r"\b(read|print|cat|echo|dump|commit|exfiltrate|upload)\b[^.\n]{0,40}(\.env|secrets?|api keys?|credentials|private keys?|tokens?)\b",
-     "touches secrets (Constitution 2)"),
-    (r"\b(scrape|crawl)\b[^.\n]{0,60}\b(linkedin|instagram|facebook|login|paywall|behind auth)\b|\b(bypass|circumvent|evade)\b[^.\n]{0,30}\b(captcha|paywall|rate limit|tos|terms of service|auth)\b|\b(malware|ransomware|keylogger|ddos|credential stuffing|exploit .* without)\b",
-     "illegal or ToS-violating work (Constitution 3)"),
-    (r"\b(deploy|ship|push)\b[^.\n]{0,30}\b(to )?(prod|production)\b|\bterraform apply\b|\b(provision|spin up|rent)\b[^.\n]{0,30}\b(gpu|instance|cluster|ec2|cloud)\b",
-     "spends money / deploys (Constitution 4)"),
-    (r"\bforce[- ]push\b|\bpush (directly )?to (main|master)\b|\bdisable (commit )?signing\b|\bskip (hooks|ci|tests)\b|\bsquash[- ](merge|commits?|history)\b",
-     "violates git discipline (Constitution 5)"),
+    (
+        r"\b(send|draft and send|reply to|forward|write)\b[^.\n]{0,40}\b(email|e-mail|gmail|slack|discord|dm|text message|sms)\b",
+        "sends messages to people (Constitution 1)",
+    ),
+    (
+        r"\b(post|publish|tweet|share)\b[^.\n]{0,40}\b(linkedin|substack|twitter|x\.com|blog|medium|newsletter|social)\b",
+        "publishes to social/publishing platforms (Constitution 1)",
+    ),
+    (
+        r"\b(calendar|inbox|todoist|asana|schedule a meeting|book a)\b[^.\n]{0,40}\b(edit|update|create|add|read|check|clean|triage|modify)\b|\b(edit|update|create|add|read|check|clean|triage|modify)\b[^.\n]{0,40}\b(calendar|inbox|todoist|asana)\b",
+        "touches calendars/inboxes/task managers (Constitution 1)",
+    ),
+    (
+        r"\b(contact|reach out to|message|notify|cold[- ]?email|apply to|dm)\b[^.\n]{0,40}\b(recruiter|hiring manager|maintainer|customer|employer|people|users|candidate)s?\b",
+        "contacts people (Constitution 1)",
+    ),
+    (
+        r"\b(comment on|open (an )?issue (in|on)|open (a )?pr (to|against)|submit (a )?pr)\b[^.\n]{0,40}\b(upstream|third[- ]party|someone else|external)\b",
+        "acts on repos Ryan does not own (Constitution 1)",
+    ),
+    (
+        r"\b(publish|release|upload)\b[^.\n]{0,40}\b(pypi|npm|crates\.io|app store|play store|docker hub|package)\b|\bnpm publish\b|\btwine upload\b",
+        "publishes artifacts (Constitution 1)",
+    ),
+    (
+        r"\b(read|print|cat|echo|dump|commit|exfiltrate|upload)\b[^.\n]{0,40}(\.env|secrets?|api keys?|credentials|private keys?|tokens?)\b",
+        "touches secrets (Constitution 2)",
+    ),
+    (
+        r"\b(scrape|crawl)\b[^.\n]{0,60}\b(linkedin|instagram|facebook|login|paywall|behind auth)\b|\b(bypass|circumvent|evade)\b[^.\n]{0,30}\b(captcha|paywall|rate limit|tos|terms of service|auth)\b|\b(malware|ransomware|keylogger|ddos|credential stuffing|exploit .* without)\b",
+        "illegal or ToS-violating work (Constitution 3)",
+    ),
+    (
+        r"\b(deploy|ship|push)\b[^.\n]{0,30}\b(to )?(prod|production)\b|\bterraform apply\b|\b(provision|spin up|rent)\b[^.\n]{0,30}\b(gpu|instance|cluster|ec2|cloud)\b",
+        "spends money / deploys (Constitution 4)",
+    ),
+    (
+        r"\bforce[- ]push\b|\bpush (directly )?to (main|master)\b|\bdisable (commit )?signing\b|\bskip (hooks|ci|tests)\b|\bsquash[- ](merge|commits?|history)\b",
+        "violates git discipline (Constitution 5)",
+    ),
 ]
 _FORBIDDEN_RES = [(re.compile(p, re.I), msg) for p, msg in FORBIDDEN]
 
 
 @dataclass
 class Verdict:
-    status: str                                  # ACCEPTED | NEEDS-WORK | REJECTED
+    status: str  # ACCEPTED | NEEDS-WORK | REJECTED
     reasons: list[str] = field(default_factory=list)
     fixes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -62,8 +117,12 @@ class Verdict:
 
     def render(self) -> str:
         lines = [f"HANDSHAKE: {self.status}"]
-        for title, items in (("Why", self.reasons), ("To fix", self.fixes),
-                             ("Notes", self.warnings), ("What the system will do", self.plan)):
+        for title, items in (
+            ("Why", self.reasons),
+            ("To fix", self.fixes),
+            ("Notes", self.warnings),
+            ("What the system will do", self.plan),
+        ):
             if items:
                 lines.append(f"\n{title}:")
                 lines += [f"  - {i}" for i in items]
@@ -75,6 +134,7 @@ def parse_spec(text: str) -> tuple[dict, str]:
     if not m:
         return {}, text
     import yaml  # type: ignore
+
     try:
         data = yaml.safe_load(m.group(1)) or {}
     except yaml.YAMLError as e:
@@ -117,7 +177,11 @@ def evaluate(text: str, repo_cfg: dict | None = None) -> Verdict:
     scope = meta.get("scope") or []
     if isinstance(scope, str):
         scope = [scope]
-    hit = [s for s in scope if _matches(str(s).lstrip("./"), PROTECTED) or str(s).startswith(tuple(p[:-2] for p in PROTECTED if p.endswith("/**")))]
+    hit = [
+        s
+        for s in scope
+        if _matches(str(s).lstrip("./"), PROTECTED) or str(s).startswith(tuple(p[:-2] for p in PROTECTED if p.endswith("/**")))
+    ]
     if hit:
         v.reasons.append(f"Scope includes protected paths {hit}; agents may never edit these.")
     if v.reasons:
@@ -139,7 +203,9 @@ def evaluate(text: str, repo_cfg: dict | None = None) -> Verdict:
     acc = meta.get("acceptance")
     if not isinstance(acc, list) or not acc:
         gaps.append("`acceptance` must be a non-empty list of commands that exit 0 when the work is done.")
-        fixes.append("Add e.g. `acceptance: [\"uv run pytest tests/test_x.py\"]`. If it cannot be machine-checked, do it yourself or add a test first.")
+        fixes.append(
+            'Add e.g. `acceptance: ["uv run pytest tests/test_x.py"]`. If it cannot be machine-checked, do it yourself or add a test first.'
+        )
     else:
         for i, c in enumerate(acc):
             if not isinstance(c, str) or not _looks_like_command(c):
@@ -147,7 +213,7 @@ def evaluate(text: str, repo_cfg: dict | None = None) -> Verdict:
                 fixes.append("Express it as a command (pytest, make, npm test, ...) or write the test as part of the spec.")
     if not scope:
         gaps.append("`scope` (path globs the agent may touch) is missing.")
-        fixes.append("Add `scope: [\"src/foo/**\", \"tests/**\"]`.")
+        fixes.append('Add `scope: ["src/foo/**", "tests/**"]`.')
     else:
         broad = [s for s in scope if str(s).strip() in {"*", "**", "**/*", ".", "./", "/"}]
         if broad:
@@ -191,9 +257,11 @@ def evaluate(text: str, repo_cfg: dict | None = None) -> Verdict:
         f"Queue {1}+ issue(s) labeled `spec:{sid}`; `agent-ready` is set because acceptance is machine-checkable.",
         f"Model/effort: {'opus/high' if hard else 'sonnet/medium'}, up to {turns} turns per run, up to {mr} run(s).",
         "Open a PR on branch `agent/<issue>-*`; CI + guard must pass; commits are GitHub-verified; merge is a merge commit.",
-        {1: "Risk tier 1: auto-merge on green (standard/yolo).",
-         2: "Risk tier 2: auto-merge only in yolo mode; otherwise you skim and merge.",
-         3: "Risk tier 3: PR only, CODEOWNERS review by you, never auto-merged."}[rt],
+        {
+            1: "Risk tier 1: auto-merge on green (standard/yolo).",
+            2: "Risk tier 2: auto-merge only in yolo mode; otherwise you skim and merge.",
+            3: "Risk tier 3: PR only, CODEOWNERS review by you, never auto-merged.",
+        }[rt],
         "Zero outbound contact: no email/Slack/calendar/social/publishing, per the Constitution.",
     ]
     return v
@@ -208,6 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     cfg: dict = {}
     try:
         import yaml  # type: ignore
+
         with open(ns.config) as fh:
             cfg = yaml.safe_load(fh) or {}
     except Exception:

@@ -7,7 +7,10 @@ def checks(vs):
 
 
 def test_clean_diff_passes():
-    ch = [FileChange("src/a.py", added=["def f():", "    return 1"]), FileChange("tests/test_a.py", added=["def test_f():", "    assert f() == 1"])]
+    ch = [
+        FileChange("src/a.py", added=["def f():", "    return 1"]),
+        FileChange("tests/test_a.py", added=["def test_f():", "    assert f() == 1"]),
+    ]
     assert analyze(ch, agent=True) == []
 
 
@@ -21,9 +24,17 @@ def test_secrets_flagged_for_everyone():
 
 
 def test_comms_surfaces_flagged():
-    for line in ["import smtplib", "from slack_sdk import WebClient", "url = 'https://hooks.slack.com/services/T/B/x'",
-                 "import tweepy", "from googleapiclient.discovery import build", "requests.post('https://api.linkedin.com/v2/ugcPosts')",
-                 "twilio.rest.Client()", "run: npm publish", "https://api.todoist.com/rest/v2/tasks"]:
+    for line in [
+        "import smtplib",
+        "from slack_sdk import WebClient",
+        "url = 'https://hooks.slack.com/services/T/B/x'",
+        "import tweepy",
+        "from googleapiclient.discovery import build",
+        "requests.post('https://api.linkedin.com/v2/ugcPosts')",
+        "twilio.rest.Client()",
+        "run: npm publish",
+        "https://api.todoist.com/rest/v2/tasks",
+    ]:
         assert "comms" in checks(analyze([FileChange("src/x.py", added=[line])], agent=False)), line
 
 
@@ -46,7 +57,11 @@ def test_mcp_config_blocked_for_agents():
 
 
 def test_test_weakening_and_deletion():
-    ch = [FileChange("tests/test_a.py", removed=["    assert a == 1", "    assert b == 2", "    assert c", "    assert d", "def test_x():"])]
+    ch = [
+        FileChange(
+            "tests/test_a.py", removed=["    assert a == 1", "    assert b == 2", "    assert c", "    assert d", "def test_x():"]
+        )
+    ]
     assert "test-weakening" in checks(analyze(ch, agent=True))
     assert "test-deletion" in checks(analyze([FileChange("tests/test_a.py", status="D")], agent=True))
     ok = [FileChange("tests/test_a.py", removed=["    assert a == 1"], added=["    assert a == 2"])]
@@ -74,11 +89,19 @@ def test_parse_diff_roundtrip():
 
 def test_main_against_real_git_repo(tmp_path, monkeypatch):
     import subprocess
+
     def g(*a):
-        subprocess.run(["git", "-c", "commit.gpgsign=false", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "-c", "user.email=t@t", "-c", "user.name=t", *a],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+
     g("init", "-q", "-b", "main")
     (tmp_path / "a.py").write_text("x = 1\n")
-    g("add", "."); g("commit", "-qm", "base")
+    g("add", ".")
+    g("commit", "-qm", "base")
     g("checkout", "-qb", "agent/1-x")
     (tmp_path / "a.py").write_text("import smtplib\n")
     g("commit", "-qam", "bad")

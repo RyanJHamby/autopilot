@@ -8,6 +8,7 @@ Checks (all PRs): secrets, outbound-comms code/URLs, test-assertion deletions.
 Extra checks when --agent: protected paths, .mcp.json, diff size cap.
 Exit 0 = clean, 1 = violations.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,8 +19,14 @@ import sys
 from dataclasses import dataclass, field
 
 DEFAULT_PROTECTED = [
-    ".github/**", ".autopilot/**", ".claude/**", "AGENTS.md", "CLAUDE.md",
-    ".mcp.json", "CODEOWNERS", ".github/CODEOWNERS",
+    ".github/**",
+    ".autopilot/**",
+    ".claude/**",
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".mcp.json",
+    "CODEOWNERS",
+    ".github/CODEOWNERS",
 ]
 DEFAULT_MAX_DIFF_LINES = 800
 
@@ -54,7 +61,7 @@ _TEST_PATH_RE = re.compile(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|[._-
 @dataclass
 class FileChange:
     path: str
-    status: str = "M"                      # A, M, D, R
+    status: str = "M"  # A, M, D, R
     added: list[str] = field(default_factory=list)
     removed: list[str] = field(default_factory=list)
 
@@ -102,9 +109,14 @@ def parse_diff(text: str) -> list[FileChange]:
     return changes
 
 
-def analyze(changes: list[FileChange], *, agent: bool, protected: list[str] | None = None,
-            max_diff_lines: int = DEFAULT_MAX_DIFF_LINES,
-            comms_allow: list[str] | None = None) -> list[Violation]:
+def analyze(
+    changes: list[FileChange],
+    *,
+    agent: bool,
+    protected: list[str] | None = None,
+    max_diff_lines: int = DEFAULT_MAX_DIFF_LINES,
+    comms_allow: list[str] | None = None,
+) -> list[Violation]:
     protected = protected if protected is not None else DEFAULT_PROTECTED
     comms_allow = comms_allow or []
     out: list[Violation] = []
@@ -125,15 +137,16 @@ def analyze(changes: list[FileChange], *, agent: bool, protected: list[str] | No
                     if rx.search(line):
                         out.append(Violation("comms", ch.path, f"{name}: outbound-comms surface added"))
         if _TEST_PATH_RE.search(ch.path):
-            removed_asserts += sum(1 for l in ch.removed if _ASSERT_RE.search(l))
-            added_asserts += sum(1 for l in ch.added if _ASSERT_RE.search(l))
+            removed_asserts += sum(1 for ln in ch.removed if _ASSERT_RE.search(ln))
+            added_asserts += sum(1 for ln in ch.added if _ASSERT_RE.search(ln))
             if ch.status == "D":
                 out.append(Violation("test-deletion", ch.path, "test file deleted"))
     if removed_asserts > added_asserts + 3:
-        out.append(Violation("test-weakening", "(tests)",
-                             f"{removed_asserts} assertions/tests removed vs {added_asserts} added"))
+        out.append(Violation("test-weakening", "(tests)", f"{removed_asserts} assertions/tests removed vs {added_asserts} added"))
     if agent and total > max_diff_lines:
-        out.append(Violation("size", "(diff)", f"{total} changed lines exceeds cap {max_diff_lines}; split it or label needs-human"))
+        out.append(
+            Violation("size", "(diff)", f"{total} changed lines exceeds cap {max_diff_lines}; split it or label needs-human")
+        )
     return out
 
 
@@ -144,6 +157,7 @@ def _git(*args: str) -> str:
 def _load_cfg(path: str) -> dict:
     try:
         import yaml  # type: ignore
+
         with open(path) as fh:
             return yaml.safe_load(fh) or {}
     except Exception:

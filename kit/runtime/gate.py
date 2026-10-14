@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa  (kit-managed file; host repo lint rules do not apply)
 """Autopilot budget gate and picker. Costs zero tokens; runs before any agent job.
 
 Copied into each repo as .autopilot/gate.py. State comes from GitHub itself

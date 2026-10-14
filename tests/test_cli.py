@@ -137,3 +137,9 @@ def test_repo_name_comes_from_remote_not_dir(tmp_path):
         ["git", "remote", "set-url", "origin", "git@github.com:RyanJHamby/order-book-engine.git"], cwd=repo, check=True
     )
     assert cli.repo_name(repo) == "order-book-engine"
+
+
+def test_runtime_files_opt_out_of_host_repo_linters():
+    for name in cli.RUNTIME_FILES:
+        head = (cli.KIT / "runtime" / name).read_text().splitlines()[:3]
+        assert any(line.startswith("# ruff: noqa") for line in head), name

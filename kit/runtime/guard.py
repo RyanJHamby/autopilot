@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa  (kit-managed file; host repo lint rules do not apply)
 """Autopilot CI guard: deterministic, zero-token checks on a PR diff.
 
 Copied into each repo as .autopilot/guard.py. The workflow runs the BASE-branch

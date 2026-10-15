@@ -181,3 +181,9 @@ def test_exec_creates_the_branch_in_trusted_code_and_agent_cannot_branch():
     assert wf.index("create agent branch") < wf.index("claude-code-action")
     assert 'git push origin "$BR"' in wf and "remove empty agent branch" in wf
     assert not any(t.startswith("Bash(git checkout") for t in cli.BASE_TOOLS)
+
+
+def test_exec_pins_claude_branch_and_cleans_up_via_api():
+    wf = (cli.KIT / "repo/.github/workflows/agent-exec.yml").read_text()
+    assert "CLAUDE_BRANCH: agent/${{ inputs.issue }}-${{ github.run_id }}" in wf
+    assert "git push -q origin --delete" not in wf and "-X DELETE" in wf

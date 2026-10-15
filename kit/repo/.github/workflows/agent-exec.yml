@@ -55,6 +55,9 @@ jobs:
           echo "AGENT_BRANCH=$BR" >> "$GITHUB_ENV"
 
       - uses: anthropics/claude-code-action@{{ACTION_SHA}} # v1
+        env:
+          # agent mode commits to CLAUDE_BRANCH, else GITHUB_REF_NAME (main on dispatch); pin it to the work branch
+          CLAUDE_BRANCH: agent/${{ inputs.issue }}-${{ github.run_id }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           branch_prefix: "agent/"
@@ -78,6 +81,9 @@ jobs:
 
       - name: remove empty agent branch
         if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git fetch -q origin main "$AGENT_BRANCH" || exit 0
-          [ "$(git rev-list --count "origin/main..origin/$AGENT_BRANCH")" = 0 ] && git push -q origin --delete "$AGENT_BRANCH" || true
+          # the action rewrites and revokes the git remote credentials, so use the API with the workflow token
+          ahead=$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${AGENT_BRANCH}" --jq .ahead_by 2>/dev/null || echo "")
+          [ "$ahead" = 0 ] && gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${AGENT_BRANCH}" || true

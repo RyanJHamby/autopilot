@@ -51,7 +51,7 @@ jobs:
         run: |
           BR="agent/${ISSUE}-${GITHUB_RUN_ID}"
           git checkout -b "$BR"
-          git push origin "$BR"
+          for i in 1 2 3; do git push origin "$BR" && break; [ "$i" = 3 ] && exit 1; sleep $((i * 5)); done
           echo "AGENT_BRANCH=$BR" >> "$GITHUB_ENV"
 
       - uses: anthropics/claude-code-action@{{ACTION_SHA}} # v1

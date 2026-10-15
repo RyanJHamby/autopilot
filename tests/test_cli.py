@@ -187,3 +187,12 @@ def test_exec_pins_claude_branch_and_cleans_up_via_api():
     wf = (cli.KIT / "repo/.github/workflows/agent-exec.yml").read_text()
     assert "CLAUDE_BRANCH: agent/${{ inputs.issue }}-${{ github.run_id }}" in wf
     assert "git push -q origin --delete" not in wf and "-X DELETE" in wf
+
+
+def test_no_redundant_write_deny_rules_and_push_retries():
+    import json
+
+    deny = json.loads((cli.ROOT / "policy/deny.json").read_text())["permissions"]["deny"]
+    assert not [d for d in deny if d.startswith("Write(")] and "Edit(.github/**)" in deny
+    assert "for i in 1 2 3; do git push" in (cli.KIT / "repo/.github/workflows/agent-exec.yml").read_text()
+    assert "Write(.github/**)" not in cli.build_settings({"permissions": {"deny": ["Write(.github/**)"]}}, [])["permissions"]["deny"]

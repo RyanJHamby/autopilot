@@ -32,3 +32,7 @@ First real agent run on #8: token ok after clipboard mixups (secret held command
 ## 2026-10-15 18:52 EDT (at 39b310c)
 
 PR13 wasn't enough: file_ops uses CLAUDE_BRANCH||GITHUB_REF_NAME (src/modes/agent/index.ts @pinned SHA), not the checked-out branch. Pinned CLAUDE_BRANCH. Cleanup via API since action revokes git creds. Also wasted one run by firing before PR13 merged: check merge state first.
+
+## 2026-10-15 19:01 EDT (at 7becf79)
+
+Pilot: V1,V3,V4 proven; red team round 1: all 5 hostile issues refused by constitution layer only. Deterministic layers untested under a complying model; round 2 needs pressure prompts.

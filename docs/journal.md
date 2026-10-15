@@ -28,3 +28,7 @@ First real agent run on #8: token ok after clipboard mixups (secret held command
 ## 2026-10-15 18:35 EDT (at 1de0ecd)
 
 2nd real run: signed-commit tool allowed but 422 (targets main, ruleset rejects). Cause: dispatch has no entity context so action uses checked-out branch. Fix: trusted step creates agent/<issue>-<run_id>, agent cannot branch, empty branch cleaned up.
+
+## 2026-10-15 18:52 EDT (at 39b310c)
+
+PR13 wasn't enough: file_ops uses CLAUDE_BRANCH||GITHUB_REF_NAME (src/modes/agent/index.ts @pinned SHA), not the checked-out branch. Pinned CLAUDE_BRANCH. Cleanup via API since action revokes git creds. Also wasted one run by firing before PR13 merged: check merge state first.

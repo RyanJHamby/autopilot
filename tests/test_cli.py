@@ -149,3 +149,9 @@ def test_exec_accepts_owner_or_dispatch_bot_only():
     text = (cli.KIT / "repo/.github/workflows/agent-exec.yml").read_text()
     line = next(ln for ln in text.splitlines() if ln.strip().startswith("if: vars.AUTOPILOT_ENABLED"))
     assert "github.repository_owner" in line and "github-actions[bot]" in line
+
+
+def test_exec_allows_only_the_actions_bot_and_debug_is_opt_in():
+    text = (cli.KIT / "repo/.github/workflows/agent-exec.yml").read_text()
+    assert 'allowed_bots: "github-actions"' in text  # never "*"
+    assert "show_full_output: ${{ vars.AUTOPILOT_DEBUG == 'true' }}" in text

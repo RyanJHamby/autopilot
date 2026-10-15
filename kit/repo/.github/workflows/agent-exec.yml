@@ -50,7 +50,8 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           branch_prefix: "agent/"
           use_commit_signing: true
-          show_full_output: false
+          allowed_bots: "github-actions"
+          show_full_output: ${{ vars.AUTOPILOT_DEBUG == 'true' }}
           prompt: |
             You are the autopilot implementer for ${{ github.repository }}. Work on issue #${{ inputs.issue }} only.
             First read .autopilot/CONSTITUTION.md, AGENTS.md and .claude/agents/implementer.md and obey them.

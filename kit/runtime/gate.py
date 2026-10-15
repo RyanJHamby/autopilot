@@ -74,7 +74,13 @@ def decide(
     if mode == "dormant":
         return Decision(False, "repo is dormant")
     since = now - dt.timedelta(hours=24)
-    recent = [r for r in runs if dt.datetime.fromisoformat(r["created_at"].replace("Z", "+00:00")) >= since]
+    # skipped/cancelled runs never reached the model, so they must not eat the daily budget
+    recent = [
+        r
+        for r in runs
+        if r.get("conclusion") not in ("skipped", "cancelled")
+        and dt.datetime.fromisoformat(r["created_at"].replace("Z", "+00:00")) >= since
+    ]
     cap = int(c["runs_per_day"].get(tier, 0))
     if len(recent) >= cap:
         return Decision(False, f"daily run cap reached ({len(recent)}/{cap}, tier {tier})")

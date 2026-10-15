@@ -31,6 +31,13 @@ def test_daily_cap_rolls_over_24h():
     assert gate.decide(A, [run(1), run(30)], 0, role="implementer", now=NOW).allow
 
 
+def test_skipped_and_cancelled_runs_do_not_use_budget():
+    runs = [run(1, "skipped"), run(2, "cancelled")]
+    d = gate.decide(A, runs, 0, role="implementer", now=NOW)
+    assert d.allow and d.remaining == 2
+    assert not gate.decide(A, [run(1), run(2, "failure"), run(3, "skipped")], 0, role="implementer", now=NOW).allow
+
+
 def test_open_pr_cap_applies_to_implementer_only():
     assert not gate.decide(A, [], 3, role="implementer", now=NOW).allow
     assert gate.decide(A, [], 3, role="reviewer", now=NOW).allow

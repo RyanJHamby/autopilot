@@ -24,3 +24,7 @@ smoke #8 first real run: action rejected github-actions actor (needs allowed_bot
 ## 2026-10-15 10:33 EDT (at 0381f97)
 
 First real agent run on #8: token ok after clipboard mixups (secret held command text); agent obeyed constitution and commented needs-human instead of forcing it. Blocker: mcp__* deny blocked github_file_ops (the signed-commit path). Fix: allow commit_files, specific mcp deny families, no plain git commit. Log shows only github_file_ops MCP exists in the runtime - no connectors.
+
+## 2026-10-15 18:35 EDT (at 1de0ecd)
+
+2nd real run: signed-commit tool allowed but 422 (targets main, ruleset rejects). Cause: dispatch has no entity context so action uses checked-out branch. Fix: trusted step creates agent/<issue>-<run_id>, agent cannot branch, empty branch cleaned up.

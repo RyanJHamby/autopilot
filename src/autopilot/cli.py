@@ -61,11 +61,21 @@ def load_portfolio() -> dict:
     return yaml.safe_load((POLICY / "portfolio.yaml").read_text())
 
 
+SKIP_DIRS = {".git", "node_modules", "build", "target", ".venv", "venv", "dist"}
+
+
 def detect_commands(repo: Path) -> list[str]:
+    """Command prefixes for the stacks found at the repo root or one directory down, plus any the owner
+    listed under `commands:` in .autopilot/repo.yaml (so that file is the single place to extend them)."""
     cmds: list[str] = []
+    subdirs = [d for d in sorted(repo.iterdir()) if d.is_dir() and d.name not in SKIP_DIRS and not d.name.startswith(".")]
     for marker, prefixes in STACKS.items():
-        if (repo / marker).exists():
+        if (repo / marker).exists() or any((d / marker).exists() for d in subdirs):
             cmds += [p for p in prefixes if p not in cmds]
+    cfg = repo / ".autopilot" / "repo.yaml"
+    if cfg.exists():
+        extra = (yaml.safe_load(cfg.read_text()) or {}).get("commands") or []
+        cmds += [str(e) for e in extra if str(e) not in cmds]
     return cmds
 
 

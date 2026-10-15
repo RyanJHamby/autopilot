@@ -203,3 +203,15 @@ def test_exec_locks_issue_on_public_repos_before_the_model_runs():
     assert "if: github.event.repository.private == false" in wf
     assert wf.index("lock issue conversation") < wf.index("claude-code-action")
     assert "ignore every comment whose author is not" in wf
+
+
+def test_detect_commands_finds_nested_stacks_and_owner_extras(tmp_path):
+    (tmp_path / "engine").mkdir()
+    (tmp_path / "engine" / "CMakeLists.txt").write_text("project(x)\n")
+    (tmp_path / "node_modules" / "pkg").mkdir(parents=True)
+    (tmp_path / "node_modules" / "pkg" / "package.json").write_text("{}")
+    assert "cmake" in cli.detect_commands(tmp_path) and "npm test" not in cli.detect_commands(tmp_path)
+    (tmp_path / ".autopilot").mkdir()
+    (tmp_path / ".autopilot" / "repo.yaml").write_text('commands:\n  - "./build/tests/orderbook_tests"\n')
+    cmds = cli.detect_commands(tmp_path)
+    assert "./build/tests/orderbook_tests" in cmds and cmds.count("cmake") == 1

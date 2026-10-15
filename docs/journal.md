@@ -20,3 +20,7 @@ gate counted skipped/cancelled agent-exec runs toward the daily cap; smoke issue
 ## 2026-10-15 08:24 EDT (at 4b7cc82)
 
 smoke #8 first real run: action rejected github-actions actor (needs allowed_bots), then model call died in 2s with is_error and no usage, message hidden by show_full_output=false. Added AUTOPILOT_DEBUG var switch.
+
+## 2026-10-15 10:33 EDT (at 0381f97)
+
+First real agent run on #8: token ok after clipboard mixups (secret held command text); agent obeyed constitution and commented needs-human instead of forcing it. Blocker: mcp__* deny blocked github_file_ops (the signed-commit path). Fix: allow commit_files, specific mcp deny families, no plain git commit. Log shows only github_file_ops MCP exists in the runtime - no connectors.

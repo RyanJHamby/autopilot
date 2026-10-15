@@ -41,6 +41,7 @@ BASE_TOOLS = [
     "Bash(gh issue comment:*)",
     "Bash(gh issue edit:*)",
 ]
+RETIRED = {"mcp__*", "Bash(git commit:*)", "Bash(git push origin agent/*)"}  # kit-owned rules removed from synced repos
 STACKS = {  # marker file -> command prefixes
     "pyproject.toml": ["uv run", "uv sync", "pytest", "ruff", "python"],
     "package.json": ["npm test", "npm run", "pnpm", "npx"],
@@ -80,9 +81,9 @@ def build_settings(existing: dict | None, commands: list[str]) -> dict:
     s = dict(existing or {})
     s.setdefault("$schema", "https://json.schemastore.org/claude-code-settings.json")
     perms = dict(s.get("permissions", {}))
-    perms["deny"] = sorted(set(perms.get("deny", [])) | set(deny))
+    perms["deny"] = sorted((set(perms.get("deny", [])) | set(deny)) - RETIRED)
     allow = set(perms.get("allow", [])) | set(BASE_TOOLS) | {f"Bash({c}:*)" for c in commands}
-    perms["allow"] = sorted(allow)
+    perms["allow"] = sorted(allow - RETIRED)
     s["permissions"] = perms
     return s
 

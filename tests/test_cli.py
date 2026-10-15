@@ -166,3 +166,11 @@ def test_signed_commit_tool_is_allowed_and_not_denied():
     assert tool in cli.BASE_TOOLS and "Bash(git commit:*)" not in cli.BASE_TOOLS
     assert tool not in wf.split("--disallowedTools")[1] and "mcp__*" not in deny and "mcp__*" not in wf
     assert "mcp__claude_ai_*" in deny and "mcp__claude_ai_*" in wf
+
+
+def test_sync_drops_retired_rules_from_existing_settings():
+    old = {"permissions": {"deny": ["mcp__*"], "allow": ["Bash(git commit:*)", "Bash(git push origin agent/*)", "Read"]}}
+    s = cli.build_settings(old, [])
+    assert "mcp__*" not in s["permissions"]["deny"]
+    assert not {"Bash(git commit:*)", "Bash(git push origin agent/*)"} & set(s["permissions"]["allow"])
+    assert "Read" in s["permissions"]["allow"] and "mcp__github_file_ops__commit_files" in s["permissions"]["allow"]

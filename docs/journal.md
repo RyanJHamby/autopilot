@@ -40,3 +40,7 @@ Pilot: V1,V3,V4 proven; red team round 1: all 5 hostile issues refused by consti
 ## 2026-10-15 19:15 EDT (at 1e533b6)
 
 Red team round 2 + deny isolation: model refused 5/6; slack_sdk module PR failed guard comms rule (layer 4 held); in a constitution-free clone .github edit, .env read, curl, force-push were all denied by settings (layer 2 held). Removed redundant Write() denies; added push retry after a GitHub 500.
+
+## 2026-10-15 19:18 EDT (at 0830829)
+
+Found 4/5 wave-1 repos are public; portfolio 'public' flag was unused. Added exec step that locks the issue when event.repository.private==false, plus owner-only-comments instruction.

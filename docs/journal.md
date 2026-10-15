@@ -16,3 +16,7 @@ Built ap CLI + repo templates. Found ~/dev/drillpad is the drillpad-workspace re
 ## 2026-10-15 08:05 EDT (at e673090)
 
 gate counted skipped/cancelled agent-exec runs toward the daily cap; smoke issue #8 was blocked at 2/2 with zero real runs. Fixed to exclude them; failures still count (conservative).
+
+## 2026-10-15 08:24 EDT (at 4b7cc82)
+
+smoke #8 first real run: action rejected github-actions actor (needs allowed_bots), then model call died in 2s with is_error and no usage, message hidden by show_full_output=false. Added AUTOPILOT_DEBUG var switch.

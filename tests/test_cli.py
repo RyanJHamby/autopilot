@@ -174,3 +174,10 @@ def test_sync_drops_retired_rules_from_existing_settings():
     assert "mcp__*" not in s["permissions"]["deny"]
     assert not {"Bash(git commit:*)", "Bash(git push origin agent/*)"} & set(s["permissions"]["allow"])
     assert "Read" in s["permissions"]["allow"] and "mcp__github_file_ops__commit_files" in s["permissions"]["allow"]
+
+
+def test_exec_creates_the_branch_in_trusted_code_and_agent_cannot_branch():
+    wf = (cli.KIT / "repo/.github/workflows/agent-exec.yml").read_text()
+    assert wf.index("create agent branch") < wf.index("claude-code-action")
+    assert 'git push origin "$BR"' in wf and "remove empty agent branch" in wf
+    assert not any(t.startswith("Bash(git checkout") for t in cli.BASE_TOOLS)

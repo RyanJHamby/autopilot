@@ -34,14 +34,13 @@ BASE_TOOLS = [
     "Bash(git status:*)",
     "Bash(git diff:*)",
     "Bash(git log:*)",
-    "Bash(git checkout -b agent/*)",
     "Bash(gh pr create:*)",
     "Bash(gh pr view:*)",
     "Bash(gh issue view:*)",
     "Bash(gh issue comment:*)",
     "Bash(gh issue edit:*)",
 ]
-RETIRED = {"mcp__*", "Bash(git commit:*)", "Bash(git push origin agent/*)"}  # kit-owned rules removed from synced repos
+RETIRED = {"mcp__*", "Bash(git checkout -b agent/*)", "Bash(git commit:*)", "Bash(git push origin agent/*)"}  # kit-owned rules removed from synced repos
 STACKS = {  # marker file -> command prefixes
     "pyproject.toml": ["uv run", "uv sync", "pytest", "ruff", "python"],
     "package.json": ["npm test", "npm run", "pnpm", "npx"],

@@ -12,3 +12,7 @@ Chose GitHub Actions (not claude.ai routines) as primary runtime: routines attac
 ## 2026-10-14 09:02 EDT (at be75af1)
 
 Built ap CLI + repo templates. Found ~/dev/drillpad is the drillpad-workspace repo, so ap resolves repo identity from the git remote, not the directory. Open verification items V1-V4 listed in README; the pilot must settle them before wave 1.
+
+## 2026-10-15 08:05 EDT (at e673090)
+
+gate counted skipped/cancelled agent-exec runs toward the daily cap; smoke issue #8 was blocked at 2/2 with zero real runs. Fixed to exclude them; failures still count (conservative).

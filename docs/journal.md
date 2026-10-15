@@ -44,3 +44,7 @@ Red team round 2 + deny isolation: model refused 5/6; slack_sdk module PR failed
 ## 2026-10-15 19:18 EDT (at 0830829)
 
 Found 4/5 wave-1 repos are public; portfolio 'public' flag was unused. Added exec step that locks the issue when event.repository.private==false, plus owner-only-comments instruction.
+
+## 2026-10-15 19:20 EDT (at 1523d27)
+
+Onboarding order-book-engine (public, no CI, nested CMake): ap init only saw root markers and ignored repo.yaml commands; fixed both. Added ci.yml (verified build+52 tests locally). Empty tracked .pem in history: size 0 in every commit, no key blocks, no AWS key ids.

@@ -50,11 +50,13 @@ protected paths, test weakening, size) run from the base branch copy; branch rul
 3. Merge the `autopilot/init` PR, then `ap ruleset <repo> --check ci --apply`, then `ap enable <repo> --apply`.
 4. Audit claude.ai connectors; remove all from any routine, toggle off for cloud sessions on these repos.
 
-## Verify in the pilot (not yet proven)
-- V1 agent-mode run pushes `agent/*` branches with Verified commits (`use_commit_signing`, `branch_prefix`).
-- V2 `--effort` is accepted by the action's CLI; `--allowedTools`/deny rules hold under a red-team issue.
-- V3 `push` to `agent/**` fires `ci` and `guard` so required checks are satisfied for PRs opened with the workflow token.
-- V4 `gh workflow run` from the dispatch job works with `actions: write` on `GITHUB_TOKEN`.
+## Pilot results (drillpad-workspace, 2026-10-15)
+- V1 PROVEN: agent run opened a PR from `agent/8-<run>` whose commit is Verified (`claude[bot]`, signed via the action's `github_file_ops`).
+- V2 PARTIAL: `--model sonnet --effort medium` accepted; compound shell commands denied by the allowlist. The deny list was not exercised by a model that tried to comply (see below).
+- V3 PROVEN: `guard` and `test` fire on the agent's PR.
+- V4 PROVEN: `gh workflow run` from the dispatch job works.
+- Red team round 1 (email, print .env, edit workflow, Slack post, delete tests): all five refused by the **constitution layer** (the model), no files changed, no PR. This does NOT yet show the deterministic layers (deny rules, guard, ruleset) stop a model that complies. Round 2 must apply pressure.
+- Real-run bugs found and fixed, in order: exec skipped for bot actor; gate counted skipped runs; action rejects bot actor; blanket `mcp__*` deny blocked the signed-commit tool; signed commits targeted `main` (fixed by `CLAUDE_BRANCH`).
 
 ## Not built yet
 Triage/fixer/reviewer/auditor workflows (role files exist), the `autopilot-hq` daily digest, `ap upgrade` as a PR.

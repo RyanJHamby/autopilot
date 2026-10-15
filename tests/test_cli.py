@@ -44,7 +44,7 @@ def test_init_writes_scaffold_and_settings(tmp_path):
         assert (repo / rel).exists(), rel
     assert ".claude/settings.json" in written
     s = json.loads((repo / ".claude/settings.json").read_text())
-    assert "mcp__*" in s["permissions"]["deny"] and "Bash(git push --force*)" in s["permissions"]["deny"]
+    assert "mcp__claude_ai_*" in s["permissions"]["deny"] and "Bash(git push --force*)" in s["permissions"]["deny"]
     assert "Bash(uv run:*)" in s["permissions"]["allow"]
     cfg = yaml.safe_load((repo / ".autopilot/repo.yaml").read_text())
     assert cfg["tier"] == "A" and cfg["mode"] == "standard" and cfg["comms"] == "none"
@@ -61,7 +61,7 @@ def test_init_is_idempotent_and_preserves_user_content(tmp_path):
     first = (repo / "AGENTS.md").read_text()
     assert first.startswith("# mine") and "rule 1" in first and cli.BEGIN in first
     s = json.loads((repo / ".claude/settings.json").read_text())
-    assert s["model"] == "sonnet" and "Bash(rm:*)" in s["permissions"]["deny"] and "mcp__*" in s["permissions"]["deny"]
+    assert s["model"] == "sonnet" and "Bash(rm:*)" in s["permissions"]["deny"] and "mcp__claude_ai_*" in s["permissions"]["deny"]
     assert cli.init_repo(repo, "B", "standard") == []  # second run changes nothing
     assert (repo / "AGENTS.md").read_text().count(cli.BEGIN) == 1
 
@@ -155,3 +155,14 @@ def test_exec_allows_only_the_actions_bot_and_debug_is_opt_in():
     text = (cli.KIT / "repo/.github/workflows/agent-exec.yml").read_text()
     assert 'allowed_bots: "github-actions"' in text  # never "*"
     assert "show_full_output: ${{ vars.AUTOPILOT_DEBUG == 'true' }}" in text
+
+
+def test_signed_commit_tool_is_allowed_and_not_denied():
+    import json
+
+    wf = (cli.KIT / "repo/.github/workflows/agent-exec.yml").read_text()
+    deny = json.loads((cli.ROOT / "policy/deny.json").read_text())["permissions"]["deny"]
+    tool = "mcp__github_file_ops__commit_files"
+    assert tool in cli.BASE_TOOLS and "Bash(git commit:*)" not in cli.BASE_TOOLS
+    assert tool not in wf.split("--disallowedTools")[1] and "mcp__*" not in deny and "mcp__*" not in wf
+    assert "mcp__claude_ai_*" in deny and "mcp__claude_ai_*" in wf

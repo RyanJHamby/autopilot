@@ -2,7 +2,11 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "deny": [
-      "mcp__*",
+      "mcp__claude_ai_*",
+      "mcp__plugin_*",
+      "mcp__github_comment__*",
+      "mcp__github_ci__*",
+      "mcp__github_inline_comment__*",
       "Read(./.env)",
       "Read(./.env.*)",
       "Read(**/.env)",

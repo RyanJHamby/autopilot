@@ -30,12 +30,11 @@ BASE_TOOLS = [
     "Glob",
     "Grep",
     "Bash(git add:*)",
-    "Bash(git commit:*)",
+    "mcp__github_file_ops__commit_files",  # signed commits via the GitHub API; plain git commit is intentionally absent
     "Bash(git status:*)",
     "Bash(git diff:*)",
     "Bash(git log:*)",
     "Bash(git checkout -b agent/*)",
-    "Bash(git push origin agent/*)",
     "Bash(gh pr create:*)",
     "Bash(gh pr view:*)",
     "Bash(gh issue view:*)",

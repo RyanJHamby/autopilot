@@ -65,4 +65,4 @@ jobs:
             --effort ${{ inputs.effort }}
             --max-turns ${{ inputs.max_turns }}
             --allowedTools "{{ALLOWED_TOOLS}}"
-            --disallowedTools "mcp__*,WebSearch,Bash(curl:*),Bash(wget:*),Bash(gh api:*),Bash(gh release:*),Bash(gh secret:*),Bash(gh variable:*),Bash(gh workflow:*),Bash(gh pr merge:*),Bash(git push --force:*),Bash(git push -f:*)"
+            --disallowedTools "mcp__claude_ai_*,mcp__plugin_*,mcp__github_comment__*,mcp__github_ci__*,mcp__github_inline_comment__*,WebSearch,Bash(curl:*),Bash(wget:*),Bash(gh api:*),Bash(gh release:*),Bash(gh secret:*),Bash(gh variable:*),Bash(gh workflow:*),Bash(gh pr merge:*),Bash(git push --force:*),Bash(git push -f:*)"

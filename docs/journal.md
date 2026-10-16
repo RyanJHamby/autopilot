@@ -132,3 +132,7 @@ Deployed control plane to Vercel (project autopilot-control, https://autopilot-c
 ## 2026-10-16 12:04 EDT (at 9dfb9de)
 
 Portfolio now served from Supabase: migration 0004 (mode, is_public), 'ap export-state --sql' idempotent seed (12 projects, owner org), lib/store.ts reads projects with the service role server-side, falls back to local snapshot in dev. Owner sign-in verified by Ryan. Seed ran via supabase db query (stand-in owner uuid 00000000-...-68158512 until Supabase Auth).
+
+## 2026-10-16 12:06 EDT (at 89a1068)
+
+GitHub App helpers (control-plane lib/githubApp.ts): RS256 app JWT (9 min), repo-scoped installation tokens with minimal permissions, repo-variable upsert restricted to AUTOPILOT_* names. Unit-tested with a generated key; not yet used against a real App (not registered).

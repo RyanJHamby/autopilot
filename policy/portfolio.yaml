@@ -44,7 +44,7 @@ repos:
   RyanJHamby.github.io:    {tier: C, mode: dormant, enabled: false, public: true}
   FlowState:               {tier: C, mode: dormant, enabled: false, public: true}
   lift_app:                {tier: C, mode: dormant, enabled: false}
-  autopilot:             {tier: B, mode: standard, enabled: false}
+  autopilot:             {tier: B, mode: standard, enabled: true}
   stencil:               {tier: A, mode: standard, enabled: true, hold_until: "2026-10-16T21:00:00Z"}  # owner pause until 5pm ET
 
 # data_class per repo: public | internal (default) | restricted. restricted = crown-jewel IP or personal data:

@@ -83,6 +83,6 @@ def test_fetch_approved_parses_and_fails_closed():
     txt = "# approved kit shas\n" + "a" * 40 + "  2026-10-16 canary green\nnot-a-sha\n" + "b" * 40 + "\n"
     seen = []
     assert automerge.fetch_approved("me/kit", opener=lambda u: seen.append(u) or txt) == ["a" * 40, "b" * 40]
-    assert seen == ["https://raw.githubusercontent.com/me/autopilot-approved/main/APPROVED"]
+    assert seen == ["https://api.github.com/repos/me/autopilot-approved/contents/APPROVED?ref=main"]
     assert automerge.fetch_approved("me/kit", opener=lambda u: (_ for _ in ()).throw(OSError("down"))) == []
     assert automerge.fetch_approved("bad repo; x") == []

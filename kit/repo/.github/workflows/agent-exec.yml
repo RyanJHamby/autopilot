@@ -30,6 +30,9 @@ jobs:
       id-token: write
       actions: read
     env:
+      # Best-effort scrub of Anthropic/cloud/Actions secrets from every subprocess the agent runs, plus bubblewrap
+      # PID isolation. Stops `npm test` or any script from reading the OAuth token.
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
       ISSUE: ${{ inputs.issue }}
       MODEL: ${{ inputs.model }}
       EFFORT: ${{ inputs.effort }}

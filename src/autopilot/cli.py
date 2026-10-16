@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -43,7 +44,7 @@ BASE_TOOLS = [
 RETIRED = {"Write(.github/**)", "Write(.autopilot/**)", "Write(.claude/**)", "Write(AGENTS.md)", "Write(CLAUDE.md)", "Write(.mcp.json)", "mcp__*", "Bash(git checkout -b agent/*)", "Bash(git commit:*)", "Bash(git push origin agent/*)"}  # kit-owned rules removed from synced repos
 STACKS = {  # marker file -> command prefixes
     "pyproject.toml": ["uv run", "uv sync", "pytest", "ruff", "python"],
-    "package.json": ["npm test", "npm run", "pnpm", "npx"],
+    "package.json": ["npm test", "npm run"],  # no npx/pnpm: they fetch and run arbitrary registry code
     "Cargo.toml": ["cargo"],
     "pubspec.yaml": ["flutter test", "flutter analyze", "dart"],
     "Makefile": ["make"],
@@ -62,6 +63,24 @@ def load_portfolio() -> dict:
 
 
 SKIP_DIRS = {".git", "node_modules", "build", "target", ".venv", "venv", "dist"}
+
+
+AUTOPILOT_WORKFLOWS = {"agent-dispatch.yml", "agent-exec.yml", "guard.yml", "handshake.yml"}
+
+
+def secret_exposed_workflows(repo: Path) -> list[str]:
+    """Host workflows that hand repo secrets to code from a PR branch (so an agent PR could read or spend them)
+    and do not exclude agent/* branches. GITHUB_TOKEN does not count."""
+    out: list[str] = []
+    for wf in sorted((repo / ".github/workflows").glob("*.y*ml")):
+        if wf.name in AUTOPILOT_WORKFLOWS:
+            continue
+        text = wf.read_text()
+        uses_secret = any(s != "GITHUB_TOKEN" for s in re.findall(r"secrets\.([A-Za-z0-9_]+)", text))
+        on_pr = re.search(r"^\s*pull_request(_target)?\s*:", text, re.M) is not None
+        if uses_secret and on_pr and "agent/" not in text:
+            out.append(wf.name)
+    return out
 
 
 def detect_commands(repo: Path) -> list[str]:
@@ -225,6 +244,11 @@ def cmd_init(ns: argparse.Namespace) -> int:
     print(("would write" if ns.dry_run else "wrote") + f" {len(written)} file(s) in {repo} (tier {tier}, mode {mode}):")
     for w in written:
         print(f"  {w}")
+    for name in secret_exposed_workflows(repo):
+        print(
+            f"\nWARNING {name}: uses repo secrets on pull_request and has no agent/* exclusion. An agent PR could read or\n"
+            f"spend them. Add `if: ${{{{ !startsWith(github.head_ref, 'agent/') }}}}` to the secret-using job before enabling."
+        )
     if not ns.dry_run:
         print(
             "\nNext: review, commit (signed), push, open the PR. Then set vars/secrets and run `ap ruleset --apply`.\n"
@@ -351,11 +375,10 @@ def cmd_doctor(ns: argparse.Namespace) -> int:
                     if len(ref) != 40 and "autopilot" in text.splitlines()[0]:
                         print(f"  FAIL {wf.name}: action not pinned to a SHA: {line.strip()}")
                         problems += 1
-        ci = [
-            f
-            for f in (repo / ".github/workflows").glob("*.yml")
-            if f.name not in {"agent-dispatch.yml", "agent-exec.yml", "guard.yml", "handshake.yml"}
-        ]
+        for name in secret_exposed_workflows(repo):
+            print(f"  FAIL {name}: uses repo secrets on pull_request with no agent/* exclusion (an agent PR could read or spend them)")
+            problems += 1
+        ci = [f for f in (repo / ".github/workflows").glob("*.yml") if f.name not in AUTOPILOT_WORKFLOWS]
         if ci and not any("push" in f.read_text() for f in ci):
             print("  WARN no CI workflow triggers on push; agent pushes will not fire PR checks (add `push:` trigger)")
         if not (repo / "CLAUDE.md").exists() or "@AGENTS.md" not in (repo / "CLAUDE.md").read_text():

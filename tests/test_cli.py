@@ -215,3 +215,24 @@ def test_detect_commands_finds_nested_stacks_and_owner_extras(tmp_path):
     (tmp_path / ".autopilot" / "repo.yaml").write_text('commands:\n  - "./build/tests/orderbook_tests"\n')
     cmds = cli.detect_commands(tmp_path)
     assert "./build/tests/orderbook_tests" in cmds and cmds.count("cmake") == 1
+
+
+def _wf(tmp_path, name, body):
+    d = tmp_path / ".github" / "workflows"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text(body)
+
+
+def test_secret_exposed_workflows_flags_pr_jobs_with_secrets_unless_agent_excluded(tmp_path):
+    _wf(tmp_path, "eval.yml", "on:\n  pull_request:\njobs:\n  a:\n    steps:\n      - run: x\n        env:\n          K: ${{ secrets.OPENAI_API_KEY }}\n")
+    _wf(tmp_path, "safe.yml", "on:\n  pull_request:\njobs:\n  a:\n    if: ${{ !startsWith(github.head_ref, 'agent/') }}\n    env:\n      K: ${{ secrets.OPENAI_API_KEY }}\n")
+    _wf(tmp_path, "tokenonly.yml", "on:\n  pull_request:\njobs:\n  a:\n    env:\n      K: ${{ secrets.GITHUB_TOKEN }}\n")
+    _wf(tmp_path, "pushonly.yml", "on:\n  push:\njobs:\n  a:\n    env:\n      K: ${{ secrets.DEPLOY }}\n")
+    _wf(tmp_path, "agent-exec.yml", "on:\n  pull_request:\nenv: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}\n")
+    assert cli.secret_exposed_workflows(tmp_path) == ["eval.yml"]
+
+
+def test_exec_scrubs_subprocess_env_and_npx_is_not_allowed():
+    wf = (cli.KIT / "repo/.github/workflows/agent-exec.yml").read_text()
+    assert 'CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"' in wf
+    assert "npx" not in cli.STACKS["package.json"]

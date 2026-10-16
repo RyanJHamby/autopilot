@@ -60,3 +60,7 @@ ap init clobbered stencil's PR template and CODEOWNERS catch-all. Now: existing 
 ## 2026-10-16 10:07 EDT (at f457e10)
 
 ap scan: read-only repo triage (fresh->B, warm->C dormant; forks, archived, stale, excluded skipped; public flagged; tier A never suggested). First slice of v2 P1.
+
+## 2026-10-16 10:15 EDT (at fb189b3)
+
+Shared kit (v2 P1): reusable workflow_call workflows + thin callers pinned by sha, runtime/config.py reads repo.yaml for node/allowed tools, ap init --kit, ap kit-export with a leak check. Decision: kit repo is PUBLIC (private scripts can't be fetched by other repos without an App token). Reusable-workflow job checks report as 'guard / guard', so ap ruleset --central. NOT yet validated live: vars context inside called workflows, the pinned-sha fetch, and the check name.

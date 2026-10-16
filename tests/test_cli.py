@@ -413,6 +413,7 @@ def test_kit_export_tree_and_leak_check(tmp_path):
         "runtime/gate.py",
         "runtime/guard.py",
         "runtime/handshake.py",
+        "runtime/tier.py",
     ]
     blob = "".join(p.read_text() for p in (tmp_path / "kit").rglob("*") if p.is_file())
     assert not any(re.search(b, blob) for b in cli.KIT_FORBIDDEN)

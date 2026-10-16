@@ -76,3 +76,7 @@ ap add / ap set edit policy/portfolio.yaml line-by-line (keeps comments); valida
 ## 2026-10-16 10:32 EDT (at fd8b43d)
 
 ap ruleset --apply now PUTs an existing autopilot-main instead of POSTing a duplicate. drillpad-workspace migrated to the shared kit (PR #29); guard / guard passes; ruleset now requires guard / guard + test.
+
+## 2026-10-16 10:38 EDT (at 879df4b)
+
+P2 start: kit/runtime/tier.py, a deterministic PR risk classifier (tier 2 protected paths, tier 0 only for owner-enabled classes: docs-only, tests-add-only, lockfile-patch (patch bumps only), generated). auto_merge_classes ships empty. Not yet wired into a workflow or the kit sha; formatter-only deliberately omitted (needs a tool run, not a diff read).

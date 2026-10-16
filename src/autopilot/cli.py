@@ -723,7 +723,8 @@ def cmd_report(ns: argparse.Namespace) -> int:
         if r.returncode:
             print(f"{name:24} (cannot read)")
             continue
-        c = report.scorecard(json.loads(r.stdout or "[]"), since=since)
+        prs = json.loads(r.stdout or "[]")
+        c = report.scorecard(prs, since=since)
         rate = "-" if c["merge_rate"] is None else f"{c['merge_rate']:.0%}"
         med = "-" if c["median_hours_to_merge"] is None else str(c["median_hours_to_merge"])
         print(
@@ -731,6 +732,33 @@ def cmd_report(ns: argparse.Namespace) -> int:
         )
         for cls, v in c["by_class"].items():
             print(f"    {cls}: {v['merged']} merged, {v['reverted']} reverted")
+        rr = subprocess.run(
+            [
+                "gh",
+                "run",
+                "list",
+                "-R",
+                _slug(name, pf["owner"]),
+                "--workflow",
+                "agent-exec.yml",
+                "--limit",
+                "100",
+                "--json",
+                "conclusion,createdAt,displayTitle",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if rr.returncode == 0:
+            runs = [
+                x
+                for x in json.loads(rr.stdout or "[]")
+                if dt.datetime.fromisoformat(x["createdAt"].replace("Z", "+00:00")) >= since
+            ]
+            pts = report.points_per_merged(runs, prs, since=since)
+            print(f"    est. run-points per merged PR: {'-' if pts is None else pts} (estimate: turn cap x model weight)")
+        else:
+            print("    est. run-points per merged PR: (cannot read runs)")
         for cls in report.promotion_candidates(c, [], min_clean=ns.min_clean):
             print(f"    -> consider enabling auto-merge for '{cls}' (clean merges). Your call; it is a PR.")
     return 0

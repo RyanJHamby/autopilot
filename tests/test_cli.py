@@ -579,3 +579,14 @@ def test_sensitive_names_are_whole_stems_not_substrings():
     ]:
         assert cli._sensitive_name(bad) or bad == "medical.pdf", bad
     assert cli._sensitive_name("medical.pdf")
+
+
+def test_uv_detected_and_exec_prepares_python_deps(tmp_path):
+    rc = cli._runtime_config()
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+    assert rc.uses_uv(tmp_path) == ""
+    (tmp_path / "uv.lock").write_text("")
+    assert rc.uses_uv(tmp_path) == "true"
+    wf = (cli.KIT / "workflows/exec.yml").read_text()
+    assert "uv sync --frozen" in wf and "uv==0.12.16" in wf
+    assert wf.index("uv sync --frozen") < wf.index("claude-code-action@")

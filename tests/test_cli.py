@@ -425,3 +425,39 @@ def test_kit_export_refuses_personal_strings(tmp_path, monkeypatch):
     with pytest.raises(SystemExit):
         cli.export_kit(tmp_path / "kit")
     assert not (tmp_path / "kit").exists()
+
+
+PF_SAMPLE = """repos:
+  # --- wave 1 ---
+  alpha:                   {tier: A, mode: standard, enabled: true}
+  stencil:                 {tier: C, mode: dormant, enabled: false}
+
+excluded:
+  - vllm
+"""
+
+
+def test_edit_portfolio_set_keeps_layout():
+    out = cli.edit_portfolio(PF_SAMPLE, "stencil", {"tier": "A", "mode": "standard", "enabled": True})
+    assert "# --- wave 1 ---" in out and "excluded:" in out
+    assert cli.yaml.safe_load(out)["repos"]["stencil"] == {"tier": "A", "mode": "standard", "enabled": True}
+    assert cli.yaml.safe_load(out)["repos"]["alpha"]["tier"] == "A"
+
+
+def test_edit_portfolio_add_defaults_dormant():
+    out = cli.edit_portfolio(PF_SAMPLE, "beta", {}, add=True)
+    assert cli.yaml.safe_load(out)["repos"]["beta"] == {"tier": "C", "mode": "dormant", "enabled": False}
+
+
+def test_edit_portfolio_refuses_bad_input():
+    import pytest
+
+    for args, kw in [
+        (("alpha", {}), {"add": True}),  # duplicate
+        (("vllm", {}), {"add": True}),  # excluded
+        (("nope", {"tier": "A"}), {}),  # set on unknown
+        (("alpha", {"tier": "Z"}), {}),  # bad tier
+        (("a b", {}), {"add": True}),  # bad name
+    ]:
+        with pytest.raises(SystemExit):
+            cli.edit_portfolio(PF_SAMPLE, *args, **kw)

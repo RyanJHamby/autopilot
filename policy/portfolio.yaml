@@ -44,7 +44,7 @@ repos:
   RyanJHamby.github.io:    {tier: C, mode: dormant, enabled: false, public: true}
   FlowState:               {tier: C, mode: dormant, enabled: false, public: true}
   lift_app:                {tier: C, mode: dormant, enabled: false}
-  stencil:                 {tier: C, mode: dormant, enabled: false}
+  stencil:               {tier: A, mode: standard, enabled: true}
 
 # Never scaffolded: upstream forks and sunset projects. Add to this list to refuse `ap init`.
 excluded:

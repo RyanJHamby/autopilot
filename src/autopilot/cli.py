@@ -543,6 +543,58 @@ def cmd_scan(ns: argparse.Namespace) -> int:
     return 0
 
 
+PF_KEYS = {"tier": list("ABC"), "mode": ["standard", "yolo", "dormant"]}
+_PF_LINE = re.compile(r"^\s+[\w.-]+:\s*\{.*\}\s*$")
+
+
+def _fmt_entry(entry: dict) -> str:
+    def v(x):
+        return str(x).lower() if isinstance(x, bool) else str(x)
+
+    return "{" + ", ".join(f"{k}: {v(x)}" for k, x in entry.items()) + "}"
+
+
+def edit_portfolio(text: str, name: str, updates: dict, *, add: bool = False) -> str:
+    """Rewrite one flow-style repo line in portfolio.yaml, keeping comments and layout. Pure."""
+    for k, v in updates.items():
+        if k in PF_KEYS and v not in PF_KEYS[k]:
+            raise SystemExit(f"{k} must be one of {PF_KEYS[k]}")
+    if not re.fullmatch(r"[\w.-]+", name):
+        raise SystemExit(f"bad repo name: {name}")
+    lines = text.split("\n")
+    pat = re.compile(rf"^(\s+){re.escape(name)}:\s*(\{{.*\}})\s*$")
+    for i, ln in enumerate(lines):
+        m = pat.match(ln)
+        if m:
+            if add:
+                raise SystemExit(f"{name} is already in the portfolio")
+            entry = yaml.safe_load(m.group(2))
+            entry.update(updates)
+            lines[i] = f"{m.group(1)}{(name + ':').ljust(23)}{_fmt_entry(entry)}"
+            return "\n".join(lines)
+    if not add:
+        raise SystemExit(f"{name} is not in the portfolio (use `ap add`)")
+    if name in (yaml.safe_load(text).get("excluded") or []):
+        raise SystemExit(f"{name} is excluded in the portfolio")
+    last = max(i for i, ln in enumerate(lines) if _PF_LINE.match(ln))
+    entry = {"tier": "C", "mode": "dormant", "enabled": False, **updates}
+    lines.insert(last + 1, f"  {(name + ':').ljust(23)}{_fmt_entry(entry)}")
+    return "\n".join(lines)
+
+
+def cmd_portfolio(ns: argparse.Namespace) -> int:
+    path = POLICY / "portfolio.yaml"
+    updates = {k: getattr(ns, k) for k in ("tier", "mode") if getattr(ns, k)}
+    if ns.enabled is not None:
+        updates["enabled"] = ns.enabled == "true"
+    out = edit_portfolio(path.read_text(), ns.repo, updates, add=ns.cmd == "add")
+    yaml.safe_load(out)  # never write a file that does not parse
+    path.write_text(out)
+    print(f"{ns.cmd} {ns.repo}: {updates or 'defaults (C/dormant/disabled)'} -> {path}")
+    print("local policy only: nothing was pushed or enabled on GitHub.")
+    return 0
+
+
 KIT_README = """# autopilot-kit
 
 Shared, deterministic building blocks for [autopilot](https://github.com): reusable GitHub Actions workflows and the
@@ -608,6 +660,13 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("scan", help="list an owner's repos with suggested tier/mode (read-only)")
     p.add_argument("--owner")
     p.set_defaults(fn=cmd_scan)
+    for c in ("add", "set"):
+        p = sub.add_parser(c, help=f"{c} a repo's tier/mode/enabled in policy/portfolio.yaml (local file only)")
+        p.add_argument("repo")
+        p.add_argument("--tier", choices=PF_KEYS["tier"])
+        p.add_argument("--mode", choices=PF_KEYS["mode"])
+        p.add_argument("--enabled", choices=["true", "false"])
+        p.set_defaults(fn=cmd_portfolio, cmd=c)
     p = sub.add_parser("kit-export", help="assemble the public shared-kit tree in a new directory (no push)")
     p.add_argument("dest")
     p.set_defaults(fn=cmd_kit)

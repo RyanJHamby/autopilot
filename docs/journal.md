@@ -68,3 +68,7 @@ Shared kit (v2 P1): reusable workflow_call workflows + thin callers pinned by sh
 ## 2026-10-16 10:19 EDT (at 3243a5f)
 
 Central kit validated on private sandbox repo (RyanJHamby/autopilot-sandbox): guard / guard and handshake pass; dispatch fired exec; exec ran through branch creation and cleanup, failed only at 'Claude Code is not installed' (expected, App not on sandbox). vars context, pinned-sha fetch, config outputs and the check name all work in called workflows. Kit published public at RyanJHamby/autopilot-kit @ 1ac281b (noreply author email). Sandbox AUTOPILOT_ENABLED set back to false.
+
+## 2026-10-16 10:25 EDT (at b8c78d5)
+
+ap add / ap set edit policy/portfolio.yaml line-by-line (keeps comments); validated by re-parse; stencil recorded as A/standard/enabled to match the scaffold PR. Local-only, no GitHub effects.

@@ -11,11 +11,11 @@
     ".github/CODEOWNERS": "016215ceb44d8bc932f8cd8e5a8996f6471f413d10973d02b10fddac28d659dc",
     ".github/ISSUE_TEMPLATE/agent-task.md": "9c1d25f7995517b1f8286fa0d5342b873c2dbf94eef99eff22cb6100d92852e4",
     ".github/pull_request_template.md": "6b1c5e0f7e6a2bb50068c4b710f147ec9f8a0d251eac53ad9619bfeefcfa1249",
-    ".github/workflows/agent-dispatch.yml": "08d79f514428d2f1a19037057e304197f4ac724bde389e2853a5fc77d7688c9d",
-    ".github/workflows/agent-exec.yml": "1a75bfdb9add698b3032d8101914f8ba74533c32b6348fa8714e826c64c8cebe",
-    ".github/workflows/automerge.yml": "186a7ec65c2d744423d1e69784477a9cbc5092ea1e87e7a0e907990b6864200b",
-    ".github/workflows/guard.yml": "c41555724d6431e8cc6224599c55ee7e3b6157b6919de2ddabebf9938866fe66",
-    ".github/workflows/handshake.yml": "a5cc2fe48b3f63b9d59fbb1dfc70dab50d16f687ee8904bfd9137ed761ce8d79"
+    ".github/workflows/agent-dispatch.yml": "5ab9cd5dc7feb4e151fbc2a58b0c83b3c7ee47eacc2a2df46180ef1a06688a55",
+    ".github/workflows/agent-exec.yml": "248b72dcb6204e766a43cb594b0dd7fdf55056f8670f513f061a876e5814b7bd",
+    ".github/workflows/automerge.yml": "10bb65c96d1f698edc5c66d41423bf5b6c0ac64bd9a1fcd07cd97a31e4114343",
+    ".github/workflows/guard.yml": "49acfea2853f3e7a14db8c2349861d263ca3bae9c55383abe2d9262ef588e47b",
+    ".github/workflows/handshake.yml": "a87e7f42162958b413ae8b810a0f0533fe50e5badd36a945d90ff53ee4de7456"
   },
   "kit_version": "0.1.0"
 }

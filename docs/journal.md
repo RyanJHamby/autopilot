@@ -160,3 +160,7 @@ Safety zones: ap init now refuses clones that hold personal or secret material (
 ## 2026-10-16 12:45 EDT (at d41ca3c)
 
 Backlog: 5 agent-safe specs (report-cost, ap-digest, ap-upgrade, inbox-page, scorecard-ui) with runnable acceptance commands, all passing the handshake (ap-digest first rejected because it said 'vault'; reworded). BACKLOG.md splits agent-safe periphery from human-only guard-path work. The autopilot repo has no remote, no CI and no issues yet.
+
+## 2026-10-16 12:48 EDT (at f5328e7)
+
+Dogfooding prep: autopilot has a private remote (RyanJHamby/autopilot), CI (ruff, pytest, control-plane typecheck+tests; green), BACKLOG.md and five agent-safe specs. Scaffolded onto itself in central mode (PR #1, not enabled). New: guard.extra_protected now flows into CODEOWNERS and Edit-deny rules, so agents may improve reports/digests/UI/tests but never kit runtime, workflows, policy, auth/webhook/lever code, API routes or migrations. docs/journal.md tripped the sensitive-name check (false positive, overridden on purpose).

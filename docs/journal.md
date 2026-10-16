@@ -100,3 +100,7 @@ ap pick: work-conserving allocation of the global daily run pool across enabled 
 ## 2026-10-16 10:56 EDT (at 1ee1f27)
 
 control-plane scaffold (apps/control-plane): Next 16 PWA, read-only Portfolio page from ap export-state snapshot; status/rank/share logic unit-tested (vitest); builds and serves. Not deployable yet: no auth, snapshot names private repos.
+
+## 2026-10-16 10:59 EDT (at 38aa305)
+
+control-plane schema (supabase/migrations/0001_core.sql): orgs/members/projects/grants/runs/audit with RLS and can(project, action); validated in pglite (outsider sees nothing, grant-gated lever updates with CHECK bounds, no self-grant, owner-only append-only audit, no column can loosen a guardrail). GitHub App manifest drafted (no contents write, no workflows/admin/secrets); not registered.

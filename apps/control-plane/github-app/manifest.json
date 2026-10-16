@@ -1,0 +1,17 @@
+{
+  "name": "autopilot-control",
+  "url": "https://example.invalid/replace-with-deployed-url",
+  "redirect_url": "https://example.invalid/replace-with-deployed-url/api/github/manifest",
+  "callback_urls": ["https://example.invalid/replace-with-deployed-url/api/auth/callback"],
+  "public": false,
+  "default_permissions": {
+    "metadata": "read",
+    "contents": "read",
+    "issues": "write",
+    "pull_requests": "write",
+    "checks": "read",
+    "actions": "read",
+    "actions_variables": "write"
+  },
+  "default_events": ["issues", "pull_request", "workflow_run"]
+}

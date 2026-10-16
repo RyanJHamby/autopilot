@@ -1,9 +1,12 @@
+import { redirect } from "next/navigation";
 import state from "../data/state.json";
+import { currentSession } from "../lib/session";
 import { ranked, share, status, type State } from "../lib/portfolio";
 
 export const dynamic = "force-dynamic";
 
-export default function Portfolio() {
+export default async function Portfolio() {
+  if (!(await currentSession())) redirect("/login"); // defense in depth behind proxy.ts
   const s = state as State;
   const now = new Date();
   const repos = ranked(s.repos, now);

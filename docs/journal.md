@@ -116,3 +116,7 @@ Run ledger ingestion (control-plane): HMAC-verified GitHub webhook -> agent-exec
 ## 2026-10-16 11:23 EDT (at 74b2447)
 
 LIVE FINDING: first automerge attempt on drillpad-workspace PR #33 crashed: 'gh pr view --json statusCheckRollup' fails with the workflow token (GraphQL status scopes). Ryan then merged it by hand, so the merge path is not yet proven. Fix: automerge.py is REST-only (pulls, commits/<sha>/check-runs, issues labels, PUT pulls/N/merge with sha pin), labels before merge, gh stderr surfaced.
+
+## 2026-10-16 11:25 EDT (at 243fb72)
+
+control-plane auth: GitHub OAuth (identity scope only) with numeric-id allowlist, HMAC session cookie, proxy.ts default-deny + page re-check; smoke-tested live locally (no cookie 307, forged cookie 307, valid 200, API 401, unsigned webhook 401, unconfigured login 503). Inbox triage lib (protected-path PRs first, oldest first). 30 vitest tests.

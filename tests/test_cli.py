@@ -417,6 +417,7 @@ def test_kit_export_tree_and_leak_check(tmp_path):
         "runtime/guard.py",
         "runtime/handshake.py",
         "runtime/patchcheck.py",
+        "runtime/runner.py",
         "runtime/tier.py",
     ]
     blob = "".join(p.read_text() for p in (tmp_path / "kit").rglob("*") if p.is_file())

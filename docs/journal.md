@@ -156,3 +156,7 @@ ap report: read-only outcome scorecard from GitHub PR history (opened/merged/clo
 ## 2026-10-16 12:39 EDT (at af7e820)
 
 Safety zones: ap init now refuses clones that hold personal or secret material (.obsidian, journal/diary/medical/tax names, key files, .env; names only, contents never read) or live under never_paths (~/notes, Obsidian Vault, claude-docs vault, ~/.claude), and any repo marked data_class: restricted (also refused by enable/pick). Override only with --allow-sensitive.
+
+## 2026-10-16 12:45 EDT (at d41ca3c)
+
+Backlog: 5 agent-safe specs (report-cost, ap-digest, ap-upgrade, inbox-page, scorecard-ui) with runnable acceptance commands, all passing the handshake (ap-digest first rejected because it said 'vault'; reworded). BACKLOG.md splits agent-safe periphery from human-only guard-path work. The autopilot repo has no remote, no CI and no issues yet.

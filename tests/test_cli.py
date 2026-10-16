@@ -546,3 +546,9 @@ def test_extra_protected_reaches_codeowners_and_deny(tmp_path):
     assert "Edit(kit/runtime/**)" in deny and "Edit(policy/**)" in deny
     cli.init_repo(repo, "B", "standard")
     assert "/kit/runtime/ @" in (repo / ".github/CODEOWNERS").read_text()
+
+
+def test_exec_installs_bubblewrap_before_the_agent_and_keeps_the_scrub():
+    wf = (cli.KIT / "workflows/exec.yml").read_text()
+    assert "bubblewrap" in wf and wf.index("bubblewrap") < wf.index("claude-code-action@")
+    assert 'CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"' in wf

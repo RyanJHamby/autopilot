@@ -724,6 +724,85 @@ def cmd_report(ns: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_retro(ns: argparse.Namespace) -> int:
+    """Read-only: why did agent work fail to land? Prints an evidence packet; writes nothing, calls no model."""
+    import datetime as dt
+
+    from autopilot import picker, retro
+
+    pf = load_portfolio()
+    now = dt.datetime.now(dt.timezone.utc)
+    since = now - dt.timedelta(days=ns.days)
+    runs, prs, ex = [], [], {}
+    for name, e in pf["repos"].items():
+        if not e.get("enabled") or e.get("mode") == "dormant" or picker.held(e, now):
+            continue
+        slug = _slug(name, pf["owner"])
+        r = subprocess.run(
+            [
+                "gh",
+                "run",
+                "list",
+                "-R",
+                slug,
+                "--workflow",
+                "agent-exec.yml",
+                "--limit",
+                "50",
+                "--json",
+                "databaseId,conclusion,createdAt,displayTitle",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        for x in json.loads(r.stdout or "[]") if r.returncode == 0 else []:
+            if dt.datetime.fromisoformat(x["createdAt"].replace("Z", "+00:00")) < since or x["conclusion"] in (
+                "success",
+                "skipped",
+                "cancelled",
+                "",
+            ):
+                continue
+            jr = subprocess.run(
+                ["gh", "run", "view", str(x["databaseId"]), "-R", slug, "--json", "jobs"], capture_output=True, text=True
+            )
+            step = ""
+            for job in json.loads(jr.stdout or "{}").get("jobs", []) if jr.returncode == 0 else []:
+                step = next((s["name"] for s in job.get("steps", []) if s.get("conclusion") == "failure"), step)
+            item = {"conclusion": x["conclusion"], "failed_step": step}
+            runs.append(item)
+            ex.setdefault(retro.classify_run(item) or "", []).append(
+                f"{name} run {x['databaseId']} ({x['displayTitle'].strip()})"
+            )
+        p = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "list",
+                "-R",
+                slug,
+                "--state",
+                "closed",
+                "--limit",
+                "50",
+                "--json",
+                "number,title,state,mergedAt,headRefName,comments,closedAt",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        for x in json.loads(p.stdout or "[]") if p.returncode == 0 else []:
+            if not x["headRefName"].startswith("agent/") or x.get("mergedAt") or not x.get("closedAt"):
+                continue
+            if dt.datetime.fromisoformat(x["closedAt"].replace("Z", "+00:00")) < since:
+                continue
+            item = {"state": x["state"], "mergedAt": x.get("mergedAt"), "comments": len(x.get("comments") or [])}
+            prs.append(item)
+            ex.setdefault(retro.classify_pr(item) or "", []).append(f"{name} PR #{x['number']} ({x['title']})")
+    print(retro.packet(retro.causes(runs, prs), ex, min_count=ns.min_count))
+    return 0
+
+
 def scan_suggestions(repos: list[dict], pf: dict, now) -> list[dict]:
     """Read-only triage of an owner's repos. Tier A is a human decision, so it is never suggested."""
     import datetime as dt
@@ -900,6 +979,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--days", type=int, default=14)
     p.add_argument("--min-clean", type=int, default=10, help="clean merges before suggesting auto-merge for a class")
     p.set_defaults(fn=cmd_report)
+    p = sub.add_parser("retro", help="read-only evidence packet: why agent runs/PRs failed to land")
+    p.add_argument("--days", type=int, default=14)
+    p.add_argument("--min-count", type=int, default=2)
+    p.set_defaults(fn=cmd_retro)
     p = sub.add_parser("export-state", help="write the portfolio snapshot the control-plane UI reads")
     p.add_argument("dest", nargs="?", default=str(ROOT / "apps/control-plane/data/state.json"))
     p.add_argument("--sql", action="store_true", help="print the idempotent seed SQL instead of writing the file")

@@ -252,3 +252,16 @@ def test_node_repos_get_pinned_trusted_install_steps_and_others_do_not(tmp_path)
     assert "setup-node" not in wp and "{{" not in wp.replace("${{", "")
     yaml.safe_load(wn)
     yaml.safe_load(wp)
+
+
+def test_existing_owner_files_are_kept_and_codeowners_is_merged(tmp_path):
+    repo = make_repo(tmp_path)
+    (repo / ".github").mkdir()
+    (repo / ".github" / "pull_request_template.md").write_text("MY TEMPLATE\n")
+    (repo / ".github" / "CODEOWNERS").write_text("* @me\n/docs/ @someone\n")
+    cli.init_repo(repo, "A", "standard")
+    assert (repo / ".github/pull_request_template.md").read_text() == "MY TEMPLATE\n"
+    co = (repo / ".github/CODEOWNERS").read_text()
+    assert co.startswith("* @me\n/docs/ @someone\n") and "/.github/ @" in co
+    cli.init_repo(repo, "A", "standard")  # idempotent: block replaced, not duplicated
+    assert (repo / ".github/CODEOWNERS").read_text().count(cli.CO_BEGIN) == 1

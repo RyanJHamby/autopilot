@@ -134,9 +134,20 @@ def build_settings(existing: dict | None, commands: list[str]) -> dict:
     return s
 
 
-def codeowners(owner: str) -> str:
+CO_BEGIN, CO_END = "# BEGIN autopilot", "# END autopilot"
+MERGED_FILES = {".claude/settings.json", ".github/CODEOWNERS"}  # merged into what is there; every other existing file is kept
+
+
+def codeowners(owner: str, existing: str | None = None) -> str:
+    """CODEOWNERS with a managed block for the protected paths. Anything already in the file is kept."""
     lines = [f"/{p} @{owner}" for p in (".github/", ".autopilot/", ".claude/", "AGENTS.md", "CLAUDE.md", ".mcp.json")]
-    return "# autopilot-managed\n" + "\n".join(lines) + "\n"
+    block = f"{CO_BEGIN} (managed: protected paths)\n" + "\n".join(lines) + f"\n{CO_END}\n"
+    if not existing:
+        return block
+    if CO_BEGIN in existing and CO_END in existing:
+        a, b = existing.index(CO_BEGIN), existing.index(CO_END) + len(CO_END)
+        return existing[:a] + block.rstrip("\n") + existing[b:]
+    return existing.rstrip("\n") + "\n\n" + block
 
 
 def init_repo(repo: Path, tier: str, mode: str, *, dry_run: bool = False) -> list[str]:
@@ -160,7 +171,8 @@ def init_repo(repo: Path, tier: str, mode: str, *, dry_run: bool = False) -> lis
     for f in (KIT / "repo" / ".github" / "ISSUE_TEMPLATE").glob("*.md"):
         out[f".github/ISSUE_TEMPLATE/{f.name}"] = f.read_text()
     out[".github/pull_request_template.md"] = (KIT / "repo/.github/pull_request_template.md").read_text()
-    out[".github/CODEOWNERS"] = codeowners(owner)
+    co = repo / ".github" / "CODEOWNERS"
+    out[".github/CODEOWNERS"] = codeowners(owner, co.read_text() if co.exists() else None)
     out["specs/_TEMPLATE.md"] = (KIT / "repo/specs/_TEMPLATE.md").read_text()
     out[".autopilot/CONSTITUTION.md"] = (POLICY / "CONSTITUTION.md").read_text()
     out[".autopilot/CONTRACT.md"] = (KIT / "contract/CONTRACT.md").read_text()
@@ -178,6 +190,9 @@ def init_repo(repo: Path, tier: str, mode: str, *, dry_run: bool = False) -> lis
     def put(rel: str, content: str, *, user_owned: bool = False) -> None:
         p = repo / rel
         if user_owned and p.exists():
+            return
+        if p.exists() and rel not in MERGED_FILES and rel not in old_manifest["files"]:
+            print(f"  ! {rel} already exists and is not autopilot's; leaving it as is", file=sys.stderr)
             return
         if p.exists() and p.read_text() == content:
             manifest["files"][rel] = _sha(content.encode())

@@ -124,3 +124,7 @@ control-plane auth: GitHub OAuth (identity scope only) with numeric-id allowlist
 ## 2026-10-16 11:33 EDT (at 73747be)
 
 Supabase project autopilot-control created (ref tubzfpzqcyhwkkenygpu, us-east-1, separate from stencil's). DB password is random, stored only in macOS keychain item autopilot-control-db, never printed. Migrations 0001-0003 applied; security advisors clean after moving can()/is_owner() to a private schema and revoking anon grants; anon REST reads/inserts/RPC all denied (probed live). Service-role and other keys not yet placed anywhere.
+
+## 2026-10-16 11:45 EDT (at 68a2d94)
+
+Deployed control plane to Vercel (project autopilot-control, https://autopilot-control.vercel.app). Env (encrypted, never printed): SESSION_SECRET, ALLOWED_GITHUB_IDS=68158512, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY. Private portfolio snapshot no longer bundled (.vercelignore + runtime fallback). Probed live: / 307 to login, API 401, unsigned webhook 401, login 503 until the OAuth app exists, state.json not served. Needs GitHub OAuth client id/secret + webhook secret next.

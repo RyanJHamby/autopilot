@@ -1,8 +1,8 @@
 {
   "name": "autopilot-control",
-  "url": "https://example.invalid/replace-with-deployed-url",
-  "redirect_url": "https://example.invalid/replace-with-deployed-url/api/github/manifest",
-  "callback_urls": ["https://example.invalid/replace-with-deployed-url/api/auth/callback"],
+  "url": "https://autopilot-control.vercel.app",
+  "redirect_url": "https://autopilot-control.vercel.app/api/github/manifest",
+  "callback_urls": ["https://autopilot-control.vercel.app/api/auth/callback"],
   "public": false,
   "default_permissions": {
     "metadata": "read",

@@ -11,4 +11,4 @@ Permissions and why:
 Deliberately absent: `workflows`, `administration`, `secrets`, `members`. It can never edit CI, rulesets, secrets or access.
 Private key custody: deployment encrypted env only; never in a repo. Install per owner (personal account, `ampentra`),
 selecting repos explicitly rather than "all repositories". `public: false` keeps it installable only by its owner.
-Replace the placeholder URLs after the first deploy.
+URLs point at https://autopilot-control.vercel.app.

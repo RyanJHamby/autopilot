@@ -67,3 +67,22 @@ def test_history_flags_reverts_and_red(monkeypatch):
 
     h = automerge.history(gh)
     assert len(h) == 1 and h[0]["class"] == "docs-only" and h[0]["reverted"] and h[0]["main_red"]
+
+
+def test_kit_bump_prs_only_from_the_owner(monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "me")
+    res = {"tier": 0, "class": "kit-bump", "reasons": ["x"]}
+    mine = {**PR, "headRefName": "autopilot/kit-bump-abc1234", "author": {"login": "me"}}
+    assert d(pr=mine, res=res, enabled=("kit-bump",)) == (True, "kit-bump")
+    assert not d(pr={**mine, "author": {"login": "someone-else"}}, res=res, enabled=("kit-bump",))[0]
+    monkeypatch.delenv("GITHUB_REPOSITORY_OWNER")
+    assert not d(pr=mine, res=res, enabled=("kit-bump",))[0]
+
+
+def test_fetch_approved_parses_and_fails_closed():
+    txt = "# approved kit shas\n" + "a" * 40 + "  2026-10-16 canary green\nnot-a-sha\n" + "b" * 40 + "\n"
+    seen = []
+    assert automerge.fetch_approved("me/kit", opener=lambda u: seen.append(u) or txt) == ["a" * 40, "b" * 40]
+    assert seen == ["https://raw.githubusercontent.com/me/autopilot-approved/main/APPROVED"]
+    assert automerge.fetch_approved("me/kit", opener=lambda u: (_ for _ in ()).throw(OSError("down"))) == []
+    assert automerge.fetch_approved("bad repo; x") == []

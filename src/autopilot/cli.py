@@ -27,6 +27,15 @@ SETUP_NODE_SHA = "49933ea5288caeca8642d1e84afbd3f7d6820020"  # actions/setup-nod
 ACTION_SHA = "34968b5981d5d170904281aa3df6f3c0d4a28855"  # anthropics/claude-code-action v1
 
 
+def _load_runtime(name: str):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(f"kit_{name}", KIT / "runtime" / f"{name}.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
 def _runtime_config():
     import importlib.util
 
@@ -890,6 +899,128 @@ def cmd_retro(ns: argparse.Namespace) -> int:
     return 0
 
 
+def _kit_slug_and_sha(ns_kit: str) -> tuple[str, str]:
+    m = re.fullmatch(r"([\w.-]+/[\w.-]+)@([0-9a-f]{40})", ns_kit or "")
+    if not m:
+        raise SystemExit("--kit must look like OWNER/REPO@<40-hex sha>")
+    return m.group(1), m.group(2)
+
+
+def cmd_approve(ns: argparse.Namespace) -> int:
+    """Open a PR on the approvals repo adding a kit sha to APPROVED. Merging that PR (only you can) is the one approval a release
+    needs; repos with the `kit-bump` class then take the pin bump without a second review."""
+    import base64
+
+    kit_repo, sha = _kit_slug_and_sha(ns.kit)
+    kit = _load_runtime("automerge").approvals_repo(kit_repo)  # approvals live in <owner>/autopilot-approved
+    cur = subprocess.run(["gh", "api", f"repos/{kit}/contents/APPROVED"], capture_output=True, text=True)
+    body, file_sha = ("# Kit shas the owner approved. Only owner-reviewed PRs may change this file.\n", None)
+    if cur.returncode == 0:
+        j = json.loads(cur.stdout)
+        body, file_sha = base64.b64decode(j["content"]).decode(), j["sha"]
+    if sha in body:
+        print(f"{sha[:7]} is already approved")
+        return 0
+    body = body.rstrip("\n") + f"\n{sha}  {ns.note or 'approved'}\n"
+    if not ns.apply:
+        print(f"[dry run] would open a PR on {kit} adding:\n{sha}  {ns.note or 'approved'}")
+        return 0
+    head = json.loads(_run("gh", "api", f"repos/{kit}/git/ref/heads/main"))["object"]["sha"]
+    branch = f"approve-{sha[:7]}"
+    _run("gh", "api", f"repos/{kit}/git/refs", "-f", f"ref=refs/heads/{branch}", "-f", f"sha={head}")
+    args = [
+        "gh",
+        "api",
+        "-X",
+        "PUT",
+        f"repos/{kit}/contents/APPROVED",
+        "-f",
+        f"message=approve kit {sha[:7]}",
+        "-f",
+        f"branch={branch}",
+    ]
+    args += ["-f", f"content={base64.b64encode(body.encode()).decode()}"]
+    if file_sha:
+        args += ["-f", f"sha={file_sha}"]
+    _run(*args)
+    url = _run(
+        "gh",
+        "pr",
+        "create",
+        "-R",
+        kit,
+        "--base",
+        "main",
+        "--head",
+        branch,
+        "--title",
+        f"approve kit {sha[:7]}",
+        "--body",
+        f"Approves `{sha}` for automatic pin bumps in repos that opted into the `kit-bump` class.\n\n{ns.note or ''}\n\nReview the diff of the kit between the previously approved sha and this one before merging.",
+    )
+    print(url.strip())
+    return 0
+
+
+def cmd_rollout(ns: argparse.Namespace) -> int:
+    """Open a pin-bump PR in every enabled central-mode repo for an APPROVED kit sha. Repos that opted into `kit-bump` merge
+    it themselves once checks pass; the rest wait for you like any other PR."""
+    import tempfile
+
+    fetch_approved = _load_runtime("automerge").fetch_approved
+
+    kit, sha = _kit_slug_and_sha(ns.kit)
+    if sha not in fetch_approved(kit):
+        print(
+            f"{sha[:7]} is not on {kit}'s APPROVED list. Run `ap approve --kit {kit}@{sha}` and merge that PR first.",
+            file=sys.stderr,
+        )
+        return 1
+    pf = load_portfolio()
+    for name, e in pf["repos"].items():
+        if not e.get("enabled") or e.get("mode") == "dormant" or e.get("data_class") == "restricted":
+            continue
+        if ns.only and name not in ns.only:
+            continue
+        slug = _slug(name, pf["owner"])
+        if not ns.apply:
+            print(f"[dry run] would open a pin-bump PR in {slug} -> {sha[:7]}")
+            continue
+        with tempfile.TemporaryDirectory(prefix="ap-rollout-") as td:
+            dest = Path(td) / name
+            r = subprocess.run(["gh", "repo", "clone", slug, str(dest), "--", "--depth", "50"], capture_output=True, text=True)
+            if r.returncode:
+                print(f"{slug}: clone failed")
+                continue
+            branch = f"autopilot/kit-bump-{sha[:7]}"
+            _run("git", "checkout", "-q", "-B", branch, cwd=dest)
+            init_repo(dest, e.get("tier", "B"), e.get("mode", "standard"), central=(kit, sha))
+            if not _run("git", "status", "--porcelain", cwd=dest):
+                print(f"{slug}: already on {sha[:7]}")
+                continue
+            _run("git", "add", "-A", cwd=dest)
+            _run("git", "commit", "-q", "-S", "-m", f"autopilot: bump kit to {sha[:7]}", cwd=dest)
+            _run("git", "push", "-q", "-u", "origin", branch, "--force-with-lease", cwd=dest)
+            url = _run(
+                "gh",
+                "pr",
+                "create",
+                "-R",
+                slug,
+                "--base",
+                "main",
+                "--head",
+                branch,
+                "--title",
+                f"autopilot: bump kit to {sha[:7]}",
+                "--body",
+                f"Pin bump to the owner-approved kit `{sha}`. Auto-merges after checks if this repo has the `kit-bump` class; otherwise yours to review.",
+                cwd=dest,
+            )
+            print(f"{slug}: {url.strip()}")
+    return 0
+
+
 def scan_suggestions(repos: list[dict], pf: dict, now) -> list[dict]:
     """Read-only triage of an owner's repos. Tier A is a human decision, so it is never suggested."""
     import datetime as dt
@@ -1072,6 +1203,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--days", type=int, default=14)
     p.add_argument("--min-count", type=int, default=2)
     p.set_defaults(fn=cmd_retro)
+    p = sub.add_parser("approve", help="open a PR on <owner>/autopilot-approved approving a kit sha for automatic pin bumps")
+    p.add_argument("--kit", required=True, metavar="OWNER/REPO@SHA")
+    p.add_argument("--note", default="")
+    p.add_argument("--apply", action="store_true")
+    p.set_defaults(fn=cmd_approve)
+    p = sub.add_parser("rollout", help="open pin-bump PRs in every enabled repo for an APPROVED kit sha")
+    p.add_argument("--kit", required=True, metavar="OWNER/REPO@SHA")
+    p.add_argument("--only", action="append", default=[], help="limit to these repo names")
+    p.add_argument("--apply", action="store_true")
+    p.set_defaults(fn=cmd_rollout)
     p = sub.add_parser("export-state", help="write the portfolio snapshot the control-plane UI reads")
     p.add_argument("dest", nargs="?", default=str(ROOT / "apps/control-plane/data/state.json"))
     p.add_argument("--sql", action="store_true", help="print the idempotent seed SQL instead of writing the file")

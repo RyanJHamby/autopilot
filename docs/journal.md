@@ -72,3 +72,7 @@ Central kit validated on private sandbox repo (RyanJHamby/autopilot-sandbox): gu
 ## 2026-10-16 10:25 EDT (at b8c78d5)
 
 ap add / ap set edit policy/portfolio.yaml line-by-line (keeps comments); validated by re-parse; stencil recorded as A/standard/enabled to match the scaffold PR. Local-only, no GitHub effects.
+
+## 2026-10-16 10:32 EDT (at fd8b43d)
+
+ap ruleset --apply now PUTs an existing autopilot-main instead of POSTing a duplicate. drillpad-workspace migrated to the shared kit (PR #29); guard / guard passes; ruleset now requires guard / guard + test.

@@ -379,10 +379,14 @@ def cmd_ruleset(ns: argparse.Namespace) -> int:
     # a reusable-workflow job reports as "<caller job> / <called job>"
     body = ruleset_json(["guard / guard" if ns.central else "guard"] + ns.check)
     if not ns.apply:
-        print(f"[dry run] would POST to repos/{slug}/rulesets:\n{json.dumps(body, indent=2)}")
+        print(f"[dry run] would POST (or PUT if it exists) to repos/{slug}/rulesets:\n{json.dumps(body, indent=2)}")
         return 0
+    # update in place if the ruleset exists (a second POST would add a duplicate or 422)
+    found = json.loads(_run("gh", "api", f"repos/{slug}/rulesets", check=False) or "[]")
+    rid = next((x["id"] for x in found if isinstance(x, dict) and x.get("name") == body["name"]), None)
+    url, method = (f"repos/{slug}/rulesets/{rid}", "PUT") if rid else (f"repos/{slug}/rulesets", "POST")
     r = subprocess.run(
-        ["gh", "api", f"repos/{slug}/rulesets", "--method", "POST", "--input", "-"],
+        ["gh", "api", url, "--method", method, "--input", "-"],
         input=json.dumps(body),
         text=True,
         capture_output=True,

@@ -112,3 +112,7 @@ Lever write path (control-plane lib/levers.ts): requested change -> plan. Safe l
 ## 2026-10-16 11:09 EDT (at 247423f)
 
 Run ledger ingestion (control-plane): HMAC-verified GitHub webhook -> agent-exec completions -> runs rows (service role, project resolved server-side, unknown repos dropped). run_points is an upper-bound estimate (turn cap x model weight) since the Max pool reports no tokens. Not deployed; needs SUPABASE_* and GITHUB_WEBHOOK_SECRET.
+
+## 2026-10-16 11:23 EDT (at 74b2447)
+
+LIVE FINDING: first automerge attempt on drillpad-workspace PR #33 crashed: 'gh pr view --json statusCheckRollup' fails with the workflow token (GraphQL status scopes). Ryan then merged it by hand, so the merge path is not yet proven. Fix: automerge.py is REST-only (pulls, commits/<sha>/check-runs, issues labels, PUT pulls/N/merge with sha pin), labels before merge, gh stderr surfaced.

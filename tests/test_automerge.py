@@ -44,19 +44,26 @@ def test_draft_or_closed():
 
 def test_history_flags_reverts_and_red(monkeypatch):
     def gh(*a):
-        if a[:2] == ("pr", "list") and "merged" in a:
+        if "pulls?state=closed" in a[1]:
             return [
                 {
                     "number": 7,
                     "title": "t",
-                    "mergedAt": "2026-10-10T00:00:00Z",
-                    "mergeCommit": {"oid": "a" * 40},
+                    "body": "",
+                    "merged_at": "2026-10-10T00:00:00Z",
+                    "merge_commit_sha": "a" * 40,
                     "labels": [{"name": "automerged:docs-only"}],
-                }
+                },
+                {
+                    "number": 9,
+                    "title": 'Revert "t"',
+                    "body": "Reverts #7",
+                    "merged_at": "2026-10-11T00:00:00Z",
+                    "merge_commit_sha": "b" * 40,
+                    "labels": [],
+                },
             ]
-        if a[:2] == ("pr", "list"):
-            return [{"title": 'Revert "t"', "body": "Reverts #7"}]
-        return ["success", "failure"]
+        return {"check_runs": [{"conclusion": "success"}, {"conclusion": "failure"}]}
 
     h = automerge.history(gh)
-    assert h[0]["class"] == "docs-only" and h[0]["reverted"] and h[0]["main_red"]
+    assert len(h) == 1 and h[0]["class"] == "docs-only" and h[0]["reverted"] and h[0]["main_red"]

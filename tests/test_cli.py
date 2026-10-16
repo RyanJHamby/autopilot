@@ -531,3 +531,18 @@ def test_init_refuses_sensitive_and_restricted(tmp_path, capsys):
 def test_portfolio_declares_never_paths():
     pf = cli.load_portfolio()
     assert "~/notes" in pf["never_paths"] and "~/Desktop/claude-docs" in pf["never_paths"]
+
+
+def test_extra_protected_reaches_codeowners_and_deny(tmp_path):
+    repo = make_repo(tmp_path)
+    (repo / ".autopilot").mkdir()
+    (repo / ".autopilot" / "repo.yaml").write_text(
+        "guard:\n  extra_protected:\n    - kit/runtime/**\n    - 'bad path; rm'\n    - policy/**\n"
+    )
+    assert cli._extra_protected(repo) == ["kit/runtime/**", "policy/**"]
+    co = cli.codeowners("me", None, cli._extra_protected(repo))
+    assert "/kit/runtime/ @me" in co and "/policy/ @me" in co
+    deny = cli.build_settings(None, [], cli._extra_protected(repo))["permissions"]["deny"]
+    assert "Edit(kit/runtime/**)" in deny and "Edit(policy/**)" in deny
+    cli.init_repo(repo, "B", "standard")
+    assert "/kit/runtime/ @" in (repo / ".github/CODEOWNERS").read_text()

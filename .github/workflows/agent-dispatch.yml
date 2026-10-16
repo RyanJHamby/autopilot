@@ -1,0 +1,35 @@
+# autopilot-managed thin caller. The logic lives in the pinned kit; change it by bumping the sha below (a PR you merge).
+name: agent-dispatch
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: "37 5 * * *"      # nightly, ~01:37 ET
+    - cron: "23 17 * * 1-5"   # weekday midday, ~13:23 ET
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to run (blank = pick from agent-ready)"
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: autopilot-dispatch-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      actions: write
+    uses: RyanJHamby/autopilot-kit/.github/workflows/dispatch.yml@cd5de2361f468fa72390339d6849cf43c3922df5
+    with:
+      issue: ${{ inputs.issue }}
+      kit_repo: RyanJHamby/autopilot-kit
+      kit_ref: cd5de2361f468fa72390339d6849cf43c3922df5

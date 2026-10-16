@@ -1,0 +1,38 @@
+# autopilot-managed thin caller. The logic lives in the pinned kit; change it by bumping the sha below (a PR you merge).
+name: agent-exec
+run-name: "agent #${{ inputs.issue }} ${{ inputs.hard == 'true' && '[hard]' || '' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:      {description: "Issue number", required: true}
+      model:      {description: "haiku | sonnet | opus", required: true, default: sonnet}
+      effort:     {description: "low | medium | high", required: true, default: medium}
+      max_turns:  {description: "Turn cap (<= 60)", required: true, default: "25"}
+      hard:       {description: "true if this is an opus 'hard' run", required: false, default: "false"}
+
+permissions: {}
+
+concurrency:
+  group: autopilot-exec-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  exec:
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    uses: RyanJHamby/autopilot-kit/.github/workflows/exec.yml@cd5de2361f468fa72390339d6849cf43c3922df5
+    with:
+      issue: ${{ inputs.issue }}
+      model: ${{ inputs.model }}
+      effort: ${{ inputs.effort }}
+      max_turns: ${{ inputs.max_turns }}
+      hard: ${{ inputs.hard }}
+      kit_repo: RyanJHamby/autopilot-kit
+      kit_ref: cd5de2361f468fa72390339d6849cf43c3922df5
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

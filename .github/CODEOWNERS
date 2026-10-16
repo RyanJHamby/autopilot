@@ -1,0 +1,23 @@
+# BEGIN autopilot (managed: protected paths)
+/.github/ @RyanJHamby
+/.autopilot/ @RyanJHamby
+/.claude/ @RyanJHamby
+/AGENTS.md @RyanJHamby
+/CLAUDE.md @RyanJHamby
+/.mcp.json @RyanJHamby
+/kit/runtime/ @RyanJHamby
+/kit/workflows/ @RyanJHamby
+/kit/callers/ @RyanJHamby
+/kit/agents/ @RyanJHamby
+/policy/ @RyanJHamby
+/specs/_TEMPLATE.md @RyanJHamby
+/apps/control-plane/proxy.ts @RyanJHamby
+/apps/control-plane/lib/auth.ts @RyanJHamby
+/apps/control-plane/lib/githubApp.ts @RyanJHamby
+/apps/control-plane/lib/levers.ts @RyanJHamby
+/apps/control-plane/lib/ledger.ts @RyanJHamby
+/apps/control-plane/app/api/ @RyanJHamby
+/apps/control-plane/supabase/ @RyanJHamby
+/apps/control-plane/github-app/ @RyanJHamby
+/src/autopilot/picker.py @RyanJHamby
+# END autopilot

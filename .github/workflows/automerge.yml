@@ -1,0 +1,24 @@
+# autopilot-managed thin caller. Merges only PRs your .autopilot/merge-policy.yaml has opted in (ships empty = never).
+name: automerge
+
+on:
+  workflow_run:
+    workflows: ["guard", "ci", "test", "build"]
+    types: [completed]
+  schedule:
+    - cron: "17 */3 * * *"   # sweep: catches PRs whose last check finished after the guard run
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  automerge:
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      checks: read
+    uses: RyanJHamby/autopilot-kit/.github/workflows/automerge.yml@cd5de2361f468fa72390339d6849cf43c3922df5
+    with:
+      kit_repo: RyanJHamby/autopilot-kit
+      kit_ref: cd5de2361f468fa72390339d6849cf43c3922df5

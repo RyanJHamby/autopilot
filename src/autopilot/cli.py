@@ -160,25 +160,39 @@ def render(text: str, subs: dict[str, str]) -> str:
     return text
 
 
-def build_settings(existing: dict | None, commands: list[str]) -> dict:
+def build_settings(existing: dict | None, commands: list[str], extra_protected: list[str] | None = None) -> dict:
     deny = json.loads((POLICY / "deny.json").read_text())["permissions"]["deny"]
     s = dict(existing or {})
     s.setdefault("$schema", "https://json.schemastore.org/claude-code-settings.json")
     perms = dict(s.get("permissions", {}))
-    perms["deny"] = sorted((set(perms.get("deny", [])) | set(deny)) - RETIRED)
+    extra = {f"Edit({p})" for p in (extra_protected or [])}
+    perms["deny"] = sorted((set(perms.get("deny", [])) | set(deny) | extra) - RETIRED)
     allow = set(perms.get("allow", [])) | set(BASE_TOOLS) | {f"Bash({c}:*)" for c in commands}
     perms["allow"] = sorted(allow - RETIRED)
     s["permissions"] = perms
     return s
 
 
+def _extra_protected(repo: Path) -> list[str]:
+    """guard.extra_protected from the repo's own (owner-edited) .autopilot/repo.yaml, validated as plain path globs."""
+    cfg = repo / ".autopilot" / "repo.yaml"
+    if not cfg.exists():
+        return []
+    raw = ((yaml.safe_load(cfg.read_text()) or {}).get("guard") or {}).get("extra_protected") or []
+    return [p for p in raw if isinstance(p, str) and re.fullmatch(r"[\w./*-]+", p)]
+
+
 CO_BEGIN, CO_END = "# BEGIN autopilot", "# END autopilot"
 MERGED_FILES = {".claude/settings.json", ".github/CODEOWNERS"}  # merged into what is there; every other existing file is kept
 
 
-def codeowners(owner: str, existing: str | None = None) -> str:
+def codeowners(owner: str, existing: str | None = None, extra_protected: list[str] | None = None) -> str:
     """CODEOWNERS with a managed block for the protected paths. Anything already in the file is kept."""
-    lines = [f"/{p} @{owner}" for p in (".github/", ".autopilot/", ".claude/", "AGENTS.md", "CLAUDE.md", ".mcp.json")]
+    paths = [".github/", ".autopilot/", ".claude/", "AGENTS.md", "CLAUDE.md", ".mcp.json"]
+    paths += [
+        p.removesuffix("**") for p in (extra_protected or [])
+    ]  # the repo's own guard path (repo.yaml guard.extra_protected)
+    lines = [f"/{p} @{owner}" for p in paths]
     block = f"{CO_BEGIN} (managed: protected paths)\n" + "\n".join(lines) + f"\n{CO_END}\n"
     if not existing:
         return block
@@ -217,8 +231,9 @@ def init_repo(repo: Path, tier: str, mode: str, *, dry_run: bool = False, centra
     for f in (KIT / "repo" / ".github" / "ISSUE_TEMPLATE").glob("*.md"):
         out[f".github/ISSUE_TEMPLATE/{f.name}"] = f.read_text()
     out[".github/pull_request_template.md"] = (KIT / "repo/.github/pull_request_template.md").read_text()
+    extra = _extra_protected(repo)
     co = repo / ".github" / "CODEOWNERS"
-    out[".github/CODEOWNERS"] = codeowners(owner, co.read_text() if co.exists() else None)
+    out[".github/CODEOWNERS"] = codeowners(owner, co.read_text() if co.exists() else None, extra)
     out["specs/_TEMPLATE.md"] = (KIT / "repo/specs/_TEMPLATE.md").read_text()
     out[".autopilot/CONSTITUTION.md"] = (POLICY / "CONSTITUTION.md").read_text()
     out[".autopilot/CONTRACT.md"] = (KIT / "contract/CONTRACT.md").read_text()
@@ -265,7 +280,7 @@ def init_repo(repo: Path, tier: str, mode: str, *, dry_run: bool = False, centra
 
     settings_path = repo / ".claude" / "settings.json"
     existing = json.loads(settings_path.read_text()) if settings_path.exists() else None
-    out[".claude/settings.json"] = json.dumps(build_settings(existing, commands), indent=2) + "\n"
+    out[".claude/settings.json"] = json.dumps(build_settings(existing, commands, extra), indent=2) + "\n"
     for rel, content in out.items():
         put(rel, content)
     put(".autopilot/repo.yaml", render((KIT / "repo/.autopilot/repo.yaml.tmpl").read_text(), subs), user_owned=True)

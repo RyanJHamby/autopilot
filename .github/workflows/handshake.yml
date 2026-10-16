@@ -1,0 +1,17 @@
+# autopilot-managed thin caller. The logic lives in the pinned kit; change it by bumping the sha below (a PR you merge).
+name: handshake
+
+on:
+  pull_request:
+    paths: ["specs/**"]
+
+permissions: {}
+
+jobs:
+  handshake:
+    permissions:
+      contents: read
+    uses: RyanJHamby/autopilot-kit/.github/workflows/handshake.yml@cd5de2361f468fa72390339d6849cf43c3922df5
+    with:
+      kit_repo: RyanJHamby/autopilot-kit
+      kit_ref: cd5de2361f468fa72390339d6849cf43c3922df5

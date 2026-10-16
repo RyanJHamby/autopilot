@@ -104,3 +104,7 @@ control-plane scaffold (apps/control-plane): Next 16 PWA, read-only Portfolio pa
 ## 2026-10-16 10:59 EDT (at 38aa305)
 
 control-plane schema (supabase/migrations/0001_core.sql): orgs/members/projects/grants/runs/audit with RLS and can(project, action); validated in pglite (outsider sees nothing, grant-gated lever updates with CHECK bounds, no self-grant, owner-only append-only audit, no column can loosen a guardrail). GitHub App manifest drafted (no contents write, no workflows/admin/secrets); not registered.
+
+## 2026-10-16 11:06 EDT (at 3edb21f)
+
+Lever write path (control-plane lib/levers.ts): requested change -> plan. Safe levers become repo variables, guardrail keys (auto_merge_classes, protected paths, comms) never do (owner gets a PR plan, others rejected), max_open_prs above the floor of 3 needs a PR, only owner can start a project, bounds/types enforced. Gate now honors AUTOPILOT_HOLD_UNTIL (owner pause, fails to the hold). Kit not republished yet.

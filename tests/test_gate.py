@@ -126,3 +126,14 @@ def test_dispatch_skips_held_issue():
 
     n = gate.cmd_dispatch({"mode": "standard", "tier": "A"}, 5, gh=gh, run=lambda *a: fired.append(a), sleep=lambda s: None)
     assert n == 0 and not fired
+
+
+def test_owner_hold_blocks_until_it_expires():
+    import datetime as dt
+
+    now = dt.datetime(2026, 10, 16, 15, tzinfo=dt.timezone.utc)
+    cfg = {"tier": "A", "mode": "standard", "hold_until": "2026-10-16T21:00:00Z"}
+    d = gate.decide(cfg, [], 0, role="implementer", now=now)
+    assert not d.allow and "hold" in d.reason
+    cfg["hold_until"] = "2026-10-16T10:00:00Z"
+    assert gate.decide(cfg, [], 0, role="implementer", now=now).allow

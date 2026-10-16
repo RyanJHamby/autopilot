@@ -764,6 +764,53 @@ def cmd_report(ns: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_digest(ns: argparse.Namespace) -> int:
+    """Read-only: markdown summary of the last 24h across enabled repos. Uses gh list/get only; calls no model."""
+    import datetime as dt
+
+    from autopilot import digest
+
+    pf = load_portfolio()
+    now = dt.datetime.now(dt.timezone.utc)
+    fields = "number,title,headRefName,state,isDraft,url,mergedAt"
+    summaries, statuses = [], {}
+    for name, e in pf["repos"].items():
+        if not e.get("enabled"):
+            continue
+        slug = _slug(name, pf["owner"])
+
+        def gh(*args: str) -> subprocess.CompletedProcess:
+            return subprocess.run(["gh", *args], capture_output=True, text=True)
+
+        p = gh("pr", "list", "-R", slug, "--state", "all", "--limit", "100", "--json", fields)
+        r = gh(
+            "run",
+            "list",
+            "-R",
+            slug,
+            "--workflow",
+            "agent-exec.yml",
+            "--limit",
+            "50",
+            "--json",
+            "databaseId,conclusion,createdAt,displayTitle",
+        )
+        v = gh("variable", "get", "AUTOPILOT_PAUSED", "-R", slug)
+        summaries.append(
+            digest.summarize(
+                name,
+                json.loads(p.stdout or "[]") if p.returncode == 0 else [],
+                json.loads(r.stdout or "[]") if r.returncode == 0 else [],
+                now,
+            )
+        )
+        statuses[name] = digest.repo_status(e, v.returncode == 0 and v.stdout.strip() == "true", now)
+        if p.returncode or r.returncode:
+            statuses[name] = "cannot read GitHub" if statuses[name] == "ok" else statuses[name] + " (cannot read GitHub)"
+    print(digest.render(summaries, statuses, now), end="")
+    return 0
+
+
 def cmd_retro(ns: argparse.Namespace) -> int:
     """Read-only: why did agent work fail to land? Prints an evidence packet; writes nothing, calls no model."""
     import datetime as dt
@@ -1019,6 +1066,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--days", type=int, default=14)
     p.add_argument("--min-clean", type=int, default=10, help="clean merges before suggesting auto-merge for a class")
     p.set_defaults(fn=cmd_report)
+    p = sub.add_parser("digest", help="read-only markdown summary of the last 24h across enabled repos (no model)")
+    p.set_defaults(fn=cmd_digest)
     p = sub.add_parser("retro", help="read-only evidence packet: why agent runs/PRs failed to land")
     p.add_argument("--days", type=int, default=14)
     p.add_argument("--min-count", type=int, default=2)

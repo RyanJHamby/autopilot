@@ -483,3 +483,17 @@ def test_export_state_shape():
     r = {x["name"]: x for x in out["repos"]}
     assert r["stencil"]["hold_until"] and r["stencil"]["priority"] == 8
     assert all(set(x) == {"name", "tier", "mode", "enabled", "priority", "hold_until", "public"} for x in out["repos"])
+
+
+def test_state_sql_is_idempotent_and_quotes():
+    import datetime as dt
+
+    st = cli.export_state(cli.load_portfolio(), dt.datetime(2026, 10, 16, tzinfo=dt.timezone.utc))
+    sql = cli.state_sql(st)
+    assert sql.count("insert into projects") == len(st["repos"])
+    assert "on conflict (org_id, repo) do update" in sql and "'RyanJHamby/stencil'" in sql
+    st["repos"][0]["name"] = "x'; drop table projects; --"
+    import pytest
+
+    with pytest.raises(SystemExit):
+        cli.state_sql(st)

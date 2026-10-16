@@ -582,10 +582,40 @@ def export_state(pf: dict, now) -> dict:
     }
 
 
+OWNER_UUID = "00000000-0000-0000-0000-000068158512"  # stable stand-in id for the owner until Supabase Auth is used
+
+
+def state_sql(state: dict) -> str:
+    """Idempotent upsert of the portfolio into the control-plane database (ids/values are validated, not interpolated blindly)."""
+
+    def lit(v: str) -> str:
+        return "'" + v.replace("'", "''") + "'"
+
+    out = [
+        f"insert into orgs(id, name, owner_id) values ({lit(OWNER_UUID)}, {lit(state['owner'])}, {lit(OWNER_UUID)}) on conflict (id) do nothing;",
+        f"insert into members(org_id, user_id, role) values ({lit(OWNER_UUID)}, {lit(OWNER_UUID)}, 'owner') on conflict do nothing;",
+    ]
+    for r in state["repos"]:
+        if not re.fullmatch(r"[\w.-]+", r["name"]) or r["tier"] not in "ABC" or r["mode"] not in PF_KEYS["mode"]:
+            raise SystemExit(f"refusing to seed odd repo entry: {r['name']}")
+        hold = lit(r["hold_until"]) if r["hold_until"] else "null"
+        out.append(
+            "insert into projects(org_id, repo, tier, mode, enabled, priority, hold_until, is_public) values "
+            f"({lit(OWNER_UUID)}, {lit(state['owner'] + '/' + r['name'])}, {lit(r['tier'])}, {lit(r['mode'])}, "
+            f"{str(r['enabled']).lower()}, {int(r['priority'])}, {hold}, {str(r['public']).lower()}) "
+            "on conflict (org_id, repo) do update set tier=excluded.tier, mode=excluded.mode, enabled=excluded.enabled, "
+            "priority=excluded.priority, hold_until=excluded.hold_until, is_public=excluded.is_public;"
+        )
+    return "\n".join(out)
+
+
 def cmd_export_state(ns: argparse.Namespace) -> int:
     import datetime as dt
 
     out = export_state(load_portfolio(), dt.datetime.now(dt.timezone.utc))
+    if ns.sql:
+        print(state_sql(out))
+        return 0
     dest = Path(ns.dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(out, indent=2) + "\n")
@@ -766,6 +796,7 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_pick)
     p = sub.add_parser("export-state", help="write the portfolio snapshot the control-plane UI reads")
     p.add_argument("dest", nargs="?", default=str(ROOT / "apps/control-plane/data/state.json"))
+    p.add_argument("--sql", action="store_true", help="print the idempotent seed SQL instead of writing the file")
     p.set_defaults(fn=cmd_export_state)
     p = sub.add_parser("kit-export", help="assemble the public shared-kit tree in a new directory (no push)")
     p.add_argument("dest")

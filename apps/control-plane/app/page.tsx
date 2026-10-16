@@ -1,24 +1,13 @@
 import { redirect } from "next/navigation";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { currentSession } from "../lib/session";
-import { ranked, share, status, type State } from "../lib/portfolio";
+import { ranked, share, status } from "../lib/portfolio";
+import { loadState } from "../lib/store";
 
 export const dynamic = "force-dynamic";
 
-// The snapshot names private repos, so it is NOT bundled or deployed (see .vercelignore). Deployed instances show
-// an empty portfolio until the data comes from the database.
-function loadState(): State {
-  try {
-    return JSON.parse(readFileSync(join(process.cwd(), "data", "state.json"), "utf8")) as State;
-  } catch {
-    return { generated_at: new Date().toISOString(), owner: "(no snapshot)", global_runs_per_day: 0, repos: [] };
-  }
-}
-
 export default async function Portfolio() {
   if (!(await currentSession())) redirect("/login"); // defense in depth behind proxy.ts
-  const s = loadState();
+  const s = await loadState();
   const now = new Date();
   const repos = ranked(s.repos, now);
   return (

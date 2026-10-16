@@ -25,7 +25,7 @@ jobs:
       issues: write
       id-token: write
       actions: read
-    uses: RyanJHamby/autopilot-kit/.github/workflows/exec.yml@f3402ce1aec5dffcb5a6fdffd534bc519bcc15e6
+    uses: RyanJHamby/autopilot-kit/.github/workflows/exec.yml@c5fe8670f9b09a8d55ad369a36eaeb02b3d81497
     with:
       issue: ${{ inputs.issue }}
       model: ${{ inputs.model }}
@@ -33,6 +33,6 @@ jobs:
       max_turns: ${{ inputs.max_turns }}
       hard: ${{ inputs.hard }}
       kit_repo: RyanJHamby/autopilot-kit
-      kit_ref: f3402ce1aec5dffcb5a6fdffd534bc519bcc15e6
+      kit_ref: c5fe8670f9b09a8d55ad369a36eaeb02b3d81497
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

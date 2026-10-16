@@ -4,18 +4,18 @@
     ".autopilot/CONTRACT.md": "22b346bd562bb5190d00ff6566440a577cfeec2f78a0f043e1d1587115a3ad3f",
     ".claude/agents/auditor.md": "24d0f543a886a773a6374ac80665015ca8d9b0c2015785407c0f56175754347e",
     ".claude/agents/fixer.md": "3aa76c42071804e19966a40757298e8f22e58d62adfbc495042ae9eba4403d9f",
-    ".claude/agents/implementer.md": "953d120ed4604b46dc91840f36ea3c510236fd4175e7b3de507def380881765b",
+    ".claude/agents/implementer.md": "89d48cb6d6b6f72041c07ec015f908049974748dae70a08fc1c2abe1a2388174",
     ".claude/agents/reviewer.md": "b87d59f6e3d49ef01707f818f7deb67cd80371146d62af1abf3989e930bbdcbd",
     ".claude/agents/triage.md": "56358627525211c4db2212d7faae64e8f32de0fa0e272fee221540a8411b4bd8",
     ".claude/settings.json": "5eaa552ee2967595ba19d8954cf247341ddc06b64107e47ae5a121b979edde49",
     ".github/CODEOWNERS": "b87cede95921365da3af85df8e3cffce67decaa08bd19ee5ee1fd812bac07e1c",
     ".github/ISSUE_TEMPLATE/agent-task.md": "9c1d25f7995517b1f8286fa0d5342b873c2dbf94eef99eff22cb6100d92852e4",
     ".github/pull_request_template.md": "6b1c5e0f7e6a2bb50068c4b710f147ec9f8a0d251eac53ad9619bfeefcfa1249",
-    ".github/workflows/agent-dispatch.yml": "b6412ed75d732d82bb7e5b834ea259d8010154c223a25a8f8e8bae04e99d37cf",
-    ".github/workflows/agent-exec.yml": "81c1a4ca87632a441c0032ad9ce0942120e791056ac93c6fb4198e0fc4fbd459",
-    ".github/workflows/automerge.yml": "78c600e93b6900bd73b76456319f6032cf801c6cd8a67ea66060fd7cd8434989",
-    ".github/workflows/guard.yml": "22e919a1f031a2dd46d7903b38cd98b9b7373fd9f2d49b0bec9068862b852caa",
-    ".github/workflows/handshake.yml": "021165c04a4caaeda7ddced8abd5b6e5e45a91e04761a13b3259f9fa45e7af64"
+    ".github/workflows/agent-dispatch.yml": "fb275e7e283e931c6f427c7ffa1756822237c0547290eda1a7de66733b712210",
+    ".github/workflows/agent-exec.yml": "0488e86f3ffb162b51754c750046dd73c232d72fbcfee5bda86aed80be2e0983",
+    ".github/workflows/automerge.yml": "ae9810298c4a66c36940476ba4853d2d919a8024f92aebd50456ac4526cf684d",
+    ".github/workflows/guard.yml": "83ce9501a4c7873997c5cf112ad8399df267fc3a94e0f92cb3a307d618bcdb09",
+    ".github/workflows/handshake.yml": "2ce76647aace7ab8e2051d533a0d1698e3832a11258ff710d2a018eb2461bd9a"
   },
   "kit_version": "0.1.0"
 }

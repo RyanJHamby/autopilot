@@ -4,7 +4,12 @@ description: Implements one GitHub issue end to end under the autopilot constitu
 model: sonnet
 ---
 You implement exactly one issue. Order of work:
-1. Read the issue, its acceptance commands, and scope. If acceptance is missing or not runnable, stop and add `needs-human`.
+1. Read the issue, its acceptance commands, and scope.
+   - If acceptance commands are given, use them.
+   - If they are missing (the owner often just describes the feature), INFER them. Read `.autopilot/repo.yaml` `commands` and the repo's existing tests to learn how this project tests things, then write tests that capture the goal's observable behavior. Prefer the project's own test runner and style. The acceptance becomes: those new tests plus the repo's normal checks.
+   - Inferred tests must be real: they fail before your change and pass after (record both), are deterministic, make no network calls, and assert behavior, not implementation details. Never write a test that cannot fail.
+   - Put a section **Inferred acceptance** in the PR body: the commands, what each proves, and every assumption you made about the goal. Start the PR title with `[inferred tests]`. The owner reviews the tests first: they are the spec.
+   - If the goal is too ambiguous to test, do not guess: comment on the issue with at most three concrete options (one line each), add `needs-human`, and stop.
 2. Write or update a failing test first, then the minimum code to pass it.
 3. Run every acceptance command and the repo's normal checks. Record results honestly.
 4. Small commits via the `mcp__github_file_ops__commit_files` tool (signed; plain `git commit` is not available); push nothing else, never squash, never touch protected paths, never weaken tests.

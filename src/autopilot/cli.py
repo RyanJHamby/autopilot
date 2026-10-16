@@ -623,6 +623,42 @@ def cmd_export_state(ns: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report(ns: argparse.Namespace) -> int:
+    """Read-only outcome scorecard for enabled, un-held repos (what merged, what was rejected, how fast)."""
+    import datetime as dt
+
+    from autopilot import picker, report
+
+    pf = load_portfolio()
+    now = dt.datetime.now(dt.timezone.utc)
+    since = now - dt.timedelta(days=ns.days)
+    fields = "number,title,body,headRefName,state,createdAt,mergedAt,closedAt,labels"
+    print(f"agent PR outcomes, last {ns.days}d")
+    print(f"{'repo':24} {'opened':6} {'merged':6} {'closed':6} {'open':4} {'revert':6} {'rate':5} {'med h':6}")
+    for name, e in pf["repos"].items():
+        if not e.get("enabled") or e.get("mode") == "dormant" or picker.held(e, now):
+            continue
+        r = subprocess.run(
+            ["gh", "pr", "list", "-R", _slug(name, pf["owner"]), "--state", "all", "--limit", "200", "--json", fields],
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode:
+            print(f"{name:24} (cannot read)")
+            continue
+        c = report.scorecard(json.loads(r.stdout or "[]"), since=since)
+        rate = "-" if c["merge_rate"] is None else f"{c['merge_rate']:.0%}"
+        med = "-" if c["median_hours_to_merge"] is None else str(c["median_hours_to_merge"])
+        print(
+            f"{name:24} {c['opened']:<6} {c['merged']:<6} {c['closed_unmerged']:<6} {c['open']:<4} {c['reverted']:<6} {rate:5} {med:6}"
+        )
+        for cls, v in c["by_class"].items():
+            print(f"    {cls}: {v['merged']} merged, {v['reverted']} reverted")
+        for cls in report.promotion_candidates(c, [], min_clean=ns.min_clean):
+            print(f"    -> consider enabling auto-merge for '{cls}' (clean merges). Your call; it is a PR.")
+    return 0
+
+
 def scan_suggestions(repos: list[dict], pf: dict, now) -> list[dict]:
     """Read-only triage of an owner's repos. Tier A is a human decision, so it is never suggested."""
     import datetime as dt
@@ -794,6 +830,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--reserve", type=int, default=0, help="runs to keep back for your interactive use")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_pick)
+    p = sub.add_parser("report", help="read-only outcome scorecard of agent PRs (merge rate, reverts, speed)")
+    p.add_argument("--days", type=int, default=14)
+    p.add_argument("--min-clean", type=int, default=10, help="clean merges before suggesting auto-merge for a class")
+    p.set_defaults(fn=cmd_report)
     p = sub.add_parser("export-state", help="write the portfolio snapshot the control-plane UI reads")
     p.add_argument("dest", nargs="?", default=str(ROOT / "apps/control-plane/data/state.json"))
     p.add_argument("--sql", action="store_true", help="print the idempotent seed SQL instead of writing the file")

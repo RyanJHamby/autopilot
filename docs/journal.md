@@ -148,3 +148,7 @@ Webhook verified live: GitHub deliveries 401 until the secret was reset on both 
 ## 2026-10-16 12:33 EDT (at e3bd8b3)
 
 Pause/Resume now give feedback: pressed state, in-flight label, saved/err flash; paused persisted (migration 0005) and shown as a 'paused' status. Found drillpad-workspace AUTOPILOT_PAUSED=true from Ryan's test click; DB synced to match, he must press Resume.
+
+## 2026-10-16 12:35 EDT (at 52a0b71)
+
+ap report: read-only outcome scorecard from GitHub PR history (opened/merged/closed/reverted, merge rate, median hours to merge, per auto-merge class) plus a deterministic promotion suggester (>=10 clean merges, 0 reverts, class not yet enabled -> propose to owner as a PR). First step of the self-improvement loop: measurement before any tuning. Skips dormant and held repos.

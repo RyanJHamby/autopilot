@@ -579,3 +579,10 @@ def test_sensitive_names_are_whole_stems_not_substrings():
     ]:
         assert cli._sensitive_name(bad) or bad == "medical.pdf", bad
     assert cli._sensitive_name("medical.pdf")
+
+
+def test_implementer_infers_acceptance_instead_of_stopping():
+    role = (cli.KIT / "agents/implementer.md").read_text()
+    assert "INFER" in role and "Inferred acceptance" in role and "[inferred tests]" in role
+    assert "stop and add `needs-human`" not in role.split("2. Write")[0]
+    assert "infer them" in (cli.KIT / "workflows/exec.yml").read_text()

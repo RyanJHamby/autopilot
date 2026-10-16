@@ -1,7 +1,7 @@
 import { appJwt, installationToken, repoInstallationId } from "../../../lib/githubApp";
 import { sameOriginJson } from "../../../lib/origin";
 import { currentSession } from "../../../lib/session";
-import { issueBody, issueTitle, screen, type TaskInput } from "../../../lib/task";
+import { INFERRED_LABEL, issueBody, issueTitle, screen, type TaskInput } from "../../../lib/task";
 
 export const runtime = "nodejs";
 
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     const res = await fetch(`https://api.github.com/repos/${repo}/issues`, {
       method: "POST",
       headers: { Authorization: `Bearer ${tok}`, Accept: "application/vnd.github+json", "User-Agent": "autopilot-control" },
-      body: JSON.stringify({ title: issueTitle(task.goal), body: issueBody(task), labels: ["agent-ready", "from-app"] }),
+      body: JSON.stringify({ title: issueTitle(task.goal), body: issueBody(task), labels: task.acceptance.length ? ["agent-ready", "from-app"] : ["agent-ready", "from-app", INFERRED_LABEL] }),
     });
     if (!res.ok) return Response.json({ created: false, problems: [`GitHub refused (${res.status})`] }, { status: 502 });
     const issue = (await res.json()) as { number: number; html_url: string };

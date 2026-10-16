@@ -60,6 +60,16 @@ protected paths, test weakening, size) run from the base branch copy; branch rul
 - Deny layer isolated: in a throwaway clone with no constitution and the repo's real `.claude/settings.json`, an Edit of `.github/workflows/ci.yml`, a read of `.env`, a `curl`, and `git push --force` were all denied by the settings; the tree was unchanged. Still untested live in Actions: the branch ruleset and CODEOWNERS under a complying agent (they apply to merging, which stays with Ryan).
 - Real-run bugs found and fixed, in order: exec skipped for bot actor; gate counted skipped runs; action rejects bot actor; blanket `mcp__*` deny blocked the signed-commit tool; signed commits targeted `main` (fixed by `CLAUDE_BRANCH`).
 
+## Shared kit (central mode)
+`ap init <clone> --kit OWNER/REPO@<sha>` writes thin caller workflows that pin a public kit repo
+(`RyanJHamby/autopilot-kit`: reusable workflows + the guard/gate/handshake/config scripts) instead of copying them.
+`ap kit-export <new dir>` assembles that tree and refuses any personal string. In central mode the repo keeps only
+its config, constitution, agent roles and `.claude/settings.json`; upgrading is a PR that bumps the sha. Reusable-workflow
+jobs report as `guard / guard`, so apply the ruleset with `ap ruleset <repo> --central`.
+Validated on a private sandbox repo: guard and handshake pass on a PR; dispatch fires exec; exec runs checkout, kit fetch,
+config, branch creation and cleanup, and stops at the agent step only because the Claude App was not installed there.
+Not yet validated live: the setup-node branch in central mode and a full agent run through the reusable workflow.
+
 ## Not built yet
 Triage/fixer/reviewer/auditor workflows (role files exist), the `autopilot-hq` daily digest, `ap upgrade` as a PR.
 

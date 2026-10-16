@@ -38,11 +38,11 @@ export default function NewTask({ repos }: { repos: string[] }) {
           {repos.map((r) => <option key={r}>{r}</option>)}
         </select>
       </label>
-      <label>Goal (what is true when this is done?)
-        <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={3} style={{ width: "100%" }} required />
+      <label>What do you want? (type or dictate it)
+        <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={5} style={{ width: "100%" }} required />
       </label>
-      <label>Acceptance commands, one per line (must exit 0 when done)
-        <textarea value={acc} onChange={(e) => setAcc(e.target.value)} rows={3} placeholder="npm test" style={{ width: "100%", fontFamily: "ui-monospace, monospace" }} required />
+      <label>Tests / acceptance commands (optional, one per line). Leave empty and the agent writes the tests and you review them first
+        <textarea value={acc} onChange={(e) => setAcc(e.target.value)} rows={3} placeholder="Optional, e.g. npm test" style={{ width: "100%", fontFamily: "ui-monospace, monospace" }} />
       </label>
       <button disabled={busy || !repo} className="btn on">{busy ? "Checking…" : "Queue task"}</button>
       {out && (

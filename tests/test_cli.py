@@ -590,3 +590,10 @@ def test_uv_detected_and_exec_prepares_python_deps(tmp_path):
     wf = (cli.KIT / "workflows/exec.yml").read_text()
     assert "uv sync --frozen" in wf and "uv==0.12.16" in wf
     assert wf.index("uv sync --frozen") < wf.index("claude-code-action@")
+
+
+def test_implementer_infers_acceptance_instead_of_stopping():
+    role = (cli.KIT / "agents/implementer.md").read_text()
+    assert "INFER" in role and "Inferred acceptance" in role and "[inferred tests]" in role
+    assert "stop and add `needs-human`" not in role.split("2. Write")[0]
+    assert "infer them" in (cli.KIT / "workflows/exec.yml").read_text()

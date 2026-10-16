@@ -5,7 +5,7 @@
  */
 export interface TaskInput {
   goal: string;
-  acceptance: string[];
+  acceptance: string[]; // optional: empty means the agent proposes the tests (the owner reviews them first)
   scope?: string[];
 }
 
@@ -30,7 +30,6 @@ export function screen(t: TaskInput): Screen {
   const goal = t.goal.trim();
   if (goal.length < 15) problems.push("goal is too short to be checkable");
   if (goal.length > 1500) problems.push("goal is too long; split it into smaller tasks");
-  if (t.acceptance.length === 0) problems.push("needs at least one acceptance command");
   if (t.acceptance.length > 6) problems.push("at most 6 acceptance commands");
   for (const c of t.acceptance) {
     const cmd = c.trim();
@@ -48,14 +47,17 @@ export function issueTitle(goal: string): string {
   return first.length > 80 ? first.slice(0, 77) + "..." : first;
 }
 
+export const INFERRED_LABEL = "acceptance-inferred";
+
 export function issueBody(t: TaskInput): string {
   const scope = t.scope?.length ? `\n## Scope\n${t.scope.map((s) => `- \`${s}\``).join("\n")}\n` : "";
   return [
     "## Goal",
     t.goal.trim(),
     "",
-    "## Acceptance (commands that must exit 0)",
-    ...t.acceptance.map((c) => `- [ ] \`${c.trim()}\``),
+    ...(t.acceptance.length
+      ? ["## Acceptance (commands that must exit 0)", ...t.acceptance.map((c) => `- [ ] \`${c.trim()}\``)]
+      : ["## Acceptance", "_Not given. The agent infers tests that capture this goal, states its assumptions in the PR, and the owner reviews the tests first._"]),
     scope,
     "_Created from the autopilot app._",
   ].join("\n");

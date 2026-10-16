@@ -410,6 +410,7 @@ def test_kit_export_tree_and_leak_check(tmp_path):
         ".github/workflows/handshake.yml",
         "README.md",
         "runtime/config.py",
+        "runtime/demote.py",
         "runtime/gate.py",
         "runtime/guard.py",
         "runtime/handshake.py",

@@ -84,3 +84,7 @@ P2 start: kit/runtime/tier.py, a deterministic PR risk classifier (tier 2 protec
 ## 2026-10-16 10:39 EDT (at 3a0d592)
 
 Tier wired in informationally: guard workflow now runs tier.py from the base branch's merge-policy.yaml (template ships empty via ap init) and writes the result to the job summary. Nothing merges on it yet; the merge App and per-class demotion are next.
+
+## 2026-10-16 10:41 EDT (at d7c383b)
+
+demote.py: stateless per-class circuit breaker for tier-0 auto-merge (revert or red main within 30d demotes only that class; owner re-adding the class in merge-policy clears it). Pure logic; the merger will feed it from GitHub history.

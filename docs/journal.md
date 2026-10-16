@@ -64,3 +64,7 @@ ap scan: read-only repo triage (fresh->B, warm->C dormant; forks, archived, stal
 ## 2026-10-16 10:15 EDT (at fb189b3)
 
 Shared kit (v2 P1): reusable workflow_call workflows + thin callers pinned by sha, runtime/config.py reads repo.yaml for node/allowed tools, ap init --kit, ap kit-export with a leak check. Decision: kit repo is PUBLIC (private scripts can't be fetched by other repos without an App token). Reusable-workflow job checks report as 'guard / guard', so ap ruleset --central. NOT yet validated live: vars context inside called workflows, the pinned-sha fetch, and the check name.
+
+## 2026-10-16 10:19 EDT (at 3243a5f)
+
+Central kit validated on private sandbox repo (RyanJHamby/autopilot-sandbox): guard / guard and handshake pass; dispatch fired exec; exec ran through branch creation and cleanup, failed only at 'Claude Code is not installed' (expected, App not on sandbox). vars context, pinned-sha fetch, config outputs and the check name all work in called workflows. Kit published public at RyanJHamby/autopilot-kit @ 1ac281b (noreply author email). Sandbox AUTOPILOT_ENABLED set back to false.

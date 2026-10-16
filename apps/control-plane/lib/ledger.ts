@@ -36,7 +36,7 @@ export function toRunRow(event: string, payload: any): RunRow | null {
   const title: string = r.display_title ?? "";
   const hard = title.includes("[hard]");
   const model = hard ? "opus" : "sonnet";
-  const turns = hard ? 30 : 25;
+  const turns = hard ? 45 : 40;
   const c = r.conclusion;
   const outcome = c === "success" ? "success" : c === "skipped" ? "skipped" : c === "cancelled" ? "cancelled" : "failure";
   const m = /#(\d+)/.exec(title);

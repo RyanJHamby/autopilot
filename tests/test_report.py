@@ -60,14 +60,14 @@ def test_promotion_needs_clean_streak_and_not_already_enabled():
 
 
 def test_run_points_mirror_ledger_weights():
-    # ledger.ts: sonnet 3 x 25 turns = 75; "[hard]" runs are opus 15 x 30 turns = 450; skipped/cancelled cost 0
+    # ledger.ts: sonnet 3 x 40 turns = 120; "[hard]" runs are opus 15 x 45 turns = 675; skipped/cancelled cost 0
     runs = [
         {"displayTitle": "agent #5", "conclusion": "success"},
         {"displayTitle": "agent #6 [hard]", "conclusion": "failure"},
         {"displayTitle": "agent #7", "conclusion": "skipped"},
         {"displayTitle": "agent #8", "conclusion": "cancelled"},
     ]
-    assert report.run_points(runs) == 75 + 450
+    assert report.run_points(runs) == 120 + 675
 
 
 def test_points_per_merged_counts_only_agent_merges():
@@ -75,5 +75,5 @@ def test_points_per_merged_counts_only_agent_merges():
     open_pr = pr(4, state="OPEN", merged=False)
     prs = [pr(1), pr(2), pr(3, head="feature/x"), open_pr]
     since = NOW - dt.timedelta(days=7)
-    assert report.points_per_merged(runs, prs, since=since) == 75.0
+    assert report.points_per_merged(runs, prs, since=since) == 120.0
     assert report.points_per_merged(runs, [open_pr], since=since) is None

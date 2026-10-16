@@ -56,7 +56,7 @@ def scorecard(prs: list[dict], *, since: dt.datetime) -> dict:
 
 # Same weights and turn caps as apps/control-plane/lib/ledger.ts. Upper-bound estimates: the Max pool exposes no tokens.
 _WEIGHT = {"sonnet": 3, "opus": 15}
-_TURNS = {"sonnet": 25, "opus": 30}
+_TURNS = {"sonnet": 40, "opus": 45}
 
 
 def run_points(runs: list[dict]) -> int:

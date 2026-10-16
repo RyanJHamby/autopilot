@@ -15,9 +15,9 @@ defaults:
     default: medium
     hard: high
   max_turns:
-    standard: 25
+    standard: 40
     yolo: 60
-    hard: 30
+    hard: 45
     triage: 5
     reviewer: 10
   runs_per_day:     # per repo, rolling 24h; sum over wave 1 stays under the global cap

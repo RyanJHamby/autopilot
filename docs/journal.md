@@ -164,3 +164,8 @@ Backlog: 5 agent-safe specs (report-cost, ap-digest, ap-upgrade, inbox-page, sco
 ## 2026-10-16 12:48 EDT (at f5328e7)
 
 Dogfooding prep: autopilot has a private remote (RyanJHamby/autopilot), CI (ruff, pytest, control-plane typecheck+tests; green), BACKLOG.md and five agent-safe specs. Scaffolded onto itself in central mode (PR #1, not enabled). New: guard.extra_protected now flows into CODEOWNERS and Edit-deny rules, so agents may improve reports/digests/UI/tests but never kit runtime, workflows, policy, auth/webhook/lever code, API routes or migrations. docs/journal.md tripped the sensitive-name check (false positive, overridden on purpose).
+## 2026-10-16 patchcheck
+patchcheck.py: the gate for the vendor-neutral commit path (P5). A runner only edits a worktree; a trusted job makes a patch that must pass this (no symlinks/submodules/mode or binary changes/renames, no path tricks or .git internals) plus all guard rules before a signed commit is created. Pure and tested; not wired to a workflow or runner yet.
+
+## 2026-10-16 runner interface
+runner.py: Runner protocol (untrusted; edits a worktree only) + trusted pipeline: git builds the patch against the BASE commit recorded before the run (so a runner that commits its own changes cannot hide them), patchcheck gates it, usage passes through when a runner reports tokens. Caught in my own test: diffing against HEAD would have missed a runner-made commit touching a protected path followed by an innocuous edit; fixed before merge. Stub-runner tests only; no real second runner yet.

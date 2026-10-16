@@ -405,6 +405,87 @@ def cmd_init(ns: argparse.Namespace) -> int:
     return 0
 
 
+CALLER_PIN = re.compile(r"uses: ([\w.-]+/[\w.-]+)/\.github/workflows/[\w.-]+@([0-9a-f]{40})")
+
+
+def _render_callers(kit: tuple[str, str]) -> dict[str, str]:
+    """The caller workflows `ap init --kit` would write for this pin (rendered by init_repo into a scratch dir)."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="ap-upgrade-") as td:
+        scratch = Path(td)
+        init_repo(scratch, "B", "standard", central=kit)
+        rels = [f".github/workflows/{f.name}" for f in sorted((KIT / "callers").glob("*.yml"))]
+        return {rel: (scratch / rel).read_text() for rel in rels}
+
+
+def cmd_upgrade(ns: argparse.Namespace) -> int:
+    """Bump the pinned kit sha in an already-central repo's caller workflows, and nothing else. Refuses if any caller differs
+    from what `ap init --kit` would write for the current pin (a hand edit must never be silently overwritten)."""
+    repo = Path(ns.repo).expanduser().resolve()
+    if not (repo / ".git").exists():
+        print(f"{repo} is not a git clone", file=sys.stderr)
+        return 1
+    m = re.fullmatch(r"([\w.-]+/[\w.-]+)@([0-9a-f]{40})", ns.kit)
+    if not m:
+        print("--kit must look like OWNER/REPO@<40-hex commit sha>", file=sys.stderr)
+        return 1
+    new = (m.group(1), m.group(2))
+    names = sorted(f.name for f in (KIT / "callers").glob("*.yml"))
+    current: dict[str, str] = {}
+    pins: set[tuple[str, str]] = set()
+    for n in names:
+        p = repo / ".github" / "workflows" / n
+        text = p.read_text() if p.exists() else ""
+        found = set(CALLER_PIN.findall(text))
+        if not found:
+            print(
+                f"{repo} is not a central-mode repo (no pinned kit caller in .github/workflows/{n}); use `ap init --kit`",
+                file=sys.stderr,
+            )
+            return 1
+        current[f".github/workflows/{n}"] = text
+        pins |= found
+    if len(pins) != 1:
+        print(
+            f"callers disagree on the kit pin ({', '.join(f'{k}@{s[:7]}' for k, s in sorted(pins))}); fix by hand",
+            file=sys.stderr,
+        )
+        return 1
+    old = next(iter(pins))
+    if old[0] != new[0]:
+        print(f"repo is pinned to kit {old[0]}, not {new[0]}; upgrade only bumps the sha", file=sys.stderr)
+        return 1
+    drift = [rel for rel, want in _render_callers(old).items() if current[rel] != want]
+    if drift:
+        print(
+            f"refusing: not what `ap init --kit {old[0]}@{old[1][:7]}` writes (hand-edited?); nothing changed:", file=sys.stderr
+        )
+        for rel in drift:
+            print(f"  {rel}", file=sys.stderr)
+        return 1
+    if old == new:
+        print(f"already on {new[1][:7]}")
+        return 0
+    if not ns.dry_run:
+        if _run("git", "status", "--porcelain", cwd=repo):
+            print("working tree is not clean; commit or stash first", file=sys.stderr)
+            return 1
+        _run("git", "checkout", "-B", "autopilot/upgrade", cwd=repo)
+    changed = _render_callers(new)
+    for rel, text in changed.items():
+        if not ns.dry_run:
+            (repo / rel).write_text(text)
+    print(
+        ("would bump" if ns.dry_run else "bumped") + f" kit {old[1][:7]} -> {new[1][:7]} in {len(changed)} caller(s) in {repo}:"
+    )
+    for rel in changed:
+        print(f"  {rel}")
+    if not ns.dry_run:
+        print("\nNext: review, commit (signed), push, open the PR. Nothing was pushed or changed on GitHub.")
+    return 0
+
+
 def cmd_handshake(ns: argparse.Namespace) -> int:
     sys.path.insert(0, str(KIT / "runtime"))
     import handshake  # type: ignore
@@ -1172,6 +1253,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--allow-sensitive", action="store_true", help="override the personal/secret material check")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_init)
+    p = sub.add_parser(
+        "upgrade", help="bump only the pinned kit sha in a central repo's callers (branch autopilot/upgrade, no push)"
+    )
+    p.add_argument("repo")
+    p.add_argument("--kit", required=True, metavar="OWNER/REPO@SHA")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(fn=cmd_upgrade)
     p = sub.add_parser("handshake", help="lint a spec: ACCEPTED / NEEDS-WORK / REJECTED")
     p.add_argument("specs", nargs="+")
     p.add_argument("--config", default=".autopilot/repo.yaml")

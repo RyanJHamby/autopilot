@@ -108,3 +108,7 @@ control-plane schema (supabase/migrations/0001_core.sql): orgs/members/projects/
 ## 2026-10-16 11:06 EDT (at 3edb21f)
 
 Lever write path (control-plane lib/levers.ts): requested change -> plan. Safe levers become repo variables, guardrail keys (auto_merge_classes, protected paths, comms) never do (owner gets a PR plan, others rejected), max_open_prs above the floor of 3 needs a PR, only owner can start a project, bounds/types enforced. Gate now honors AUTOPILOT_HOLD_UNTIL (owner pause, fails to the hold). Kit not republished yet.
+
+## 2026-10-16 11:09 EDT (at 247423f)
+
+Run ledger ingestion (control-plane): HMAC-verified GitHub webhook -> agent-exec completions -> runs rows (service role, project resolved server-side, unknown repos dropped). run_points is an upper-bound estimate (turn cap x model weight) since the Max pool reports no tokens. Not deployed; needs SUPABASE_* and GITHUB_WEBHOOK_SECRET.

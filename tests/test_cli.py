@@ -361,7 +361,7 @@ KIT_SHA = "a" * 40
 def test_central_init_writes_pinned_callers_and_no_vendored_scripts(tmp_path):
     repo = make_repo(tmp_path, {"package.json": "{}", "package-lock.json": "{}"})
     cli.init_repo(repo, "A", "standard", central=("acme/autopilot-kit", KIT_SHA))
-    for n in ("agent-exec", "agent-dispatch", "guard", "handshake"):
+    for n in ("agent-exec", "agent-dispatch", "guard", "handshake", "automerge"):
         t = (repo / f".github/workflows/{n}.yml").read_text()
         assert "uses: acme/autopilot-kit/.github/workflows/" in t and f"@{KIT_SHA}" in t
         assert "{{" not in t.replace("${{", "")
@@ -404,11 +404,13 @@ def test_central_ruleset_check_name(capsys):
 def test_kit_export_tree_and_leak_check(tmp_path):
     files = cli.export_kit(tmp_path / "kit")
     assert files == [
+        ".github/workflows/automerge.yml",
         ".github/workflows/dispatch.yml",
         ".github/workflows/exec.yml",
         ".github/workflows/guard.yml",
         ".github/workflows/handshake.yml",
         "README.md",
+        "runtime/automerge.py",
         "runtime/config.py",
         "runtime/demote.py",
         "runtime/gate.py",

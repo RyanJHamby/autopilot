@@ -88,3 +88,7 @@ Tier wired in informationally: guard workflow now runs tier.py from the base bra
 ## 2026-10-16 10:41 EDT (at d7c383b)
 
 demote.py: stateless per-class circuit breaker for tier-0 auto-merge (revert or red main within 30d demotes only that class; owner re-adding the class in merge-policy clears it). Pure logic; the merger will feed it from GitHub history.
+
+## 2026-10-16 10:42 EDT (at 9ce5bed)
+
+automerge.py + reusable automerge.yml + caller: merges PRs only if agent/* or dependabot, all checks green, tier.py=0 for an owner-enabled class not demoted (history derived from automerged:<class> labels, revert titles, check-runs on the merge sha). Ships inert (empty merge-policy). Workflow runs on default-branch copy and only diffs PR content. Not yet live-tested.

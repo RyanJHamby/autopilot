@@ -548,6 +548,17 @@ def test_extra_protected_reaches_codeowners_and_deny(tmp_path):
     assert "/kit/runtime/ @" in (repo / ".github/CODEOWNERS").read_text()
 
 
+def test_exec_installs_bubblewrap_before_the_agent_and_keeps_the_scrub():
+    wf = (cli.KIT / "workflows/exec.yml").read_text()
+    assert "bubblewrap" in wf and wf.index("bubblewrap") < wf.index("claude-code-action@")
+    assert 'CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"' in wf
+
+
+def test_exec_fails_loudly_when_the_agent_step_was_skipped():
+    wf = (cli.KIT / "workflows/exec.yml").read_text()
+    assert "id: agent" in wf and "steps.agent.outputs.execution_file == ''" in wf
+
+
 def test_sensitive_names_are_whole_stems_not_substrings():
     for ok in [
         "src/health-checker-circuit.py",

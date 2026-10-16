@@ -170,6 +170,9 @@ patchcheck.py: the gate for the vendor-neutral commit path (P5). A runner only e
 ## 2026-10-16 runner interface
 runner.py: Runner protocol (untrusted; edits a worktree only) + trusted pipeline: git builds the patch against the BASE commit recorded before the run (so a runner that commits its own changes cannot hide them), patchcheck gates it, usage passes through when a runner reports tokens. Caught in my own test: diffing against HEAD would have missed a runner-made commit touching a protected path followed by an innocuous edit; fixed before merge. Stub-runner tests only; no real second runner yet.
 
+## 2026-10-16 first run on the autopilot repo: two kit bugs
+1. Claude Code 2.1.299 refuses to start with CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 unless bubblewrap exists ("Failed to install Claude Code after 3 attempts"). The kit now installs bubblewrap (verified on the runner) rather than disabling the scrub. This would also have failed drillpad-workspace's nightly smoke run.
+2. When the action's workflow validation fails (workflow differs from the default branch) it skips itself and the run still reports success, silently spending a daily budget slot. exec now fails if the step produced no execution file. Consequence: kit/caller changes can only be exercised after they merge to the default branch. Evidence the Claude GitHub App is installed on this repo: the OIDC token exchange succeeded.
 ## 2026-10-16 sensitive-name precision
 First real use of the sensitive-material check on drillpad-workspace flagged interview lessons ('health-checker-circuit.py', '07-secrets-and-key-management.md') because it matched substrings. Now whole file stems only (journal, diary, secrets, credentials, key extensions, .env), so ordinary content passes and dated journals still match. A journal.md still trips it on purpose (dev journals must be a conscious --allow-sensitive).
 

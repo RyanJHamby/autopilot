@@ -52,3 +52,7 @@ Onboarding order-book-engine (public, no CI, nested CMake): ap init only saw roo
 ## 2026-10-16 08:53 EDT (at 09355a7)
 
 Onboarding stencil (Next.js/Supabase/Vercel/Stripe/web-push, existing AGENTS.md+CLAUDE.md+workflows). Found eval-vision.yml spends OPENAI_API_KEY on every PR and runs PR code with secrets: agent PRs could read/spend it. Added detector (init warn, doctor fail), SUBPROCESS_ENV_SCRUB=1 default, dropped npx.
+
+## 2026-10-16 08:55 EDT (at fef15e0)
+
+ap init clobbered stencil's PR template and CODEOWNERS catch-all. Now: existing non-autopilot files are left alone; CODEOWNERS gets a managed block merged into it.

@@ -195,7 +195,9 @@ def test_no_redundant_write_deny_rules_and_push_retries():
     deny = json.loads((cli.ROOT / "policy/deny.json").read_text())["permissions"]["deny"]
     assert not [d for d in deny if d.startswith("Write(")] and "Edit(.github/**)" in deny
     assert "for i in 1 2 3; do git push" in (cli.KIT / "repo/.github/workflows/agent-exec.yml").read_text()
-    assert "Write(.github/**)" not in cli.build_settings({"permissions": {"deny": ["Write(.github/**)"]}}, [])["permissions"]["deny"]
+    assert (
+        "Write(.github/**)" not in cli.build_settings({"permissions": {"deny": ["Write(.github/**)"]}}, [])["permissions"]["deny"]
+    )
 
 
 def test_exec_locks_issue_on_public_repos_before_the_model_runs():
@@ -224,8 +226,16 @@ def _wf(tmp_path, name, body):
 
 
 def test_secret_exposed_workflows_flags_pr_jobs_with_secrets_unless_agent_excluded(tmp_path):
-    _wf(tmp_path, "eval.yml", "on:\n  pull_request:\njobs:\n  a:\n    steps:\n      - run: x\n        env:\n          K: ${{ secrets.OPENAI_API_KEY }}\n")
-    _wf(tmp_path, "safe.yml", "on:\n  pull_request:\njobs:\n  a:\n    if: ${{ !startsWith(github.head_ref, 'agent/') }}\n    env:\n      K: ${{ secrets.OPENAI_API_KEY }}\n")
+    _wf(
+        tmp_path,
+        "eval.yml",
+        "on:\n  pull_request:\njobs:\n  a:\n    steps:\n      - run: x\n        env:\n          K: ${{ secrets.OPENAI_API_KEY }}\n",
+    )
+    _wf(
+        tmp_path,
+        "safe.yml",
+        "on:\n  pull_request:\njobs:\n  a:\n    if: ${{ !startsWith(github.head_ref, 'agent/') }}\n    env:\n      K: ${{ secrets.OPENAI_API_KEY }}\n",
+    )
     _wf(tmp_path, "tokenonly.yml", "on:\n  pull_request:\njobs:\n  a:\n    env:\n      K: ${{ secrets.GITHUB_TOKEN }}\n")
     _wf(tmp_path, "pushonly.yml", "on:\n  push:\njobs:\n  a:\n    env:\n      K: ${{ secrets.DEPLOY }}\n")
     _wf(tmp_path, "agent-exec.yml", "on:\n  pull_request:\nenv: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}\n")
@@ -265,3 +275,39 @@ def test_existing_owner_files_are_kept_and_codeowners_is_merged(tmp_path):
     assert co.startswith("* @me\n/docs/ @someone\n") and "/.github/ @" in co
     cli.init_repo(repo, "A", "standard")  # idempotent: block replaced, not duplicated
     assert (repo / ".github/CODEOWNERS").read_text().count(cli.CO_BEGIN) == 1
+
+
+def _repo(name, **kw):
+    base = {"name": name, "isFork": False, "isArchived": False, "isPrivate": True, "pushedAt": "2026-10-10T00:00:00Z"}
+    return {**base, **kw}
+
+
+def test_scan_suggests_tiers_and_never_tier_a():
+    import datetime as dt
+
+    now = dt.datetime(2026, 10, 16, tzinfo=dt.timezone.utc)
+    pf = {"repos": {"stencil": {"tier": "A"}}, "excluded": ["vllm"]}
+    out = {
+        s["name"]: s
+        for s in cli.scan_suggestions(
+            [
+                _repo("stencil"),
+                _repo("fresh"),
+                _repo("warm", pushedAt="2026-06-01T00:00:00Z"),
+                _repo("old", pushedAt="2025-01-01T00:00:00Z"),
+                _repo("forked", isFork=True),
+                _repo("gone", isArchived=True),
+                _repo("vllm"),
+                _repo("pub", isPrivate=False),
+            ],
+            pf,
+            now,
+        )
+    }
+    assert out["stencil"]["action"] == "managed"
+    assert (out["fresh"]["action"], out["fresh"]["tier"], out["fresh"]["mode"]) == ("add", "B", "standard")
+    assert (out["warm"]["action"], out["warm"]["tier"], out["warm"]["mode"]) == ("add", "C", "dormant")
+    assert out["old"]["action"] == "skip" and "stale" in out["old"]["reason"]
+    assert out["forked"]["action"] == "skip" and out["gone"]["action"] == "skip" and out["vllm"]["action"] == "skip"
+    assert "public" in out["pub"]["reason"] and out["pub"]["mode"] == "dormant"
+    assert all(s["tier"] != "A" for s in out.values() if s["action"] == "add")

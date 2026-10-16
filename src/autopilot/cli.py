@@ -42,7 +42,18 @@ BASE_TOOLS = [
     "Bash(gh issue comment:*)",
     "Bash(gh issue edit:*)",
 ]
-RETIRED = {"Write(.github/**)", "Write(.autopilot/**)", "Write(.claude/**)", "Write(AGENTS.md)", "Write(CLAUDE.md)", "Write(.mcp.json)", "mcp__*", "Bash(git checkout -b agent/*)", "Bash(git commit:*)", "Bash(git push origin agent/*)"}  # kit-owned rules removed from synced repos
+RETIRED = {
+    "Write(.github/**)",
+    "Write(.autopilot/**)",
+    "Write(.claude/**)",
+    "Write(AGENTS.md)",
+    "Write(CLAUDE.md)",
+    "Write(.mcp.json)",
+    "mcp__*",
+    "Bash(git checkout -b agent/*)",
+    "Bash(git commit:*)",
+    "Bash(git push origin agent/*)",
+}  # kit-owned rules removed from synced repos
 STACKS = {  # marker file -> command prefixes
     "pyproject.toml": ["uv run", "uv sync", "pytest", "ruff", "python"],
     "package.json": ["npm test", "npm run"],  # no npx/pnpm: they fetch and run arbitrary registry code
@@ -95,7 +106,7 @@ def setup_steps(repo: Path) -> str:
         ver = m.group(0) if m else ver
     return (
         f"      - uses: actions/setup-node@{SETUP_NODE_SHA} # v4\n"
-        f"        with:\n          node-version: \"{ver}\"\n          cache: npm\n"
+        f'        with:\n          node-version: "{ver}"\n          cache: npm\n'
         "      - name: install dependencies (trusted step; install scripts disabled)\n"
         "        run: npm ci --ignore-scripts\n"
     )
@@ -410,7 +421,9 @@ def cmd_doctor(ns: argparse.Namespace) -> int:
                         print(f"  FAIL {wf.name}: action not pinned to a SHA: {line.strip()}")
                         problems += 1
         for name in secret_exposed_workflows(repo):
-            print(f"  FAIL {name}: uses repo secrets on pull_request with no agent/* exclusion (an agent PR could read or spend them)")
+            print(
+                f"  FAIL {name}: uses repo secrets on pull_request with no agent/* exclusion (an agent PR could read or spend them)"
+            )
             problems += 1
         ci = [f for f in (repo / ".github/workflows").glob("*.yml") if f.name not in AUTOPILOT_WORKFLOWS]
         if ci and not any("push" in f.read_text() for f in ci):
@@ -467,6 +480,49 @@ def cmd_status(ns: argparse.Namespace) -> int:
     return 0
 
 
+def scan_suggestions(repos: list[dict], pf: dict, now) -> list[dict]:
+    """Read-only triage of an owner's repos. Tier A is a human decision, so it is never suggested."""
+    import datetime as dt
+
+    out = []
+    for r in repos:
+        name = r["name"]
+        row = {"name": name, "action": "skip", "tier": "-", "mode": "-", "reason": ""}
+        age = (now - dt.datetime.fromisoformat(r["pushedAt"].replace("Z", "+00:00"))).days if r.get("pushedAt") else 9999
+        if name in pf.get("repos", {}):
+            row.update(action="managed", tier=pf["repos"][name].get("tier", "-"), reason="already in portfolio")
+        elif name in pf.get("excluded", []):
+            row["reason"] = "excluded in portfolio"
+        elif r.get("isFork"):
+            row["reason"] = "fork"
+        elif r.get("isArchived"):
+            row["reason"] = "archived"
+        elif age > 180:
+            row["reason"] = f"stale ({age}d since last push)"
+        else:
+            tier, mode = ("B", "standard") if age <= 30 else ("C", "dormant")
+            row.update(action="add", tier=tier, mode=mode, reason=f"pushed {age}d ago")
+            if not r.get("isPrivate", True):
+                row.update(
+                    mode="dormant", reason=row["reason"] + "; public repo: prompt-injection surface, review before enabling"
+                )
+        out.append(row)
+    return out
+
+
+def cmd_scan(ns: argparse.Namespace) -> int:
+    import datetime as dt
+
+    owner = ns.owner or load_portfolio()["owner"]
+    fields = "name,isFork,isArchived,isPrivate,pushedAt"
+    repos = json.loads(_run("gh", "repo", "list", owner, "--limit", "200", "--json", fields) or "[]")
+    print(f"{'repo':32} {'action':8} {'tier':4} {'mode':9} reason")
+    for s in scan_suggestions(repos, load_portfolio(), dt.datetime.now(dt.timezone.utc)):
+        print(f"{s['name']:32} {s['action']:8} {s['tier']:4} {s['mode']:9} {s['reason']}")
+    print("\nread-only. Add a repo with: ap init <local clone> --tier <T> --mode <M>")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="ap", description=__doc__)
     ap.add_argument("--version", action="version", version=VERSION)
@@ -484,6 +540,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("doctor", help="audit installed repos (local files + gh)")
     p.add_argument("repos", nargs="+")
     p.set_defaults(fn=cmd_doctor)
+    p = sub.add_parser("scan", help="list an owner's repos with suggested tier/mode (read-only)")
+    p.add_argument("--owner")
+    p.set_defaults(fn=cmd_scan)
     p = sub.add_parser("status", help="runs and agent PRs per enabled repo")
     p.set_defaults(fn=cmd_status)
     p = sub.add_parser("ruleset", help="print/apply the branch ruleset")

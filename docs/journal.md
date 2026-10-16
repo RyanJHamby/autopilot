@@ -48,3 +48,7 @@ Found 4/5 wave-1 repos are public; portfolio 'public' flag was unused. Added exe
 ## 2026-10-15 19:20 EDT (at 1523d27)
 
 Onboarding order-book-engine (public, no CI, nested CMake): ap init only saw root markers and ignored repo.yaml commands; fixed both. Added ci.yml (verified build+52 tests locally). Empty tracked .pem in history: size 0 in every commit, no key blocks, no AWS key ids.
+
+## 2026-10-16 08:53 EDT (at 09355a7)
+
+Onboarding stencil (Next.js/Supabase/Vercel/Stripe/web-push, existing AGENTS.md+CLAUDE.md+workflows). Found eval-vision.yml spends OPENAI_API_KEY on every PR and runs PR code with secrets: agent PRs could read/spend it. Added detector (init warn, doctor fail), SUBPROCESS_ENV_SCRUB=1 default, dropped npx.

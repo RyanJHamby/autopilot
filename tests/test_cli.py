@@ -557,3 +557,25 @@ def test_exec_installs_bubblewrap_before_the_agent_and_keeps_the_scrub():
 def test_exec_fails_loudly_when_the_agent_step_was_skipped():
     wf = (cli.KIT / "workflows/exec.yml").read_text()
     assert "id: agent" in wf and "steps.agent.outputs.execution_file == ''" in wf
+
+
+def test_sensitive_names_are_whole_stems_not_substrings():
+    for ok in [
+        "src/health-checker-circuit.py",
+        "lessons/07-secrets-and-key-management.md",
+        "docs/taxonomy.md",
+        "README.md",
+        ".env.example",
+    ]:
+        assert not cli._sensitive_name(ok), ok
+    for bad in [
+        "journal.md",
+        "notes/journal-2026-10.md",
+        "secrets.json",
+        "keys.pem",
+        ".env",
+        ".env.local",
+        "Medical.PDF".lower(),
+    ]:
+        assert cli._sensitive_name(bad) or bad == "medical.pdf", bad
+    assert cli._sensitive_name("medical.pdf")

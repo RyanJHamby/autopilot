@@ -698,3 +698,9 @@ def test_upgrade_dry_run_writes_nothing(tmp_path):
     assert cli.main(["upgrade", str(repo), "--kit", f"{KIT_SLUG}@{NEW_SHA}", "--dry-run"]) == 0
     assert KIT_SHA in (repo / ".github/workflows/guard.yml").read_text()
     assert _git(repo, "branch", "--show-current").strip() == "main"
+
+
+def test_implementer_never_ends_with_a_background_command_running():
+    role = (cli.KIT / "agents/implementer.md").read_text()
+    assert "Never end your turn while a command is still running" in role and "left to CI" in role
+    assert "background" in (cli.KIT / "workflows/exec.yml").read_text()

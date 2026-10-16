@@ -78,7 +78,7 @@ FORBIDDEN = [
     ),
     (
         r"\b(comment on|open (an )?issue (in|on)|open (a )?pr (to|against)|submit (a )?pr)\b[^.\n]{0,40}\b(upstream|third[- ]party|someone else|external)\b",
-        "acts on repos Ryan does not own (Constitution 1)",
+        "acts on repos the owner does not own (Constitution 1)",
     ),
     (
         r"\b(publish|release|upload)\b[^.\n]{0,40}\b(pypi|npm|crates\.io|app store|play store|docker hub|package)\b|\bnpm publish\b|\btwine upload\b",

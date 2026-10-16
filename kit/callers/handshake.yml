@@ -1,0 +1,17 @@
+# autopilot-managed thin caller. The logic lives in the pinned kit; change it by bumping the sha below (a PR you merge).
+name: handshake
+
+on:
+  pull_request:
+    paths: ["specs/**"]
+
+permissions: {}
+
+jobs:
+  handshake:
+    permissions:
+      contents: read
+    uses: {{KIT_REPO}}/.github/workflows/handshake.yml@{{KIT_SHA}}
+    with:
+      kit_repo: {{KIT_REPO}}
+      kit_ref: {{KIT_SHA}}

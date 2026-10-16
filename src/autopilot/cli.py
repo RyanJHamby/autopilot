@@ -25,23 +25,17 @@ CHECKOUT_SHA = "11d5960a326750d5838078e36cf38b85af677262"  # actions/checkout v4
 SETUP_NODE_SHA = "49933ea5288caeca8642d1e84afbd3f7d6820020"  # actions/setup-node v4.4.0
 ACTION_SHA = "34968b5981d5d170904281aa3df6f3c0d4a28855"  # anthropics/claude-code-action v1
 
-BASE_TOOLS = [
-    "Edit",
-    "Write",
-    "Read",
-    "Glob",
-    "Grep",
-    "Bash(git add:*)",
-    "mcp__github_file_ops__commit_files",  # signed commits via the GitHub API; plain git commit is intentionally absent
-    "Bash(git status:*)",
-    "Bash(git diff:*)",
-    "Bash(git log:*)",
-    "Bash(gh pr create:*)",
-    "Bash(gh pr view:*)",
-    "Bash(gh issue view:*)",
-    "Bash(gh issue comment:*)",
-    "Bash(gh issue edit:*)",
-]
+
+def _runtime_config():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("kit_config", KIT / "runtime" / "config.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+BASE_TOOLS = _runtime_config().BASE_TOOLS  # single source: the kit's runtime/config.py
 RETIRED = {
     "Write(.github/**)",
     "Write(.autopilot/**)",
@@ -161,8 +155,11 @@ def codeowners(owner: str, existing: str | None = None) -> str:
     return existing.rstrip("\n") + "\n\n" + block
 
 
-def init_repo(repo: Path, tier: str, mode: str, *, dry_run: bool = False) -> list[str]:
-    """Write the scaffold into a local clone. Returns the list of paths written/changed."""
+def init_repo(repo: Path, tier: str, mode: str, *, dry_run: bool = False, central: tuple[str, str] | None = None) -> list[str]:
+    """Write the scaffold into a local clone. Returns the list of paths written/changed.
+
+    central=(kit_repo, kit_sha): write thin callers into the pinned shared kit instead of copying the workflows and
+    the guard/gate/handshake scripts into the repo."""
     pf = load_portfolio()
     owner = pf["owner"]
     commands = detect_commands(repo)
@@ -177,7 +174,12 @@ def init_repo(repo: Path, tier: str, mode: str, *, dry_run: bool = False) -> lis
         "ALLOWED_TOOLS": ",".join(BASE_TOOLS + [f"Bash({c}:*)" for c in commands]),
     }
     out: dict[str, str] = {}
-    for f in (KIT / "repo" / ".github" / "workflows").glob("*.yml"):
+    if central:
+        subs.update({"KIT_REPO": central[0], "KIT_SHA": central[1]})
+        wf_dir = KIT / "callers"
+    else:
+        wf_dir = KIT / "repo" / ".github" / "workflows"
+    for f in wf_dir.glob("*.yml"):
         out[f".github/workflows/{f.name}"] = render(f.read_text(), subs)
     for f in (KIT / "repo" / ".github" / "ISSUE_TEMPLATE").glob("*.md"):
         out[f".github/ISSUE_TEMPLATE/{f.name}"] = f.read_text()
@@ -187,8 +189,9 @@ def init_repo(repo: Path, tier: str, mode: str, *, dry_run: bool = False) -> lis
     out["specs/_TEMPLATE.md"] = (KIT / "repo/specs/_TEMPLATE.md").read_text()
     out[".autopilot/CONSTITUTION.md"] = (POLICY / "CONSTITUTION.md").read_text()
     out[".autopilot/CONTRACT.md"] = (KIT / "contract/CONTRACT.md").read_text()
-    for name in RUNTIME_FILES:
-        out[f".autopilot/{name}"] = (KIT / "runtime" / name).read_text()
+    if not central:
+        for name in RUNTIME_FILES:
+            out[f".autopilot/{name}"] = (KIT / "runtime" / name).read_text()
     for f in (KIT / "agents").glob("*.md"):
         out[f".claude/agents/{f.name}"] = f.read_text()
     out[".claude/settings.json"] = None  # merged below
@@ -217,6 +220,15 @@ def init_repo(repo: Path, tier: str, mode: str, *, dry_run: bool = False) -> lis
         if not dry_run:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content)
+
+    if central:  # migrating from copy mode: drop vendored scripts we installed and nobody edited
+        for name in RUNTIME_FILES:
+            rel = f".autopilot/{name}"
+            p = repo / rel
+            if p.exists() and old_manifest["files"].get(rel) == _sha(p.read_bytes()):
+                written.append(f"{rel} (removed)")
+                if not dry_run:
+                    p.unlink()
 
     settings_path = repo / ".claude" / "settings.json"
     existing = json.loads(settings_path.read_text()) if settings_path.exists() else None
@@ -285,7 +297,14 @@ def cmd_init(ns: argparse.Namespace) -> int:
             print("working tree is not clean; commit or stash first", file=sys.stderr)
             return 1
         _run("git", "checkout", "-B", "autopilot/init", cwd=repo)
-    written = init_repo(repo, tier, mode, dry_run=ns.dry_run)
+    central = None
+    if ns.kit:
+        m = re.fullmatch(r"([\w.-]+/[\w.-]+)@([0-9a-f]{40})", ns.kit)
+        if not m:
+            print("--kit must look like OWNER/REPO@<40-hex commit sha>", file=sys.stderr)
+            return 1
+        central = (m.group(1), m.group(2))
+    written = init_repo(repo, tier, mode, dry_run=ns.dry_run, central=central)
     print(("would write" if ns.dry_run else "wrote") + f" {len(written)} file(s) in {repo} (tier {tier}, mode {mode}):")
     for w in written:
         print(f"  {w}")
@@ -357,7 +376,8 @@ def _slug(ns_repo: str, owner: str) -> str:
 
 def cmd_ruleset(ns: argparse.Namespace) -> int:
     slug = _slug(ns.repo, load_portfolio()["owner"])
-    body = ruleset_json(["guard"] + ns.check)
+    # a reusable-workflow job reports as "<caller job> / <called job>"
+    body = ruleset_json(["guard / guard" if ns.central else "guard"] + ns.check)
     if not ns.apply:
         print(f"[dry run] would POST to repos/{slug}/rulesets:\n{json.dumps(body, indent=2)}")
         return 0
@@ -523,6 +543,50 @@ def cmd_scan(ns: argparse.Namespace) -> int:
     return 0
 
 
+KIT_README = """# autopilot-kit
+
+Shared, deterministic building blocks for [autopilot](https://github.com): reusable GitHub Actions workflows and the
+zero-token scripts they run (`guard`, `gate`, `handshake`, `config`). Consuming repos hold thin callers that pin this
+repo by full commit SHA, so a change here reaches a repo only when its owner merges a PR bumping the SHA.
+
+- `.github/workflows/{exec,dispatch,guard,handshake}.yml`: `workflow_call` workflows
+- `runtime/*.py`: stdlib + PyYAML; no network access, no secrets
+
+Contains no tokens or personal configuration. Never reference it by branch or tag; always by commit SHA.
+"""
+KIT_FORBIDDEN = [r"RyanJHamby", r"ryanhamby", r"/Users/", r"sk-ant-oat\d*-[A-Za-z0-9_-]{16,}", r"@gmail", r"ampentra"]  # regexes
+
+
+def export_kit(dest: Path) -> list[str]:
+    """Assemble the public shared-kit tree (reusable workflows + runtime scripts) and refuse if anything personal leaked."""
+    subs = {"CHECKOUT_SHA": CHECKOUT_SHA, "ACTION_SHA": ACTION_SHA, "SETUP_NODE_SHA": SETUP_NODE_SHA}
+    files: dict[str, str] = {"README.md": KIT_README}
+    for f in sorted((KIT / "workflows").glob("*.yml")):
+        files[f".github/workflows/{f.name}"] = render(f.read_text(), subs)
+    for f in sorted((KIT / "runtime").glob("*.py")):
+        files[f"runtime/{f.name}"] = f.read_text()
+    for rel, text in files.items():
+        for bad in KIT_FORBIDDEN:
+            if re.search(bad, text):
+                raise SystemExit(f"refusing to export: {rel} contains {bad!r}")
+    for rel, text in files.items():
+        p = dest / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+    return sorted(files)
+
+
+def cmd_kit(ns: argparse.Namespace) -> int:
+    dest = Path(ns.dest).expanduser().resolve()
+    if dest.exists() and any(dest.iterdir()):
+        print(f"{dest} is not empty; export to a new directory", file=sys.stderr)
+        return 1
+    for rel in export_kit(dest):
+        print(f"  {rel}")
+    print(f"\nexported to {dest}. Review every file, then publish by hand (nothing was pushed).")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="ap", description=__doc__)
     ap.add_argument("--version", action="version", version=VERSION)
@@ -531,6 +595,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("repo")
     p.add_argument("--tier", choices=list("ABC"))
     p.add_argument("--mode", choices=["standard", "yolo", "dormant"])
+    p.add_argument("--kit", metavar="OWNER/REPO@SHA", help="use thin callers into this pinned shared kit")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_init)
     p = sub.add_parser("handshake", help="lint a spec: ACCEPTED / NEEDS-WORK / REJECTED")
@@ -543,11 +608,15 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("scan", help="list an owner's repos with suggested tier/mode (read-only)")
     p.add_argument("--owner")
     p.set_defaults(fn=cmd_scan)
+    p = sub.add_parser("kit-export", help="assemble the public shared-kit tree in a new directory (no push)")
+    p.add_argument("dest")
+    p.set_defaults(fn=cmd_kit)
     p = sub.add_parser("status", help="runs and agent PRs per enabled repo")
     p.set_defaults(fn=cmd_status)
     p = sub.add_parser("ruleset", help="print/apply the branch ruleset")
     p.add_argument("repo")
     p.add_argument("--check", action="append", default=[], help="extra required check name, e.g. ci")
+    p.add_argument("--central", action="store_true", help="repo uses the shared kit (check is named 'guard / guard')")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_ruleset)
     for c in ("enable", "pause", "resume"):

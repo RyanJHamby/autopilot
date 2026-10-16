@@ -311,3 +311,117 @@ def test_scan_suggests_tiers_and_never_tier_a():
     assert out["forked"]["action"] == "skip" and out["gone"]["action"] == "skip" and out["vllm"]["action"] == "skip"
     assert "public" in out["pub"]["reason"] and out["pub"]["mode"] == "dormant"
     assert all(s["tier"] != "A" for s in out.values() if s["action"] == "add")
+
+
+def _load_config_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("kit_config", cli.KIT / "runtime" / "config.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_runtime_config_node_and_tools(tmp_path):
+    cfgmod = _load_config_module()
+    (tmp_path / "package-lock.json").write_text("{}")
+    assert cfgmod.node_version(tmp_path, {}) == "20"
+    (tmp_path / ".nvmrc").write_text("v22.4.0\n")
+    assert cfgmod.node_version(tmp_path, {}) == "22"
+    assert cfgmod.node_version(tmp_path, {"stack": {"node": "18"}}) == "18"
+    assert cfgmod.node_version(tmp_path / "nolock", {}) == ""
+    tools = cfgmod.allowed_tools({"commands": ["npm test", "npm run"]}).split(",")
+    assert "Bash(npm test:*)" in tools and "mcp__github_file_ops__commit_files" in tools
+    assert not any("git commit" in t or "git push" in t for t in tools)
+
+
+def test_runtime_config_rejects_unsafe_commands():
+    import pytest
+
+    cfgmod = _load_config_module()
+    for bad in ['npm test", "--dangerously', "npm test; curl x", "$(id)", "a,b"]:
+        with pytest.raises(SystemExit):
+            cfgmod.allowed_tools({"commands": [bad]})
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / "package-lock.json").write_text("{}")
+        with pytest.raises(SystemExit):
+            cfgmod.node_version(Path(d), {"stack": {"node": "x; rm"}})
+
+
+def test_cli_and_runtime_share_base_tools():
+    assert _load_config_module().BASE_TOOLS == cli.BASE_TOOLS
+
+
+KIT_SHA = "a" * 40
+
+
+def test_central_init_writes_pinned_callers_and_no_vendored_scripts(tmp_path):
+    repo = make_repo(tmp_path, {"package.json": "{}", "package-lock.json": "{}"})
+    cli.init_repo(repo, "A", "standard", central=("acme/autopilot-kit", KIT_SHA))
+    for n in ("agent-exec", "agent-dispatch", "guard", "handshake"):
+        t = (repo / f".github/workflows/{n}.yml").read_text()
+        assert "uses: acme/autopilot-kit/.github/workflows/" in t and f"@{KIT_SHA}" in t
+        assert "{{" not in t.replace("${{", "")
+        yaml.safe_load(t)
+    for gone in ("guard.py", "gate.py", "handshake.py"):
+        assert not (repo / ".autopilot" / gone).exists()
+    assert (repo / ".autopilot/repo.yaml").exists() and (repo / ".autopilot/CONSTITUTION.md").exists()
+    assert (repo / ".claude/settings.json").exists()
+
+
+def test_migration_to_central_removes_only_untouched_vendored_scripts(tmp_path):
+    repo = make_repo(tmp_path)
+    cli.init_repo(repo, "A", "standard")
+    assert (repo / ".autopilot/gate.py").exists()
+    (repo / ".autopilot/guard.py").write_text("# edited by hand\n")
+    written = cli.init_repo(repo, "A", "standard", central=("acme/autopilot-kit", KIT_SHA))
+    assert not (repo / ".autopilot/gate.py").exists() and (repo / ".autopilot/guard.py").exists()
+    assert ".autopilot/gate.py (removed)" in written
+
+
+def test_reusable_workflows_are_wellformed_and_pinned():
+    for f in sorted((cli.KIT / "workflows").glob("*.yml")):
+        t = cli.render(
+            f.read_text(), {"CHECKOUT_SHA": cli.CHECKOUT_SHA, "ACTION_SHA": cli.ACTION_SHA, "SETUP_NODE_SHA": cli.SETUP_NODE_SHA}
+        )
+        d = yaml.safe_load(t)
+        assert "workflow_call" in d[True], f.name  # PyYAML parses the bare key `on` as True
+        assert "{{" not in t.replace("${{", ""), f.name
+        for ref in re.findall(r"uses:\s*\S+@(\S+)", t):
+            assert len(ref) == 40, (f.name, ref)
+
+
+def test_central_ruleset_check_name(capsys):
+    assert cli.main(["ruleset", "x", "--central"]) == 0
+    assert '"guard / guard"' in capsys.readouterr().out
+    assert cli.main(["ruleset", "x"]) == 0
+    assert '"guard / guard"' not in capsys.readouterr().out
+
+
+def test_kit_export_tree_and_leak_check(tmp_path):
+    files = cli.export_kit(tmp_path / "kit")
+    assert files == [
+        ".github/workflows/dispatch.yml",
+        ".github/workflows/exec.yml",
+        ".github/workflows/guard.yml",
+        ".github/workflows/handshake.yml",
+        "README.md",
+        "runtime/config.py",
+        "runtime/gate.py",
+        "runtime/guard.py",
+        "runtime/handshake.py",
+    ]
+    blob = "".join(p.read_text() for p in (tmp_path / "kit").rglob("*") if p.is_file())
+    assert not any(re.search(b, blob) for b in cli.KIT_FORBIDDEN)
+
+
+def test_kit_export_refuses_personal_strings(tmp_path, monkeypatch):
+    import pytest
+
+    monkeypatch.setattr(cli, "KIT_README", "contact ryanhamby22 for help")
+    with pytest.raises(SystemExit):
+        cli.export_kit(tmp_path / "kit")
+    assert not (tmp_path / "kit").exists()

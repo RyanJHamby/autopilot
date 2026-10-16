@@ -1,0 +1,18 @@
+# autopilot-managed thin caller. The logic lives in the pinned kit; change it by bumping the sha below (a PR you merge).
+name: guard
+
+on:
+  pull_request:
+  push:
+    branches: ["agent/**"]   # agent pushes use a token that does not fire pull_request CI; this satisfies required checks
+
+permissions: {}
+
+jobs:
+  guard:
+    permissions:
+      contents: read
+    uses: {{KIT_REPO}}/.github/workflows/guard.yml@{{KIT_SHA}}
+    with:
+      kit_repo: {{KIT_REPO}}
+      kit_ref: {{KIT_SHA}}

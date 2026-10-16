@@ -22,6 +22,7 @@ POLICY = ROOT / "policy"
 VERSION = "0.1.0"
 BEGIN, END = "<!-- autopilot:begin -->", "<!-- autopilot:end -->"
 CHECKOUT_SHA = "11d5960a326750d5838078e36cf38b85af677262"  # actions/checkout v4
+SETUP_NODE_SHA = "49933ea5288caeca8642d1e84afbd3f7d6820020"  # actions/setup-node v4.4.0
 ACTION_SHA = "34968b5981d5d170904281aa3df6f3c0d4a28855"  # anthropics/claude-code-action v1
 
 BASE_TOOLS = [
@@ -83,6 +84,23 @@ def secret_exposed_workflows(repo: Path) -> list[str]:
     return out
 
 
+def setup_steps(repo: Path) -> str:
+    """Trusted workflow steps that prepare the agent's runner (before the model starts, outside its control)."""
+    if not (repo / "package-lock.json").exists():
+        return ""
+    ver = "20"
+    nvmrc = repo / ".nvmrc"
+    if nvmrc.exists():
+        m = re.search(r"\d+", nvmrc.read_text())
+        ver = m.group(0) if m else ver
+    return (
+        f"      - uses: actions/setup-node@{SETUP_NODE_SHA} # v4\n"
+        f"        with:\n          node-version: \"{ver}\"\n          cache: npm\n"
+        "      - name: install dependencies (trusted step; install scripts disabled)\n"
+        "        run: npm ci --ignore-scripts\n"
+    )
+
+
 def detect_commands(repo: Path) -> list[str]:
     """Command prefixes for the stacks found at the repo root or one directory down, plus any the owner
     listed under `commands:` in .autopilot/repo.yaml (so that file is the single place to extend them)."""
@@ -132,6 +150,7 @@ def init_repo(repo: Path, tier: str, mode: str, *, dry_run: bool = False) -> lis
         "OWNER": owner,
         "TIER": tier,
         "MODE": mode,
+        "SETUP_STEPS": setup_steps(repo),
         "COMMANDS": "\n".join(f'  - "{c}"' for c in commands) or "  []",
         "ALLOWED_TOOLS": ",".join(BASE_TOOLS + [f"Bash({c}:*)" for c in commands]),
     }

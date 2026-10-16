@@ -236,3 +236,19 @@ def test_exec_scrubs_subprocess_env_and_npx_is_not_allowed():
     wf = (cli.KIT / "repo/.github/workflows/agent-exec.yml").read_text()
     assert 'CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"' in wf
     assert "npx" not in cli.STACKS["package.json"]
+
+
+def test_node_repos_get_pinned_trusted_install_steps_and_others_do_not(tmp_path):
+    (tmp_path / "n").mkdir()
+    (tmp_path / "p").mkdir()
+    n = make_repo(tmp_path / "n", {"package.json": '{"name":"x"}', "package-lock.json": "{}", ".nvmrc": "v22.1.0\n"})
+    p = make_repo(tmp_path / "p")
+    cli.init_repo(n, "A", "standard")
+    cli.init_repo(p, "A", "standard")
+    wn = (n / ".github/workflows/agent-exec.yml").read_text()
+    wp = (p / ".github/workflows/agent-exec.yml").read_text()
+    assert f"actions/setup-node@{cli.SETUP_NODE_SHA}" in wn and 'node-version: "22"' in wn
+    assert "npm ci --ignore-scripts" in wn and wn.index("npm ci") < wn.index("claude-code-action")
+    assert "setup-node" not in wp and "{{" not in wp.replace("${{", "")
+    yaml.safe_load(wn)
+    yaml.safe_load(wp)

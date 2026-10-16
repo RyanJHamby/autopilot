@@ -47,7 +47,7 @@ jobs:
           [ "$MAX_TURNS" -le 60 ] || { echo "::error::max_turns > 60"; exit 1; }
 
       - uses: actions/checkout@{{CHECKOUT_SHA}} # v4
-
+{{SETUP_STEPS}}
       # Trusted code, not the agent, creates the work branch. The action's signed-commit tool commits to the
       # checked-out branch; without this it would target main, which the ruleset (correctly) rejects.
       # Public repos: strangers can comment on an issue the agent will read. Lock it so only collaborators can.

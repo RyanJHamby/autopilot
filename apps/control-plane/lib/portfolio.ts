@@ -8,6 +8,7 @@ export interface Repo {
   priority: number;
   hold_until: string | null;
   public: boolean;
+  paused?: boolean;
 }
 
 export interface State {
@@ -17,18 +18,19 @@ export interface State {
   repos: Repo[];
 }
 
-export type Status = "active" | "held" | "paused-off" | "dormant";
+export type Status = "active" | "paused" | "held" | "paused-off" | "dormant";
 
 /** What the owner should read at a glance. A hold beats everything: it is an explicit owner pause. */
 export function status(r: Repo, now: Date): Status {
   if (r.hold_until && now < new Date(r.hold_until)) return "held";
   if (r.mode === "dormant") return "dormant";
+  if (r.enabled && r.paused) return "paused";
   return r.enabled ? "active" : "paused-off";
 }
 
 /** Active repos first, then by priority desc, then name. */
 export function ranked(repos: Repo[], now: Date): Repo[] {
-  const rank: Record<Status, number> = { active: 0, held: 1, "paused-off": 2, dormant: 3 };
+  const rank: Record<Status, number> = { active: 0, paused: 1, held: 2, "paused-off": 3, dormant: 4 };
   return [...repos].sort(
     (a, b) =>
       rank[status(a, now)] - rank[status(b, now)] || b.priority - a.priority || a.name.localeCompare(b.name),

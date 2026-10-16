@@ -27,10 +27,10 @@ export async function POST(req: Request) {
   const { repo, changes } = (await req.json()) as { repo?: string; changes?: Record<string, unknown> };
   if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo) || !changes || typeof changes !== "object") return new Response("bad request", { status: 400 });
 
-  const rows = (await (await sb(`projects?repo=eq.${encodeURIComponent(repo)}&select=id,org_id,enabled,priority,hold_until`)).json()) as any[];
+  const rows = (await (await sb(`projects?repo=eq.${encodeURIComponent(repo)}&select=id,org_id,enabled,priority,hold_until,paused`)).json()) as any[];
   if (rows.length !== 1) return new Response("unknown project", { status: 404 });
   const p = rows[0];
-  const cur: Levers = { enabled: p.enabled, paused: false, priority: p.priority, greediness: 0, max_open_prs: 3, hold_until: p.hold_until };
+  const cur: Levers = { enabled: p.enabled, paused: p.paused, priority: p.priority, greediness: 0, max_open_prs: 3, hold_until: p.hold_until };
   const plan = planChange(cur, changes, "owner", true);
 
   const applied: string[] = [];
@@ -47,6 +47,7 @@ export async function POST(req: Request) {
     }
     const patch: Record<string, unknown> = {};
     if ("AUTOPILOT_PRIORITY" in plan.variables) patch.priority = Number(plan.variables.AUTOPILOT_PRIORITY);
+    if ("AUTOPILOT_PAUSED" in plan.variables) patch.paused = plan.variables.AUTOPILOT_PAUSED === "true";
     if ("AUTOPILOT_ENABLED" in plan.variables) patch.enabled = plan.variables.AUTOPILOT_ENABLED === "true";
     if ("AUTOPILOT_HOLD_UNTIL" in plan.variables) patch.hold_until = plan.variables.AUTOPILOT_HOLD_UNTIL || null;
     if (Object.keys(patch).length) await sb(`projects?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify(patch) });

@@ -1,13 +1,17 @@
 "use client";
 import { useState } from "react";
 
-export default function Controls({ repo, priority }: { repo: string; priority: number }) {
-  const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState(false);
+type Flash = { kind: "ok" | "err" | "info"; text: string } | null;
 
-  async function send(changes: Record<string, unknown>) {
-    setBusy(true);
-    setMsg("");
+export default function Controls({ repo, priority, paused }: { repo: string; priority: number; paused: boolean }) {
+  const [isPaused, setPaused] = useState(paused);
+  const [prio, setPrio] = useState(priority);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [flash, setFlash] = useState<Flash>(null);
+
+  async function send(label: string, changes: Record<string, unknown>, onOk: () => void) {
+    setBusy(label);
+    setFlash(null);
     try {
       const res = await fetch("/api/levers", {
         method: "POST",
@@ -15,28 +19,36 @@ export default function Controls({ repo, priority }: { repo: string; priority: n
         body: JSON.stringify({ repo, changes }),
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) setMsg(j.error ?? `failed (${res.status})`);
-      else if (j.plan?.pr?.length) setMsg("guardrail change: needs a PR (not applied)");
-      else if (j.plan?.rejected?.length) setMsg(`rejected: ${j.plan.rejected.map((r: any) => r.why).join("; ")}`);
-      else setMsg(`applied ${j.applied.join(", ")}`);
+      if (!res.ok) setFlash({ kind: "err", text: j.error ?? `failed (${res.status})` });
+      else if (j.plan?.pr?.length) setFlash({ kind: "info", text: "guardrail change: needs a PR, not applied" });
+      else if (j.plan?.rejected?.length) setFlash({ kind: "err", text: j.plan.rejected.map((r: { why: string }) => r.why).join("; ") });
+      else {
+        onOk();
+        setFlash({ kind: "ok", text: `saved ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` });
+      }
+    } catch {
+      setFlash({ kind: "err", text: "network error" });
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
+  const cls = (on: boolean) => `btn${on ? " on" : ""}`;
   return (
-    <div className="meta" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-      <button disabled={busy} onClick={() => send({ paused: true })}>Pause</button>
-      <button disabled={busy} onClick={() => send({ paused: false })}>Resume</button>
+    <div className="controls">
+      <button className={cls(isPaused)} aria-pressed={isPaused} disabled={!!busy} onClick={() => send("pause", { paused: true }, () => setPaused(true))}>
+        {busy === "pause" ? "Pausing…" : "Pause"}
+      </button>
+      <button className={cls(!isPaused)} aria-pressed={!isPaused} disabled={!!busy} onClick={() => send("resume", { paused: false }, () => setPaused(false))}>
+        {busy === "resume" ? "Resuming…" : "Resume"}
+      </button>
       <label>
         priority{" "}
-        <select disabled={busy} defaultValue={priority} onChange={(e) => send({ priority: Number(e.target.value) })}>
-          {Array.from({ length: 11 }, (_, i) => (
-            <option key={i} value={i}>{i}</option>
-          ))}
+        <select disabled={!!busy} value={prio} onChange={(e) => { const v = Number(e.target.value); send("prio", { priority: v }, () => setPrio(v)); }}>
+          {Array.from({ length: 11 }, (_, i) => (<option key={i} value={i}>{i}</option>))}
         </select>
       </label>
-      {msg && <span>{msg}</span>}
+      {flash && <span className={`flash ${flash.kind}`} role="status">{flash.text}</span>}
     </div>
   );
 }

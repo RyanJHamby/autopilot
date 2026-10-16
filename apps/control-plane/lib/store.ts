@@ -10,6 +10,7 @@ interface Row {
   priority: number;
   hold_until: string | null;
   is_public: boolean;
+  paused: boolean;
 }
 
 export function fromRows(rows: Row[], owner: string, now: Date): State {
@@ -25,6 +26,7 @@ export function fromRows(rows: Row[], owner: string, now: Date): State {
       priority: r.priority,
       hold_until: r.hold_until,
       public: r.is_public,
+      paused: r.paused,
     })),
   };
 }
@@ -37,7 +39,7 @@ export async function loadState(): Promise<State> {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (url && key) {
     try {
-      const res = await fetch(`${url}/rest/v1/projects?select=repo,tier,mode,enabled,priority,hold_until,is_public`, {
+      const res = await fetch(`${url}/rest/v1/projects?select=repo,tier,mode,enabled,priority,hold_until,is_public,paused`, {
         headers: { apikey: key, Authorization: `Bearer ${key}` },
         cache: "no-store",
       });

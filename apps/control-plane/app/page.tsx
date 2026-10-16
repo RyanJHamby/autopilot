@@ -31,7 +31,7 @@ export default async function Portfolio() {
               {r.public ? " · public" : ""}
               {r.hold_until ? ` · held until ${r.hold_until.slice(0, 16).replace("T", " ")}Z` : ""}
             </div>
-            {st !== "dormant" && <Controls repo={`${s.owner}/${r.name}`} priority={r.priority} />}
+            {st !== "dormant" && <Controls key={`${r.name}:${r.paused}:${r.priority}`} repo={`${s.owner}/${r.name}`} priority={r.priority} paused={!!r.paused} />}
             <div className="bar" aria-label={`${pct}% of pool`}>
               <i style={{ width: `${pct}%` }} />
             </div>

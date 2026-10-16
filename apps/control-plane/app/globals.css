@@ -9,8 +9,15 @@ h1 { font-size:1.25rem; margin:8px 0 2px; }
 .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
 .name { font-weight:600; }
 .pill { font-size:.75rem; padding:2px 8px; border-radius:999px; border:1px solid currentColor; }
-.active { color:var(--ok); } .held { color:var(--warn); } .paused-off, .dormant { color:var(--off); }
+.active { color:var(--ok); } .paused { color:var(--warn); } .held { color:var(--warn); } .paused-off, .dormant { color:var(--off); }
 .meta { color:var(--muted); font-size:.85rem; margin-top:4px; }
 .bar { height:6px; background:var(--line); border-radius:3px; margin-top:8px; overflow:hidden; }
 .bar > i { display:block; height:100%; background:var(--ok); }
 button,select{font:inherit;padding:4px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+
+.controls { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; font-size:.85rem; color:var(--muted); }
+.btn { transition: background .15s, color .15s, transform .05s; cursor:pointer; }
+.btn:active:not(:disabled) { transform: scale(.96); }
+.btn.on { background:var(--fg); color:var(--bg); border-color:var(--fg); font-weight:600; }
+button:disabled, select:disabled { opacity:.55; cursor:progress; }
+.flash.ok { color:var(--ok); } .flash.err { color:#c0392b; } .flash.info { color:var(--warn); }

@@ -144,3 +144,7 @@ GitHub App 'autopilot-control' registered by Ryan (id 5347578). Private key stor
 ## 2026-10-16 12:21 EDT (at 1985610)
 
 Webhook verified live: GitHub deliveries 401 until the secret was reset on both sides, then 202. Lever write path live: POST /api/levers (owner session + same-origin JSON) -> planChange -> app JWT -> repo-scoped installation token (actions_variables:write only) -> AUTOPILOT_* variable + DB + audit row; Pause/Resume/priority controls on the portfolio. Not yet exercised against drillpad-workspace by a signed-in click.
+
+## 2026-10-16 12:33 EDT (at e3bd8b3)
+
+Pause/Resume now give feedback: pressed state, in-flight label, saved/err flash; paused persisted (migration 0005) and shown as a 'paused' status. Found drillpad-workspace AUTOPILOT_PAUSED=true from Ryan's test click; DB synced to match, he must press Resume.

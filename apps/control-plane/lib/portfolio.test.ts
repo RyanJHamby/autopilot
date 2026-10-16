@@ -11,6 +11,10 @@ describe("status", () => {
   it("an expired hold no longer applies", () => {
     expect(status({ ...base, hold_until: "2026-10-16T10:00:00Z" }, now)).toBe("active");
   });
+  it("a paused project shows paused, ranked after active", () => {
+    expect(status({ ...base, paused: true }, now)).toBe("paused");
+    expect(ranked([{ ...base, name: "p", paused: true }, { ...base, name: "a" }], now).map((r) => r.name)).toEqual(["a", "p"]);
+  });
   it("dormant and off", () => {
     expect(status({ ...base, mode: "dormant" }, now)).toBe("dormant");
     expect(status({ ...base, enabled: false }, now)).toBe("paused-off");

@@ -617,3 +617,9 @@ def test_approve_dry_run_prints_the_line(monkeypatch, capsys):
     monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 1, "stdout": "", "stderr": ""})())
     assert cli.main(["approve", "--kit", f"me/kit@{sha}", "--note", "canary green"]) == 0
     assert f"{sha}  canary green" in capsys.readouterr().out
+
+
+def test_exec_flags_runs_with_no_pr_and_no_blocker():
+    wf = (cli.KIT / "workflows/exec.yml").read_text()
+    assert "neither a PR nor a blocker" in wf and "needs-human" in wf
+    assert wf.index("neither a PR nor a blocker") < wf.index("remove empty agent branch")

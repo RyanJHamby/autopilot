@@ -15,7 +15,7 @@ A = {"mode": "standard", "tier": "A"}
 
 def test_allows_and_routes_models():
     d = gate.decide(A, [], 0, role="implementer", now=NOW)
-    assert d.allow and (d.model, d.effort, d.max_turns, d.remaining) == ("sonnet", "medium", 25, 2)
+    assert d.allow and (d.model, d.effort, d.max_turns, d.remaining) == ("sonnet", "medium", 40, 2)
     assert gate.decide(A, [], 0, role="triage", now=NOW).model == "haiku"
     assert gate.decide({"mode": "yolo", "tier": "B"}, [], 0, role="implementer", now=NOW).max_turns == 60
 
@@ -52,7 +52,7 @@ def test_circuit_breaker():
 
 def test_hard_runs_opus_only_tier_a_and_once_a_day():
     d = gate.decide(A, [], 0, role="implementer", hard=True, now=NOW)
-    assert (d.model, d.effort, d.max_turns) == ("opus", "high", 30)
+    assert (d.model, d.effort, d.max_turns) == ("opus", "high", 45)
     assert not gate.decide(A, [run(1, hard=True)], 0, role="implementer", hard=True, now=NOW).allow
     assert gate.decide({"mode": "standard", "tier": "B"}, [], 0, role="implementer", hard=True, now=NOW).model == "sonnet"
 

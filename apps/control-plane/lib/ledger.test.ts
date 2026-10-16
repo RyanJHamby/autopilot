@@ -22,10 +22,10 @@ describe("verifySignature", () => {
 
 describe("toRunRow", () => {
   it("maps a completed agent-exec run", () => {
-    expect(toRunRow("workflow_run", ev())).toMatchObject({ repo: "me/stencil", issue: 38, model: "sonnet", run_points: 75, outcome: "success" });
+    expect(toRunRow("workflow_run", ev())).toMatchObject({ repo: "me/stencil", issue: 38, model: "sonnet", run_points: 120, outcome: "success" });
   });
   it("hard runs are opus and cost more points", () => {
-    expect(toRunRow("workflow_run", ev({ display_title: "agent #5 [hard]" }))).toMatchObject({ model: "opus", run_points: 450 });
+    expect(toRunRow("workflow_run", ev({ display_title: "agent #5 [hard]" }))).toMatchObject({ model: "opus", run_points: 675 });
   });
   it("skipped and cancelled cost nothing", () => {
     expect(toRunRow("workflow_run", ev({ conclusion: "skipped" }))?.run_points).toBe(0);

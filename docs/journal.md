@@ -120,3 +120,7 @@ LIVE FINDING: first automerge attempt on drillpad-workspace PR #33 crashed: 'gh 
 ## 2026-10-16 11:25 EDT (at 243fb72)
 
 control-plane auth: GitHub OAuth (identity scope only) with numeric-id allowlist, HMAC session cookie, proxy.ts default-deny + page re-check; smoke-tested live locally (no cookie 307, forged cookie 307, valid 200, API 401, unsigned webhook 401, unconfigured login 503). Inbox triage lib (protected-path PRs first, oldest first). 30 vitest tests.
+
+## 2026-10-16 11:33 EDT (at 73747be)
+
+Supabase project autopilot-control created (ref tubzfpzqcyhwkkenygpu, us-east-1, separate from stencil's). DB password is random, stored only in macOS keychain item autopilot-control-db, never printed. Migrations 0001-0003 applied; security advisors clean after moving can()/is_owner() to a private schema and revoking anon grants; anon REST reads/inserts/RPC all denied (probed live). Service-role and other keys not yet placed anywhere.

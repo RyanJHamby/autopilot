@@ -22,9 +22,12 @@ beforeAll(async () => {
     create schema auth;
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('app.uid', true), '')::uuid $$;
     create role authenticated;
+    create role anon;
   `);
-  await db.exec(readFileSync(new URL("../supabase/migrations/0001_core.sql", import.meta.url), "utf8"));
-  await db.exec(`grant usage on schema public to authenticated;
+  for (const f of ["0001_core.sql", "0002_private_helpers.sql", "0003_no_anon.sql"]) {
+    await db.exec(readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8"));
+  }
+  await db.exec(`grant usage on schema public, private to authenticated;
     grant select, insert, update, delete on all tables in schema public to authenticated;`);
   const org = (await db.query<{ id: string }>(`insert into orgs(name, owner_id) values ('me', '${OWNER}') returning id`)).rows[0].id;
   await db.exec(`insert into members values ('${org}', '${OWNER}', 'owner'), ('${org}', '${CONTRIB}', 'contributor')`);
@@ -77,6 +80,13 @@ describe("RLS", () => {
 });
 
 describe("schema invariants", () => {
+  it("anonymous visitors can read nothing", async () => {
+    await db.exec("grant usage on schema public to anon");
+    await db.exec("set role anon");
+    await expect(db.query("select * from projects")).rejects.toThrow();
+    await admin();
+  });
+
   it("has no column that can loosen a guardrail", async () => {
     const cols = (await db.query<{ column_name: string }>(`select column_name from information_schema.columns where table_schema='public'`)).rows.map((r) => r.column_name);
     for (const bad of ["auto_merge_classes", "protected_paths", "comms", "protected_extra"]) expect(cols).not.toContain(bad);

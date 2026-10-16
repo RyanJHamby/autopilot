@@ -193,3 +193,6 @@ Problem: every kit fix needed a PR in the autopilot repo plus a pin-bump PR in e
 
 ## 2026-10-16 approval PR was unsigned
 The first approval PR (autopilot-approved #1) could not merge: "Commits must have verified signatures". `ap approve` created it through the contents API, whose commit carried the user's email as committer and was unsigned. Fixed the PR by re-committing locally (signed) and force-pushing its branch; `ap approve` now clones, commits with -S and pushes. Also reworded the rollout refusal (it checks the approvals repo, not the kit repo).
+
+## 2026-10-16 drillpad-workspace smoke: the agent ended its turn waiting on a background test run
+Run 1 committed docs/AUTOPILOT.md (Verified) but opened no PR; the new "neither a PR nor a blocker" check correctly flagged it. Debug run 2: 17 turns, ~$0.13; the agent started `pytest -q` in the background (this repo's full suite takes ~6 min, longer than a foreground command may run), said "I'll open the PR once it finishes" and ended the session, which ends everything. Fix is instructional and structural: never end a turn with a command running; for slow suites run targeted tests, open the PR and leave the rest to CI. Also narrowed smoke issue #30's acceptance (no full pytest). Lesson: acceptance commands must be cheap, and the role must say what to do when they are not.

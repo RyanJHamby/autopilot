@@ -623,3 +623,78 @@ def test_exec_flags_runs_with_no_pr_and_no_blocker():
     wf = (cli.KIT / "workflows/exec.yml").read_text()
     assert "neither a PR nor a blocker" in wf and "needs-human" in wf
     assert wf.index("neither a PR nor a blocker") < wf.index("remove empty agent branch")
+
+
+NEW_SHA = "b" * 40
+KIT_SLUG = "acme/autopilot-kit"
+CALLERS = ("agent-exec", "agent-dispatch", "guard", "handshake", "automerge")
+
+
+def _git(repo, *a):
+    return subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "-c", "user.email=t@t", "-c", "user.name=t", *a],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
+def _central_repo(tmp_path):
+    repo = make_repo(tmp_path)
+    cli.init_repo(repo, "A", "standard", central=(KIT_SLUG, KIT_SHA))
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "init")
+    return repo
+
+
+def test_upgrade_bumps_only_the_kit_sha_in_callers(tmp_path):
+    repo = _central_repo(tmp_path)
+    before = {n: (repo / f".github/workflows/{n}.yml").read_text() for n in CALLERS}
+    repo_yaml = (repo / ".autopilot/repo.yaml").read_text()
+    policy = (repo / ".autopilot/merge-policy.yaml").read_text()
+    assert cli.main(["upgrade", str(repo), "--kit", f"{KIT_SLUG}@{NEW_SHA}"]) == 0
+    for n in CALLERS:
+        after = (repo / f".github/workflows/{n}.yml").read_text()
+        assert after == before[n].replace(KIT_SHA, NEW_SHA) and KIT_SHA not in after
+    assert (repo / ".autopilot/repo.yaml").read_text() == repo_yaml
+    assert (repo / ".autopilot/merge-policy.yaml").read_text() == policy
+    changed = sorted(line[3:] for line in _git(repo, "status", "--porcelain").splitlines())
+    assert changed == sorted(f".github/workflows/{n}.yml" for n in CALLERS)
+    assert _git(repo, "branch", "--show-current").strip() == "autopilot/upgrade"
+
+
+def test_upgrade_refuses_a_hand_edited_caller_and_changes_nothing(tmp_path, capsys):
+    repo = _central_repo(tmp_path)
+    guard = repo / ".github/workflows/guard.yml"
+    guard.write_text(guard.read_text() + "# my tweak\n")
+    _git(repo, "commit", "-qam", "tweak")
+    assert cli.main(["upgrade", str(repo), "--kit", f"{KIT_SLUG}@{NEW_SHA}"]) == 1
+    assert "guard.yml" in capsys.readouterr().err
+    assert KIT_SHA in (repo / ".github/workflows/agent-exec.yml").read_text()
+    assert NEW_SHA not in guard.read_text()
+    assert _git(repo, "status", "--porcelain") == ""
+    assert _git(repo, "branch", "--show-current").strip() == "main"
+
+
+def test_upgrade_refuses_a_repo_that_is_not_central(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    cli.init_repo(repo, "A", "standard")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "init")
+    assert cli.main(["upgrade", str(repo), "--kit", f"{KIT_SLUG}@{NEW_SHA}"]) == 1
+    assert "central" in capsys.readouterr().err
+
+
+def test_upgrade_refuses_a_different_kit_repo_and_a_bad_kit_spec(tmp_path):
+    repo = _central_repo(tmp_path)
+    assert cli.main(["upgrade", str(repo), "--kit", f"other/kit@{NEW_SHA}"]) == 1
+    assert cli.main(["upgrade", str(repo), "--kit", f"{KIT_SLUG}@main"]) == 1
+    assert KIT_SHA in (repo / ".github/workflows/guard.yml").read_text()
+
+
+def test_upgrade_dry_run_writes_nothing(tmp_path):
+    repo = _central_repo(tmp_path)
+    assert cli.main(["upgrade", str(repo), "--kit", f"{KIT_SLUG}@{NEW_SHA}", "--dry-run"]) == 0
+    assert KIT_SHA in (repo / ".github/workflows/guard.yml").read_text()
+    assert _git(repo, "branch", "--show-current").strip() == "main"

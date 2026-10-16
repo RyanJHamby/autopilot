@@ -46,6 +46,15 @@ repos:
   lift_app:                {tier: C, mode: dormant, enabled: false}
   stencil:               {tier: A, mode: standard, enabled: true, hold_until: "2026-10-16T21:00:00Z"}  # owner pause until 5pm ET
 
+# data_class per repo: public | internal (default) | restricted. restricted = crown-jewel IP or personal data:
+# `ap init`, `ap enable` and `ap pick` refuse it, so no cloud agent ever sees it. Add `data_class: restricted` to an entry.
+# Directories that must never be treated as a repo to scaffold (personal notes, vaults, memory):
+never_paths:
+  - ~/notes
+  - ~/Documents/Obsidian Vault
+  - ~/Desktop/claude-docs
+  - ~/.claude
+
 # Never scaffolded: upstream forks and sunset projects. Add to this list to refuse `ap init`.
 excluded:
   - firecracker

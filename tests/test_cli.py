@@ -497,3 +497,35 @@ def test_state_sql_is_idempotent_and_quotes():
 
     with pytest.raises(SystemExit):
         cli.state_sql(st)
+
+
+def test_sensitive_findings_flags_personal_and_secret_material(tmp_path):
+    repo = make_repo(tmp_path, {"README.md": "x", "app.py": "x"})
+    assert cli.sensitive_findings(repo) == []
+    (repo / ".obsidian").mkdir()
+    (repo / "notes").mkdir()
+    (repo / "notes" / "journal-2026.md").write_text("private")
+    (repo / "keys.pem").write_text("x")
+    (repo / ".env").write_text("A=1")
+    (repo / ".env.example").write_text("A=")
+    found = " ".join(cli.sensitive_findings(repo))
+    assert ".obsidian" in found and "journal-2026.md" in found and "keys.pem" in found and ".env" in found
+    assert ".env.example" not in found
+
+
+def test_sensitive_findings_never_paths(tmp_path):
+    repo = make_repo(tmp_path)
+    assert cli.sensitive_findings(repo, never_paths=[str(tmp_path)])  # repo lives under an off-limits dir
+
+
+def test_init_refuses_sensitive_and_restricted(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    (repo / "journal.md").write_text("dear diary")
+    assert cli.main(["init", str(repo), "--tier", "B", "--mode", "standard", "--dry-run"]) == 1
+    assert "journal.md" in capsys.readouterr().err
+    assert cli.main(["init", str(repo), "--tier", "B", "--mode", "standard", "--dry-run", "--allow-sensitive"]) == 0
+
+
+def test_portfolio_declares_never_paths():
+    pf = cli.load_portfolio()
+    assert "~/notes" in pf["never_paths"] and "~/Desktop/claude-docs" in pf["never_paths"]

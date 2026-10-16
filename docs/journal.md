@@ -152,3 +152,7 @@ Pause/Resume now give feedback: pressed state, in-flight label, saved/err flash;
 ## 2026-10-16 12:35 EDT (at 52a0b71)
 
 ap report: read-only outcome scorecard from GitHub PR history (opened/merged/closed/reverted, merge rate, median hours to merge, per auto-merge class) plus a deterministic promotion suggester (>=10 clean merges, 0 reverts, class not yet enabled -> propose to owner as a PR). First step of the self-improvement loop: measurement before any tuning. Skips dormant and held repos.
+
+## 2026-10-16 12:39 EDT (at af7e820)
+
+Safety zones: ap init now refuses clones that hold personal or secret material (.obsidian, journal/diary/medical/tax names, key files, .env; names only, contents never read) or live under never_paths (~/notes, Obsidian Vault, claude-docs vault, ~/.claude), and any repo marked data_class: restricted (also refused by enable/pick). Override only with --allow-sensitive.

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -69,6 +70,38 @@ def load_portfolio() -> dict:
 
 
 SKIP_DIRS = {".git", "node_modules", "build", "target", ".venv", "venv", "dist"}
+
+
+SENSITIVE_DIRS = {".obsidian", ".gnupg", ".ssh", ".aws"}
+SENSITIVE_NAME_RE = re.compile(
+    r"(^|[._/-])(journal|diary|therapy|medical|health|lab-?results|tax|taxes|passwords?|secrets?|id_rsa|credentials)([._/-]|$)"
+    r"|\.(asc|gpg|pem|p12|pfx|kdbx)$|(^|/)\.env(\.|$)",
+    re.I,
+)
+
+
+def sensitive_findings(repo: Path, *, never_paths: list[str] | None = None, limit: int = 12) -> list[str]:
+    """Why this clone should NOT be handed to a cloud agent: personal notes, key material, secrets, or a path the owner
+    declared off-limits. Names only; file contents are never read."""
+    found: list[str] = []
+    here = str(repo.resolve())
+    for np_ in never_paths or []:
+        base = str(Path(np_).expanduser().resolve())
+        if here == base or here.startswith(base + "/"):
+            found.append(f"inside off-limits path {np_}")
+    for root, dirs, files in os.walk(repo):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for d in list(dirs):
+            if d in SENSITIVE_DIRS:
+                found.append(f"{Path(root, d).relative_to(repo)}/ (personal/key directory)")
+                dirs.remove(d)
+        for f in files:
+            rel = str(Path(root, f).relative_to(repo))
+            if SENSITIVE_NAME_RE.search(rel) and not rel.endswith((".example", ".sample", ".md.tmpl")):
+                found.append(rel)
+        if len(found) >= limit:
+            break
+    return found[:limit]
 
 
 AUTOPILOT_WORKFLOWS = {"agent-dispatch.yml", "agent-exec.yml", "guard.yml", "handshake.yml", "automerge.yml"}
@@ -288,6 +321,20 @@ def cmd_init(ns: argparse.Namespace) -> int:
         print(f"{name} is excluded in policy/portfolio.yaml (fork or sunset project); refusing", file=sys.stderr)
         return 1
     entry = pf["repos"].get(name, {})
+    if entry.get("data_class") == "restricted":
+        print(f"{name} is data_class: restricted (crown-jewel IP or personal data): no cloud agents. Refusing.", file=sys.stderr)
+        return 1
+    bad = sensitive_findings(repo, never_paths=pf.get("never_paths", []))
+    if bad and not ns.allow_sensitive:
+        print(
+            f"{name}: looks like it holds personal or secret material; refusing to scaffold a cloud agent here:", file=sys.stderr
+        )
+        for b in bad:
+            print(f"  - {b}", file=sys.stderr)
+        print(
+            "Move that material out (or list the repo as data_class: restricted). To override: --allow-sensitive", file=sys.stderr
+        )
+        return 1
     tier = ns.tier or entry.get("tier")
     mode = ns.mode or entry.get("mode")
     if not tier or not mode:
@@ -406,6 +453,9 @@ def cmd_vars(ns: argparse.Namespace) -> int:
         "resume": ("AUTOPILOT_PAUSED", "false"),
     }[ns.cmd]
     for name in repos:
+        if ns.cmd == "enable" and pf["repos"].get(name, {}).get("data_class") == "restricted":
+            print(f"{name}: data_class restricted; refusing to enable")
+            continue
         slug = _slug(name, pf["owner"])
         if not ns.apply:
             print(f"[dry run] gh variable set {var}={val} -R {slug}")
@@ -515,7 +565,7 @@ def cmd_pick(ns: argparse.Namespace) -> int:
     now = dt.datetime.now(dt.timezone.utc)
     cands, notes = [], []
     for name, e in pf["repos"].items():
-        if not e.get("enabled") or e.get("mode") == "dormant":
+        if not e.get("enabled") or e.get("mode") == "dormant" or e.get("data_class") == "restricted":
             continue
         if picker.held(e, now):
             notes.append(f"{name}: held until {e['hold_until']}")
@@ -807,6 +857,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--tier", choices=list("ABC"))
     p.add_argument("--mode", choices=["standard", "yolo", "dormant"])
     p.add_argument("--kit", metavar="OWNER/REPO@SHA", help="use thin callers into this pinned shared kit")
+    p.add_argument("--allow-sensitive", action="store_true", help="override the personal/secret material check")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_init)
     p = sub.add_parser("handshake", help="lint a spec: ACCEPTED / NEEDS-WORK / REJECTED")

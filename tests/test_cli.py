@@ -599,6 +599,26 @@ def test_implementer_infers_acceptance_instead_of_stopping():
     assert "infer them" in (cli.KIT / "workflows/exec.yml").read_text()
 
 
+def test_rollout_refuses_unapproved_sha_and_dry_runs_approved(monkeypatch, capsys):
+    sha = "d" * 40
+    am = cli._load_runtime("automerge")
+    monkeypatch.setattr(am, "fetch_approved", lambda kit: [])
+    monkeypatch.setattr(cli, "_load_runtime", lambda n: am)
+    assert cli.main(["rollout", "--kit", f"me/kit@{sha}"]) == 1
+    assert "not on me/kit's APPROVED list" in capsys.readouterr().err
+    monkeypatch.setattr(am, "fetch_approved", lambda kit: [sha])
+    assert cli.main(["rollout", "--kit", f"me/kit@{sha}", "--only", "drillpad-workspace"]) == 0
+    out = capsys.readouterr().out
+    assert "[dry run]" in out and "drillpad-workspace" in out and "stencil" not in out
+
+
+def test_approve_dry_run_prints_the_line(monkeypatch, capsys):
+    sha = "e" * 40
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 1, "stdout": "", "stderr": ""})())
+    assert cli.main(["approve", "--kit", f"me/kit@{sha}", "--note", "canary green"]) == 0
+    assert f"{sha}  canary green" in capsys.readouterr().out
+
+
 def test_exec_flags_runs_with_no_pr_and_no_blocker():
     wf = (cli.KIT / "workflows/exec.yml").read_text()
     assert "neither a PR nor a blocker" in wf and "needs-human" in wf

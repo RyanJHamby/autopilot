@@ -48,8 +48,6 @@ jobs:
 
       - uses: actions/checkout@{{CHECKOUT_SHA}} # v4
 {{SETUP_STEPS}}
-      # Trusted code, not the agent, creates the work branch. The action's signed-commit tool commits to the
-      # checked-out branch; without this it would target main, which the ruleset (correctly) rejects.
       # Public repos: strangers can comment on an issue the agent will read. Lock it so only collaborators can.
       # Read from the event payload, so it cannot be misconfigured.
       - name: lock issue conversation (public repos)
@@ -58,6 +56,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/issues/${ISSUE}/lock" --silent
 
+      # Trusted code, not the agent, creates the work branch. The action's signed-commit tool commits to the
+      # checked-out branch; without this it would target main, which the ruleset (correctly) rejects.
       - name: create agent branch
         run: |
           BR="agent/${ISSUE}-${GITHUB_RUN_ID}"

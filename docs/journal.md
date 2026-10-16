@@ -178,3 +178,6 @@ First real use of the sensitive-material check on drillpad-workspace flagged int
 
 ## 2026-10-16 New task form
 Phone-entered tasks: /new -> POST /api/tasks. A conservative screen (lib/task.ts: known runner commands only, safe characters, no comms/secrets/deploy/protected-path asks, size limits) decides whether the issue gets `agent-ready`; failures are rejected with reasons, never created half-ready. Issue is created through the GitHub App (issues:write only), so the label event comes from the app and owner-only dispatch does not fire; the next scheduled dispatch picks it up. 10 app-created tasks per repo per day (audit-counted). lib/task.ts is on the guard path. Deployed; first live use pending Ryan.
+
+## 2026-10-16 second kit bug on the first real run: sandbox needs socat
+After #6 the agent started but every Bash call failed: "Sandbox is required but failed to initialize: socat not installed". The agent refused to use dangerouslyDisableSandbox and reported the blocker (6 turns, ~$0.07 notional): the constitution layer behaved. Exec now installs bubblewrap, socat and ripgrep and self-checks. The run still reported success with no PR: a gap to close (a run that ends without a PR, a branch with commits, or an issue comment should be flagged). Kit f3402ce.

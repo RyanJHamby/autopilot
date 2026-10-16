@@ -1,0 +1,115 @@
+{
+  "generated_at": "2026-10-16T14:55:53Z",
+  "owner": "RyanJHamby",
+  "global_runs_per_day": 12,
+  "repos": [
+    {
+      "name": "drillpad-workspace",
+      "tier": "A",
+      "mode": "standard",
+      "enabled": true,
+      "priority": 8,
+      "hold_until": null,
+      "public": false
+    },
+    {
+      "name": "fillcast",
+      "tier": "A",
+      "mode": "standard",
+      "enabled": false,
+      "priority": 8,
+      "hold_until": null,
+      "public": false
+    },
+    {
+      "name": "order-book-engine",
+      "tier": "A",
+      "mode": "standard",
+      "enabled": false,
+      "priority": 8,
+      "hold_until": null,
+      "public": false
+    },
+    {
+      "name": "tokenomics-bench",
+      "tier": "B",
+      "mode": "standard",
+      "enabled": false,
+      "priority": 5,
+      "hold_until": null,
+      "public": false
+    },
+    {
+      "name": "stock-screener",
+      "tier": "B",
+      "mode": "standard",
+      "enabled": false,
+      "priority": 5,
+      "hold_until": null,
+      "public": false
+    },
+    {
+      "name": "drillpad",
+      "tier": "B",
+      "mode": "standard",
+      "enabled": false,
+      "priority": 5,
+      "hold_until": null,
+      "public": true
+    },
+    {
+      "name": "claude-docs",
+      "tier": "C",
+      "mode": "dormant",
+      "enabled": false,
+      "priority": 2,
+      "hold_until": null,
+      "public": false
+    },
+    {
+      "name": "resume",
+      "tier": "C",
+      "mode": "dormant",
+      "enabled": false,
+      "priority": 2,
+      "hold_until": null,
+      "public": false
+    },
+    {
+      "name": "RyanJHamby.github.io",
+      "tier": "C",
+      "mode": "dormant",
+      "enabled": false,
+      "priority": 2,
+      "hold_until": null,
+      "public": true
+    },
+    {
+      "name": "FlowState",
+      "tier": "C",
+      "mode": "dormant",
+      "enabled": false,
+      "priority": 2,
+      "hold_until": null,
+      "public": true
+    },
+    {
+      "name": "lift_app",
+      "tier": "C",
+      "mode": "dormant",
+      "enabled": false,
+      "priority": 2,
+      "hold_until": null,
+      "public": false
+    },
+    {
+      "name": "stencil",
+      "tier": "A",
+      "mode": "standard",
+      "enabled": true,
+      "priority": 8,
+      "hold_until": "2026-10-16T21:00:00Z",
+      "public": false
+    }
+  ]
+}

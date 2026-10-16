@@ -474,3 +474,12 @@ def test_init_writes_empty_merge_policy(tmp_path):
     cli.init_repo(repo, "B", "standard")
     pol = cli.yaml.safe_load((repo / ".autopilot" / "merge-policy.yaml").read_text())
     assert pol["auto_merge_classes"] == []
+
+
+def test_export_state_shape():
+    import datetime as dt
+
+    out = cli.export_state(cli.load_portfolio(), dt.datetime(2026, 10, 16, tzinfo=dt.timezone.utc))
+    r = {x["name"]: x for x in out["repos"]}
+    assert r["stencil"]["hold_until"] and r["stencil"]["priority"] == 8
+    assert all(set(x) == {"name", "tier", "mode", "enabled", "priority", "hold_until", "public"} for x in out["repos"])

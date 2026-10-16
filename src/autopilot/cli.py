@@ -559,6 +559,40 @@ def cmd_pick(ns: argparse.Namespace) -> int:
     return 0
 
 
+def export_state(pf: dict, now) -> dict:
+    from autopilot import picker
+
+    repos = [
+        {
+            "name": n,
+            "tier": e.get("tier", "C"),
+            "mode": e.get("mode", "dormant"),
+            "enabled": bool(e.get("enabled")),
+            "priority": picker.priority(e),
+            "hold_until": str(e["hold_until"]) if e.get("hold_until") else None,
+            "public": bool(e.get("public")),
+        }
+        for n, e in pf["repos"].items()
+    ]
+    return {
+        "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "owner": pf["owner"],
+        "global_runs_per_day": int(pf["defaults"].get("global_runs_per_day", 12)),
+        "repos": repos,
+    }
+
+
+def cmd_export_state(ns: argparse.Namespace) -> int:
+    import datetime as dt
+
+    out = export_state(load_portfolio(), dt.datetime.now(dt.timezone.utc))
+    dest = Path(ns.dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(out, indent=2) + "\n")
+    print(f"wrote {dest} ({len(out['repos'])} repos)")
+    return 0
+
+
 def scan_suggestions(repos: list[dict], pf: dict, now) -> list[dict]:
     """Read-only triage of an owner's repos. Tier A is a human decision, so it is never suggested."""
     import datetime as dt
@@ -730,6 +764,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--reserve", type=int, default=0, help="runs to keep back for your interactive use")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_pick)
+    p = sub.add_parser("export-state", help="write the portfolio snapshot the control-plane UI reads")
+    p.add_argument("dest", nargs="?", default=str(ROOT / "apps/control-plane/data/state.json"))
+    p.set_defaults(fn=cmd_export_state)
     p = sub.add_parser("kit-export", help="assemble the public shared-kit tree in a new directory (no push)")
     p.add_argument("dest")
     p.set_defaults(fn=cmd_kit)

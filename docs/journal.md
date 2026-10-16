@@ -96,3 +96,7 @@ automerge.py + reusable automerge.yml + caller: merges PRs only if agent/* or de
 ## 2026-10-16 10:52 EDT (at 75740ba)
 
 ap pick: work-conserving allocation of the global daily run pool across enabled repos by priority (tier default A8/B5/C2), capacity = min(agent-ready issues, runs left under the repo gate), owner reserve, portfolio hold_until pause (stencil held to 21:00Z). Wave-1 repos Ryan put on hold are now enabled:false in the portfolio so nothing reads or dispatches them.
+
+## 2026-10-16 10:56 EDT (at 1ee1f27)
+
+control-plane scaffold (apps/control-plane): Next 16 PWA, read-only Portfolio page from ap export-state snapshot; status/rank/share logic unit-tested (vitest); builds and serves. Not deployable yet: no auth, snapshot names private repos.

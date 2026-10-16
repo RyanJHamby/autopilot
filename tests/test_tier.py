@@ -73,3 +73,32 @@ def test_per_class_enable():
 
 def test_empty_diff_not_tier0():
     assert classify([], ON)["tier"] == 1
+
+
+def test_cli_end_to_end_on_a_real_repo(tmp_path, capsys, monkeypatch):
+    import json
+    import subprocess
+
+    import tier
+
+    def git(*a):
+        subprocess.run(["git", *a], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    git("config", "commit.gpgsign", "false")
+    (tmp_path / "a.txt").write_text("x\n")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    git("checkout", "-qb", "feat")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "a.md").write_text("hello\n")
+    git("add", "-A")
+    git("commit", "-qm", "docs")
+    (tmp_path / "pol.yaml").write_text("auto_merge_classes: [docs-only]\n")
+    monkeypatch.chdir(tmp_path)
+    assert tier.main(["--base", "main", "--policy", "pol.yaml"]) == 0
+    assert json.loads(capsys.readouterr().out)["tier"] == 0
+    assert tier.main(["--base", "main", "--policy", "missing.yaml"]) == 0
+    assert json.loads(capsys.readouterr().out)["tier"] == 1

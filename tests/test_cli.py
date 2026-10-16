@@ -462,3 +462,12 @@ def test_edit_portfolio_refuses_bad_input():
     ]:
         with pytest.raises(SystemExit):
             cli.edit_portfolio(PF_SAMPLE, *args, **kw)
+
+
+def test_init_writes_empty_merge_policy(tmp_path):
+    repo = tmp_path / "r"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    cli.init_repo(repo, "B", "standard")
+    pol = cli.yaml.safe_load((repo / ".autopilot" / "merge-policy.yaml").read_text())
+    assert pol["auto_merge_classes"] == []

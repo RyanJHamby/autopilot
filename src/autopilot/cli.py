@@ -57,7 +57,7 @@ STACKS = {  # marker file -> command prefixes
     "CMakeLists.txt": ["cmake", "ctest", "make"],
     "go.mod": ["go test", "go build", "go vet"],
 }
-RUNTIME_FILES = ["guard.py", "handshake.py", "gate.py"]
+RUNTIME_FILES = ["guard.py", "handshake.py", "gate.py", "tier.py"]
 
 
 def _sha(data: bytes) -> str:
@@ -236,6 +236,7 @@ def init_repo(repo: Path, tier: str, mode: str, *, dry_run: bool = False, centra
     for rel, content in out.items():
         put(rel, content)
     put(".autopilot/repo.yaml", render((KIT / "repo/.autopilot/repo.yaml.tmpl").read_text(), subs), user_owned=True)
+    put(".autopilot/merge-policy.yaml", (KIT / "repo/.autopilot/merge-policy.yaml.tmpl").read_text(), user_owned=True)
 
     # AGENTS.md managed block + CLAUDE.md import
     block = f"{BEGIN}\n{(KIT / 'repo/AGENTS.block.md').read_text().rstrip()}\n{END}\n"

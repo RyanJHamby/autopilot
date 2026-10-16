@@ -80,3 +80,7 @@ ap ruleset --apply now PUTs an existing autopilot-main instead of POSTing a dupl
 ## 2026-10-16 10:38 EDT (at 879df4b)
 
 P2 start: kit/runtime/tier.py, a deterministic PR risk classifier (tier 2 protected paths, tier 0 only for owner-enabled classes: docs-only, tests-add-only, lockfile-patch (patch bumps only), generated). auto_merge_classes ships empty. Not yet wired into a workflow or the kit sha; formatter-only deliberately omitted (needs a tool run, not a diff read).
+
+## 2026-10-16 10:39 EDT (at 3a0d592)
+
+Tier wired in informationally: guard workflow now runs tier.py from the base branch's merge-policy.yaml (template ships empty via ap init) and writes the result to the job summary. Nothing merges on it yet; the merge App and per-class demotion are next.

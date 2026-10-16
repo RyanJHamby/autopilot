@@ -75,8 +75,18 @@ def fetch_approved(kit_repo: str, opener=None) -> list[str]:
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", kit_repo or ""):
         return []
     try:
-        opener = opener or (lambda u: urllib.request.urlopen(u, timeout=10).read().decode())
-        text = opener(f"https://raw.githubusercontent.com/{approvals_repo(kit_repo)}/main/APPROVED")
+
+        def default(u: str) -> str:
+            # GitHub's contents API, not raw.githubusercontent.com: the raw CDN caches for minutes, so a fresh approval (or a
+            # revoked one) would not be seen promptly. A token (when present) only lifts the anonymous rate limit.
+            h = {"Accept": "application/vnd.github.raw+json", "User-Agent": "autopilot-kit"}
+            tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+            if tok:
+                h["Authorization"] = f"Bearer {tok}"
+            return urllib.request.urlopen(urllib.request.Request(u, headers=h), timeout=10).read().decode()
+
+        opener = opener or default
+        text = opener(f"https://api.github.com/repos/{approvals_repo(kit_repo)}/contents/APPROVED?ref=main")
     except Exception:
         return []
     return [ln.split()[0] for ln in text.splitlines() if re.match(r"^[0-9a-f]{40}(\s|$)", ln)]

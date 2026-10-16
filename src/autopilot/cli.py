@@ -1038,6 +1038,14 @@ def cmd_approve(ns: argparse.Namespace) -> int:
     return 0
 
 
+def _load_runtime_picker_held(entry: dict) -> bool:
+    import datetime as dt
+
+    from autopilot import picker
+
+    return picker.held(entry, dt.datetime.now(dt.timezone.utc))
+
+
 def cmd_rollout(ns: argparse.Namespace) -> int:
     """Open a pin-bump PR in every enabled central-mode repo for an APPROVED kit sha. Repos that opted into `kit-bump` merge
     it themselves once checks pass; the rest wait for you like any other PR."""
@@ -1058,6 +1066,9 @@ def cmd_rollout(ns: argparse.Namespace) -> int:
             continue
         if ns.only and name not in ns.only:
             continue
+        if _load_runtime_picker_held(e):
+            print(f"{name}: held by the owner until {e['hold_until']}; skipped")
+            continue
         slug = _slug(name, pf["owner"])
         if not ns.apply:
             print(f"[dry run] would open a pin-bump PR in {slug} -> {sha[:7]}")
@@ -1069,6 +1080,13 @@ def cmd_rollout(ns: argparse.Namespace) -> int:
                 print(f"{slug}: clone failed")
                 continue
             branch = f"autopilot/kit-bump-{sha[:7]}"
+            if (
+                "autopilot-kit" not in (dest / ".github/workflows/agent-exec.yml").read_text()
+                if (dest / ".github/workflows/agent-exec.yml").exists()
+                else True
+            ):
+                print(f"{slug}: not on the shared kit yet; migrate it with `ap init --kit` first (rollout only bumps pins)")
+                continue
             _run("git", "checkout", "-q", "-B", branch, cwd=dest)
             init_repo(dest, e.get("tier", "B"), e.get("mode", "standard"), central=(kit, sha))
             if not _run("git", "status", "--porcelain", cwd=dest):

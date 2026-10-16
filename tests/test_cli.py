@@ -546,3 +546,25 @@ def test_extra_protected_reaches_codeowners_and_deny(tmp_path):
     assert "Edit(kit/runtime/**)" in deny and "Edit(policy/**)" in deny
     cli.init_repo(repo, "B", "standard")
     assert "/kit/runtime/ @" in (repo / ".github/CODEOWNERS").read_text()
+
+
+def test_sensitive_names_are_whole_stems_not_substrings():
+    for ok in [
+        "src/health-checker-circuit.py",
+        "lessons/07-secrets-and-key-management.md",
+        "docs/taxonomy.md",
+        "README.md",
+        ".env.example",
+    ]:
+        assert not cli._sensitive_name(ok), ok
+    for bad in [
+        "journal.md",
+        "notes/journal-2026-10.md",
+        "secrets.json",
+        "keys.pem",
+        ".env",
+        ".env.local",
+        "Medical.PDF".lower(),
+    ]:
+        assert cli._sensitive_name(bad) or bad == "medical.pdf", bad
+    assert cli._sensitive_name("medical.pdf")

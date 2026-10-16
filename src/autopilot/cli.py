@@ -73,11 +73,23 @@ SKIP_DIRS = {".git", "node_modules", "build", "target", ".venv", "venv", "dist"}
 
 
 SENSITIVE_DIRS = {".obsidian", ".gnupg", ".ssh", ".aws"}
-SENSITIVE_NAME_RE = re.compile(
-    r"(^|[._/-])(journal|diary|therapy|medical|health|lab-?results|tax|taxes|passwords?|secrets?|id_rsa|credentials)([._/-]|$)"
-    r"|\.(asc|gpg|pem|p12|pfx|kdbx)$|(^|/)\.env(\.|$)",
-    re.I,
-)
+SENSITIVE_STEMS = {
+    "journal", "journals", "diary", "therapy", "medical", "health", "labs", "lab-results", "taxes", "tax", "passwords",
+    "password", "secrets", "secret", "credentials", "id_rsa", "id_ed25519",
+}  # fmt: skip
+SENSITIVE_EXTS = {".asc", ".gpg", ".pem", ".p12", ".pfx", ".kdbx"}
+
+
+def _sensitive_name(rel: str) -> bool:
+    """Whole file stems only ('journal.md', 'secrets.json'), never substrings: 'health-checker.py' or a lesson called
+    'secrets-and-key-management.md' is ordinary content. Dated journals ('journal-2026-10.md') still match."""
+    base = Path(rel).name.lower()
+    if base == ".env" or base.startswith(".env."):
+        return not base.endswith((".example", ".sample"))
+    stem = base.split(".")[0]
+    if Path(base).suffix in SENSITIVE_EXTS:
+        return True
+    return stem in SENSITIVE_STEMS or bool(re.fullmatch(r"(journal|diary)[-_ ]?[\d-]+", stem))
 
 
 def sensitive_findings(repo: Path, *, never_paths: list[str] | None = None, limit: int = 12) -> list[str]:
@@ -97,7 +109,7 @@ def sensitive_findings(repo: Path, *, never_paths: list[str] | None = None, limi
                 dirs.remove(d)
         for f in files:
             rel = str(Path(root, f).relative_to(repo))
-            if SENSITIVE_NAME_RE.search(rel) and not rel.endswith((".example", ".sample", ".md.tmpl")):
+            if _sensitive_name(rel):
                 found.append(rel)
         if len(found) >= limit:
             break

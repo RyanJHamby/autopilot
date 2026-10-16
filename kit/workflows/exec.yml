@@ -66,6 +66,12 @@ jobs:
         id: cfg
         run: python "$KIT/runtime/config.py" --repo . --config .autopilot/repo.yaml
 
+      # Python projects on uv: the sandboxed agent has no way to install tooling, so prepare it here, before the model starts.
+      - if: steps.cfg.outputs.uv == 'true'
+        name: python deps (uv sync --frozen)
+        run: |
+          python3 -m pip install --quiet "uv==0.12.16"
+          uv sync --frozen
       - if: steps.cfg.outputs.node_version != ''
         uses: actions/setup-node@{{SETUP_NODE_SHA}} # v4
         with:

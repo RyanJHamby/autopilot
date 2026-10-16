@@ -30,13 +30,13 @@ defaults:
   breaker_failures: 2       # consecutive failed runs before the repo auto-disables
 
 repos:
-  # --- wave 1 ---
+  # --- wave 1 (only drillpad-workspace and stencil are active; the rest are on hold by the owner, 2026-10-16) ---
   drillpad-workspace:      {tier: A, mode: standard, enabled: true}
-  fillcast:                {tier: A, mode: standard, enabled: true, needs_repo: true}
-  order-book-engine:       {tier: A, mode: standard, enabled: true}
-  tokenomics-bench:        {tier: B, mode: standard, enabled: true}
-  stock-screener:          {tier: B, mode: standard, enabled: true}
-  drillpad:                {tier: B, mode: standard, enabled: true, public: true}
+  fillcast:                {tier: A, mode: standard, enabled: false, needs_repo: true}
+  order-book-engine:       {tier: A, mode: standard, enabled: false}
+  tokenomics-bench:        {tier: B, mode: standard, enabled: false}
+  stock-screener:          {tier: B, mode: standard, enabled: false}
+  drillpad:                {tier: B, mode: standard, enabled: false, public: true}
 
   # --- dormant scaffold (files only, workflows gated off) ---
   claude-docs:             {tier: C, mode: dormant, enabled: false}
@@ -44,7 +44,7 @@ repos:
   RyanJHamby.github.io:    {tier: C, mode: dormant, enabled: false, public: true}
   FlowState:               {tier: C, mode: dormant, enabled: false, public: true}
   lift_app:                {tier: C, mode: dormant, enabled: false}
-  stencil:               {tier: A, mode: standard, enabled: true}
+  stencil:               {tier: A, mode: standard, enabled: true, hold_until: "2026-10-16T21:00:00Z"}  # owner pause until 5pm ET
 
 # Never scaffolded: upstream forks and sunset projects. Add to this list to refuse `ap init`.
 excluded:

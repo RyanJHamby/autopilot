@@ -505,6 +505,60 @@ def cmd_status(ns: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pick(ns: argparse.Namespace) -> int:
+    """Plan (and with --apply, fire) the nightly dispatch: spread the global run pool by priority, work-conserving."""
+    import datetime as dt
+
+    from autopilot import picker
+
+    pf = load_portfolio()
+    now = dt.datetime.now(dt.timezone.utc)
+    cands, notes = [], []
+    for name, e in pf["repos"].items():
+        if not e.get("enabled") or e.get("mode") == "dormant":
+            continue
+        if picker.held(e, now):
+            notes.append(f"{name}: held until {e['hold_until']}")
+            continue
+        slug = _slug(name, pf["owner"])
+        r = subprocess.run(
+            ["gh", "issue", "list", "-R", slug, "--label", "agent-ready", "--state", "open", "--json", "labels"],
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode:
+            notes.append(f"{name}: cannot read issues")
+            continue
+        skip = {"hold", "needs-human", "blocked", "agent-working"}
+        eligible = sum(1 for i in json.loads(r.stdout or "[]") if not {x["name"] for x in i["labels"]} & skip)
+        runs = subprocess.run(
+            ["gh", "run", "list", "-R", slug, "--workflow", "agent-exec.yml", "--limit", "30", "--json", "createdAt,conclusion"],
+            capture_output=True,
+            text=True,
+        )
+        since = now - dt.timedelta(hours=24)
+        used = sum(
+            1
+            for x in json.loads(runs.stdout or "[]")
+            if x.get("conclusion") not in ("skipped", "cancelled")
+            and dt.datetime.fromisoformat(x["createdAt"].replace("Z", "+00:00")) >= since
+        )
+        cap = int(pf["defaults"]["runs_per_day"].get(e.get("tier", "C"), 0))
+        cands.append({"name": name, "priority": picker.priority(e), "capacity": min(eligible, max(cap - used, 0))})
+    plan = picker.allocate(cands, int(pf["defaults"].get("global_runs_per_day", 12)), ns.reserve)
+    print(f"{'repo':28} {'prio':4} {'capacity':8} runs")
+    for c in cands:
+        print(f"{c['name']:28} {c['priority']:<4} {c['capacity']:<8} {plan.get(c['name'], 0)}")
+    for n in notes:
+        print(f"note: {n}")
+    if not ns.apply:
+        print("\ndry run. --apply fires each repo's agent-dispatch (its own gate still decides).")
+        return 0
+    for name in plan:
+        subprocess.run(["gh", "workflow", "run", "agent-dispatch.yml", "-R", _slug(name, pf["owner"])], check=False)
+    return 0
+
+
 def scan_suggestions(repos: list[dict], pf: dict, now) -> list[dict]:
     """Read-only triage of an owner's repos. Tier A is a human decision, so it is never suggested."""
     import datetime as dt
@@ -672,6 +726,10 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--mode", choices=PF_KEYS["mode"])
         p.add_argument("--enabled", choices=["true", "false"])
         p.set_defaults(fn=cmd_portfolio, cmd=c)
+    p = sub.add_parser("pick", help="plan the nightly dispatch across repos by priority (dry run unless --apply)")
+    p.add_argument("--reserve", type=int, default=0, help="runs to keep back for your interactive use")
+    p.add_argument("--apply", action="store_true")
+    p.set_defaults(fn=cmd_pick)
     p = sub.add_parser("kit-export", help="assemble the public shared-kit tree in a new directory (no push)")
     p.add_argument("dest")
     p.set_defaults(fn=cmd_kit)

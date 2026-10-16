@@ -92,3 +92,7 @@ demote.py: stateless per-class circuit breaker for tier-0 auto-merge (revert or 
 ## 2026-10-16 10:42 EDT (at 9ce5bed)
 
 automerge.py + reusable automerge.yml + caller: merges PRs only if agent/* or dependabot, all checks green, tier.py=0 for an owner-enabled class not demoted (history derived from automerged:<class> labels, revert titles, check-runs on the merge sha). Ships inert (empty merge-policy). Workflow runs on default-branch copy and only diffs PR content. Not yet live-tested.
+
+## 2026-10-16 10:52 EDT (at 75740ba)
+
+ap pick: work-conserving allocation of the global daily run pool across enabled repos by priority (tier default A8/B5/C2), capacity = min(agent-ready issues, runs left under the repo gate), owner reserve, portfolio hold_until pause (stencil held to 21:00Z). Wave-1 repos Ryan put on hold are now enabled:false in the portfolio so nothing reads or dispatches them.

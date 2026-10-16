@@ -36,6 +36,7 @@ ap status                             # runs (24h) and agent PRs per repo
 ap ruleset <repo> [--apply]           # branch ruleset: PR + code owners + signed + merge-commit only + guard
 ap enable|pause|resume [repo] [--apply]   # repo variables; dry run unless --apply
 ap add|set <repo> [--tier T --mode M --enabled true|false]   # edit policy/portfolio.yaml (local only)
+ap pick [--reserve N] [--apply]       # plan the nightly dispatch: priority-weighted, work-conserving (dry run default)
 ap scan [--owner O]                   # read-only: suggest which repos to add
 ```
 All commands that change GitHub are dry-run by default.

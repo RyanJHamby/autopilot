@@ -4,7 +4,8 @@
 #   tests-add-only   new test files or additive test edits (no removed lines, no skips)
 #   lockfile-patch   package-lock.json patch-version bumps only
 #   generated        files matching generated_globs
+#   kit-bump         workflow caller pin bumps to a kit sha the owner approved (autopilot-approved/APPROVED)
 # Any PR touching a protected path (workflows, .autopilot, .claude, migrations, billing...) is always yours.
-auto_merge_classes: []
+auto_merge_classes: [kit-bump]
 generated_globs: []
 protected_extra: []

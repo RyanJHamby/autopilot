@@ -995,10 +995,10 @@ def cmd_approve(ns: argparse.Namespace) -> int:
     kit_repo, sha = _kit_slug_and_sha(ns.kit)
     kit = _load_runtime("automerge").approvals_repo(kit_repo)  # approvals live in <owner>/autopilot-approved
     cur = subprocess.run(["gh", "api", f"repos/{kit}/contents/APPROVED"], capture_output=True, text=True)
-    body, file_sha = ("# Kit shas the owner approved. Only owner-reviewed PRs may change this file.\n", None)
+    body = "# Kit shas the owner approved. Only owner-reviewed PRs may change this file.\n"
     if cur.returncode == 0:
         j = json.loads(cur.stdout)
-        body, file_sha = base64.b64decode(j["content"]).decode(), j["sha"]
+        body = base64.b64decode(j["content"]).decode()
     if sha in body:
         print(f"{sha[:7]} is already approved")
         return 0
@@ -1006,39 +1006,34 @@ def cmd_approve(ns: argparse.Namespace) -> int:
     if not ns.apply:
         print(f"[dry run] would open a PR on {kit} adding:\n{sha}  {ns.note or 'approved'}")
         return 0
-    head = json.loads(_run("gh", "api", f"repos/{kit}/git/ref/heads/main"))["object"]["sha"]
+    import tempfile
+
     branch = f"approve-{sha[:7]}"
-    _run("gh", "api", f"repos/{kit}/git/refs", "-f", f"ref=refs/heads/{branch}", "-f", f"sha={head}")
-    args = [
-        "gh",
-        "api",
-        "-X",
-        "PUT",
-        f"repos/{kit}/contents/APPROVED",
-        "-f",
-        f"message=approve kit {sha[:7]}",
-        "-f",
-        f"branch={branch}",
-    ]
-    args += ["-f", f"content={base64.b64encode(body.encode()).decode()}"]
-    if file_sha:
-        args += ["-f", f"sha={file_sha}"]
-    _run(*args)
-    url = _run(
-        "gh",
-        "pr",
-        "create",
-        "-R",
-        kit,
-        "--base",
-        "main",
-        "--head",
-        branch,
-        "--title",
-        f"approve kit {sha[:7]}",
-        "--body",
-        f"Approves `{sha}` for automatic pin bumps in repos that opted into the `kit-bump` class.\n\n{ns.note or ''}\n\nReview the diff of the kit between the previously approved sha and this one before merging.",
-    )
+    with tempfile.TemporaryDirectory(prefix="ap-approve-") as td:
+        dest = Path(td) / "approved"
+        _run("gh", "repo", "clone", kit, str(dest))
+        _run("git", "checkout", "-q", "-B", branch, "origin/main", cwd=dest)
+        (dest / "APPROVED").write_text(body)
+        _run("git", "add", "-A", cwd=dest)
+        # a LOCAL signed commit: commits made through the contents API are unsigned and the approvals ruleset requires signatures
+        _run("git", "commit", "-q", "-S", "-m", f"approve kit {sha[:7]}", cwd=dest)
+        _run("git", "push", "-q", "-f", "origin", branch, cwd=dest)
+        url = _run(
+            "gh",
+            "pr",
+            "create",
+            "-R",
+            kit,
+            "--base",
+            "main",
+            "--head",
+            branch,
+            "--title",
+            f"approve kit {sha[:7]}",
+            "--body",
+            f"Approves `{sha}` for automatic pin bumps in repos that opted into the `kit-bump` class.\n\n{ns.note or ''}\n\nReview the diff of the kit between the previously approved sha and this one before merging.",
+            cwd=dest,
+        )
     print(url.strip())
     return 0
 

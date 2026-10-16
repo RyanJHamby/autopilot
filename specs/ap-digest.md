@@ -1,6 +1,6 @@
 ---
 id: ap-digest
-goal: "`ap digest [--out FILE]` prints (or writes) a markdown digest of the last 24h: agent PRs merged, PRs waiting on the owner, failed runs, paused/held repos. Read-only, no tokens."
+goal: "`ap digest [--out FILE]` prints (or writes) a markdown digest of the last 24h: agent PRs merged, PRs waiting on the owner, failed runs, paused/held repos. Read-only, zero model usage."
 acceptance:
   - uv run pytest tests/test_digest.py
   - uv run ruff check .

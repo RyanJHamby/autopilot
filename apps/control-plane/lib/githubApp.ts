@@ -38,3 +38,12 @@ export async function setRepoVariable(token: string, repo: string, name: string,
     if (!crt.ok) throw new Error(`create variable failed: ${crt.status}`);
   } else if (!upd.ok) throw new Error(`update variable failed: ${upd.status}`);
 }
+
+/** Installation id for one repo (app-level call). 404 means the app is not installed there. */
+export async function repoInstallationId(jwt: string, repo: string, f: typeof fetch = fetch): Promise<number> {
+  const res = await f(`https://api.github.com/repos/${repo}/installation`, {
+    headers: { Authorization: `Bearer ${jwt}`, Accept: "application/vnd.github+json", "User-Agent": "autopilot-control" },
+  });
+  if (!res.ok) throw new Error(`app is not installed on ${repo} (${res.status})`);
+  return ((await res.json()) as { id: number }).id;
+}

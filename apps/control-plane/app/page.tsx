@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { currentSession } from "../lib/session";
 import { ranked, share, status } from "../lib/portfolio";
 import { loadState } from "../lib/store";
+import Controls from "./Controls";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,7 @@ export default async function Portfolio() {
               {r.public ? " · public" : ""}
               {r.hold_until ? ` · held until ${r.hold_until.slice(0, 16).replace("T", " ")}Z` : ""}
             </div>
+            {st !== "dormant" && <Controls repo={`${s.owner}/${r.name}`} priority={r.priority} />}
             <div className="bar" aria-label={`${pct}% of pool`}>
               <i style={{ width: `${pct}%` }} />
             </div>

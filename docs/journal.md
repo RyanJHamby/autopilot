@@ -140,3 +140,7 @@ GitHub App helpers (control-plane lib/githubApp.ts): RS256 app JWT (9 min), repo
 ## 2026-10-16 12:10 EDT (at 7e7449a)
 
 GitHub App 'autopilot-control' registered by Ryan (id 5347578). Private key stored in Vercel (sensitive) and the downloaded .pem deleted. Verified via app JWT: permissions exactly actions:read, actions_variables:write, checks:read, contents:read, issues:write, pull_requests:write (no workflows/admin/secrets); events issues/pull_request/workflow_run. No installation yet.
+
+## 2026-10-16 12:21 EDT (at 1985610)
+
+Webhook verified live: GitHub deliveries 401 until the secret was reset on both sides, then 202. Lever write path live: POST /api/levers (owner session + same-origin JSON) -> planChange -> app JWT -> repo-scoped installation token (actions_variables:write only) -> AUTOPILOT_* variable + DB + audit row; Pause/Resume/priority controls on the portfolio. Not yet exercised against drillpad-workspace by a signed-in click.

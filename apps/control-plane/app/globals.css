@@ -13,3 +13,4 @@ h1 { font-size:1.25rem; margin:8px 0 2px; }
 .meta { color:var(--muted); font-size:.85rem; margin-top:4px; }
 .bar { height:6px; background:var(--line); border-radius:3px; margin-top:8px; overflow:hidden; }
 .bar > i { display:block; height:100%; background:var(--ok); }
+button,select{font:inherit;padding:4px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}

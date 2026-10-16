@@ -56,3 +56,7 @@ Onboarding stencil (Next.js/Supabase/Vercel/Stripe/web-push, existing AGENTS.md+
 ## 2026-10-16 08:55 EDT (at fef15e0)
 
 ap init clobbered stencil's PR template and CODEOWNERS catch-all. Now: existing non-autopilot files are left alone; CODEOWNERS gets a managed block merged into it.
+
+## 2026-10-16 10:07 EDT (at f457e10)
+
+ap scan: read-only repo triage (fresh->B, warm->C dormant; forks, archived, stale, excluded skipped; public flagged; tier A never suggested). First slice of v2 P1.

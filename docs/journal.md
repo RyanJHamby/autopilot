@@ -172,3 +172,6 @@ runner.py: Runner protocol (untrusted; edits a worktree only) + trusted pipeline
 
 ## 2026-10-16 sensitive-name precision
 First real use of the sensitive-material check on drillpad-workspace flagged interview lessons ('health-checker-circuit.py', '07-secrets-and-key-management.md') because it matched substrings. Now whole file stems only (journal, diary, secrets, credentials, key extensions, .env), so ordinary content passes and dated journals still match. A journal.md still trips it on purpose (dev journals must be a conscious --allow-sensitive).
+
+## 2026-10-16 New task form
+Phone-entered tasks: /new -> POST /api/tasks. A conservative screen (lib/task.ts: known runner commands only, safe characters, no comms/secrets/deploy/protected-path asks, size limits) decides whether the issue gets `agent-ready`; failures are rejected with reasons, never created half-ready. Issue is created through the GitHub App (issues:write only), so the label event comes from the app and owner-only dispatch does not fire; the next scheduled dispatch picks it up. 10 app-created tasks per repo per day (audit-counted). lib/task.ts is on the guard path. Deployed; first live use pending Ryan.

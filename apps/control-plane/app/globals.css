@@ -21,3 +21,6 @@ button,select{font:inherit;padding:4px 10px;border-radius:8px;border:1px solid v
 .btn.on { background:var(--fg); color:var(--bg); border-color:var(--fg); font-weight:600; }
 button:disabled, select:disabled { opacity:.55; cursor:progress; }
 .flash.ok { color:var(--ok); } .flash.err { color:#c0392b; } .flash.info { color:var(--warn); }
+textarea, select, input { font: inherit; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+label { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+a { color: inherit; }

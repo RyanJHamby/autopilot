@@ -16,6 +16,7 @@
 /apps/control-plane/lib/githubApp.ts @RyanJHamby
 /apps/control-plane/lib/levers.ts @RyanJHamby
 /apps/control-plane/lib/ledger.ts @RyanJHamby
+/apps/control-plane/lib/task.ts @RyanJHamby
 /apps/control-plane/app/api/ @RyanJHamby
 /apps/control-plane/supabase/ @RyanJHamby
 /apps/control-plane/github-app/ @RyanJHamby

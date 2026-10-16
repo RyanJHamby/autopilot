@@ -14,6 +14,7 @@ export default async function Portfolio() {
   return (
     <main>
       <h1>Portfolio</h1>
+      <div className="sub"><a href="/new">+ New task</a></div>
       <div className="sub">
         {s.owner} · {s.global_runs_per_day} runs/day pool · snapshot {s.generated_at.slice(0, 16).replace("T", " ")}Z · read-only
       </div>

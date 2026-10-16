@@ -160,3 +160,6 @@ Safety zones: ap init now refuses clones that hold personal or secret material (
 ## 2026-10-16 12:45 EDT (at d41ca3c)
 
 Backlog: 5 agent-safe specs (report-cost, ap-digest, ap-upgrade, inbox-page, scorecard-ui) with runnable acceptance commands, all passing the handshake (ap-digest first rejected because it said 'vault'; reworded). BACKLOG.md splits agent-safe periphery from human-only guard-path work. The autopilot repo has no remote, no CI and no issues yet.
+
+## 2026-10-16 patchcheck
+patchcheck.py: the gate for the vendor-neutral commit path (P5). A runner only edits a worktree; a trusted job makes a patch that must pass this (no symlinks/submodules/mode or binary changes/renames, no path tricks or .git internals) plus all guard rules before a signed commit is created. Pure and tested; not wired to a workflow or runner yet.

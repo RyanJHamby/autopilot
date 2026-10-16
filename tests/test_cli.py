@@ -597,3 +597,9 @@ def test_implementer_infers_acceptance_instead_of_stopping():
     assert "INFER" in role and "Inferred acceptance" in role and "[inferred tests]" in role
     assert "stop and add `needs-human`" not in role.split("2. Write")[0]
     assert "infer them" in (cli.KIT / "workflows/exec.yml").read_text()
+
+
+def test_exec_flags_runs_with_no_pr_and_no_blocker():
+    wf = (cli.KIT / "workflows/exec.yml").read_text()
+    assert "neither a PR nor a blocker" in wf and "needs-human" in wf
+    assert wf.index("neither a PR nor a blocker") < wf.index("remove empty agent branch")

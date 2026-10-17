@@ -28,6 +28,8 @@ guard:
     - apps/control-plane/lib/levers.ts
     - apps/control-plane/lib/ledger.ts
     - apps/control-plane/lib/task.ts
+    - apps/control-plane/lib/triage.ts
+    - apps/control-plane/lib/triage-run.ts
     - apps/control-plane/app/api/**
     - apps/control-plane/supabase/**
     - apps/control-plane/github-app/**

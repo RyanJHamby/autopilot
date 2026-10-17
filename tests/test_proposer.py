@@ -13,8 +13,16 @@ ST = json.loads((ROOT / ".github/kit-proposer-settings.json").read_text())
 def test_trigger_is_owner_only_and_label_scoped():
     job = WF["jobs"]["propose"]
     assert WF[True]["issues"]["types"] == ["labeled"]
-    assert "github.event.label.name == 'kit-fix'" in job["if"] and "github.actor == github.repository_owner" in job["if"]
-    assert "AUTOPILOT_PAUSED" in job["if"]
+    cond = " ".join(job["if"].split())
+    assert "github.event.label.name == 'kit-fix'" in cond and "github.actor == github.repository_owner" in cond
+    assert "AUTOPILOT_PAUSED" in cond
+    # the only other actor is the control plane's triage bot, and only on an issue it labelled from-triage
+    assert "github.actor == 'autopilot-control[bot]' && contains(github.event.issue.labels.*.name, 'from-triage')" in cond
+
+
+def test_proposer_has_a_daily_cap_before_it_does_anything():
+    first = WF["jobs"]["propose"]["steps"][0]
+    assert first["name"].startswith("daily cap") and "exit 1" in first["run"] and "autopilot/kit-fix-" in first["run"]
 
 
 def test_it_can_propose_but_never_merge_or_push():

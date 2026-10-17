@@ -483,7 +483,7 @@ def test_export_state_shape():
 
     out = cli.export_state(cli.load_portfolio(), dt.datetime(2026, 10, 16, tzinfo=dt.timezone.utc))
     r = {x["name"]: x for x in out["repos"]}
-    assert r["stencil"]["hold_until"] and r["stencil"]["priority"] == 8
+    assert r["stencil"]["hold_until"] is None and r["stencil"]["priority"] == 8  # the 5pm pause has expired
     assert all(set(x) == {"name", "tier", "mode", "enabled", "priority", "hold_until", "public"} for x in out["repos"])
 
 

@@ -160,7 +160,9 @@ def test_dispatch_skips_issue_with_merged_agent_pr_unless_retry():
     fired = []
     assert gate.cmd_dispatch(cfg, 48, gh=make(["agent-ready"]), run=lambda *a: fired.append(a), sleep=lambda s: None) == 0
     assert not fired
-    assert gate.cmd_dispatch(cfg, 48, gh=make(["agent-ready", "retry"]), run=lambda *a: fired.append(a), sleep=lambda s: None) == 1
+    assert (
+        gate.cmd_dispatch(cfg, 48, gh=make(["agent-ready", "retry"]), run=lambda *a: fired.append(a), sleep=lambda s: None) == 1
+    )
 
 
 def test_owner_hold_blocks_until_it_expires():

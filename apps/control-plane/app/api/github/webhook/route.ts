@@ -1,4 +1,5 @@
 import { verifySignature, toRunRow } from "../../../../lib/ledger";
+import { maybeTriage } from "../../../../lib/triage-run";
 
 export const runtime = "nodejs";
 
@@ -10,6 +11,15 @@ export async function POST(req: Request) {
   }
   const row = toRunRow(req.headers.get("x-github-event") ?? "", JSON.parse(raw));
   if (!row) return new Response("ignored", { status: 202 });
+
+  // Failed agent run: let triage look for a repeated infrastructure cause (off unless AUTO_TRIAGE=true; never breaks the ledger)
+  if (row.outcome === "failure") {
+    try {
+      await maybeTriage(row.repo, { fetch, env: process.env, now: new Date() });
+    } catch {
+      /* triage is best effort */
+    }
+  }
 
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;

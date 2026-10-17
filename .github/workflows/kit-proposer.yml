@@ -18,7 +18,11 @@ concurrency:
 
 jobs:
   propose:
-    if: github.event.label.name == 'kit-fix' && github.actor == github.repository_owner && vars.AUTOPILOT_PAUSED != 'true'
+    # The owner's label, or the control plane's own triage bot on an issue it opened itself (label from-triage). Anyone else: nothing.
+    if: >-
+      github.event.label.name == 'kit-fix' && vars.AUTOPILOT_PAUSED != 'true' &&
+      (github.actor == github.repository_owner ||
+       (github.actor == 'autopilot-control[bot]' && contains(github.event.issue.labels.*.name, 'from-triage')))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -33,6 +37,11 @@ jobs:
       ISSUE: ${{ github.event.issue.number }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
+      - name: daily cap (at most 2 proposer PRs per 24 hours; each run spends subscription usage)
+        run: |
+          SINCE=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          N=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=all&per_page=50" --jq "[.[]|select(.head.ref|startswith(\"autopilot/kit-fix-\"))|select(.created_at>\"$SINCE\")]|length")
+          [ "$N" -lt 2 ] || { echo "::error::proposer daily cap reached ($N PRs in 24h)"; exit 1; }
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.repository.default_branch }}

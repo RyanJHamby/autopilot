@@ -706,3 +706,14 @@ def test_implementer_never_ends_with_a_background_command_running():
     role = (cli.KIT / "agents/implementer.md").read_text()
     assert "Never end your turn while a command is still running" in role and "left to CI" in role
     assert "background" in (cli.KIT / "workflows/exec.yml").read_text()
+
+
+def test_exec_agent_step_has_single_env_and_a_writable_summary_and_nonclosing_prs_flag_the_issue():
+    import yaml as _y
+
+    wf = (cli.KIT / "workflows/exec.yml").read_text()
+    doc = _y.safe_load(wf.replace("{{", "_").replace("}}", "_"))
+    agent = next(s for s in doc["jobs"]["exec"]["steps"] if s.get("id") == "agent")
+    assert agent["env"]["GITHUB_STEP_SUMMARY"] == "/dev/null" and "CLAUDE_BRANCH" in agent["env"]
+    role = (cli.KIT / "agents/implementer.md").read_text()
+    assert "Refs #N" in role and "needs-human" in role

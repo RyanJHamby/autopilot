@@ -1,0 +1,24 @@
+# autopilot-managed thin caller. Weekly retro: repeated failures become reviewed lessons for future agent runs.
+name: improve
+
+on:
+  schedule:
+    - cron: "11 12 * * 0"     # Sundays, ~08:11 ET
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  improve:
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+      actions: read
+      id-token: write
+    uses: {{KIT_REPO}}/.github/workflows/improve.yml@{{KIT_SHA}}
+    with:
+      kit_repo: {{KIT_REPO}}
+      kit_ref: {{KIT_SHA}}
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

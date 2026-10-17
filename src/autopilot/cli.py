@@ -1115,6 +1115,101 @@ def cmd_rollout(ns: argparse.Namespace) -> int:
     return 0
 
 
+def gather_preflight_facts(name: str, entry: dict, owner: str) -> dict:
+    """Read-only: everything `preflight.evaluate` needs, from GitHub (REST/gh) and the portfolio."""
+    slug = f"{owner}/{name}"
+
+    def gh(*a: str):
+        r = subprocess.run(["gh", *a], capture_output=True, text=True)
+        return json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else None
+
+    def text(path: str) -> str:
+        r = subprocess.run(
+            ["gh", "api", f"repos/{slug}/contents/{path}", "-H", "Accept: application/vnd.github.raw+json"],
+            capture_output=True,
+            text=True,
+        )
+        return r.stdout if r.returncode == 0 else ""
+
+    secrets = [x["name"] for x in gh("secret", "list", "-R", slug, "--json", "name") or []]
+    variables = {x["name"]: x["value"] for x in gh("variable", "list", "-R", slug, "--json", "name,value") or []}
+    rs_list = gh("api", f"repos/{slug}/rulesets") or []
+    rs = None
+    if rs_list:
+        full = gh("api", f"repos/{slug}/rulesets/{rs_list[0]['id']}") or {}
+        rules = {r["type"]: r.get("parameters", {}) for r in full.get("rules", [])}
+        rs = {
+            "checks": [c["context"] for c in rules.get("required_status_checks", {}).get("required_status_checks", [])],
+            "signatures": "required_signatures" in rules,
+            "codeowner": bool(rules.get("pull_request", {}).get("require_code_owner_review")),
+        }
+    co = text(".github/CODEOWNERS")
+    shas = set()
+    for wf in ("agent-exec", "agent-dispatch", "guard", "handshake", "automerge"):
+        shas |= set(re.findall(r"autopilot-kit/\.github/workflows/[\w.-]+@([0-9a-f]{40})", text(f".github/workflows/{wf}.yml")))
+    approved = _load_runtime("automerge").fetch_approved(f"{owner}/autopilot-kit")
+    runs = gh("run", "list", "-R", slug, "--workflow", "agent-exec.yml", "--limit", "1", "--json", "conclusion,status") or []
+    last_exec = (runs[0].get("conclusion") or runs[0]["status"]) if runs else None
+    any_runs = gh("run", "list", "-R", slug, "--limit", "8", "--json", "conclusion,startedAt,updatedAt") or []
+
+    def secs(r):
+        import datetime as dt
+
+        try:
+            return (
+                dt.datetime.fromisoformat(r["updatedAt"].replace("Z", "+00:00"))
+                - dt.datetime.fromisoformat(r["startedAt"].replace("Z", "+00:00"))
+            ).total_seconds()
+        except Exception:
+            return 99
+
+    billing = bool(any_runs) and all(r.get("conclusion") == "failure" and secs(r) < 6 for r in any_runs[:3])
+    prs = gh("pr", "list", "-R", slug, "--state", "open", "--json", "headRefName") or []
+    issues = gh("issue", "list", "-R", slug, "--label", "agent-ready", "--state", "open", "--json", "labels") or []
+    skip = {"hold", "needs-human", "blocked", "agent-working"}
+    cfg = yaml.safe_load(text(".autopilot/repo.yaml") or "{}") or {}
+    pol = yaml.safe_load(text(".autopilot/merge-policy.yaml") or "{}") or {}
+    return {
+        "secrets": secrets,
+        "variables": variables,
+        "ruleset": rs,
+        "codeowners_catchall": bool(re.search(r"(?m)^\*\s", co)),
+        "codeowners_has_block": "BEGIN autopilot" in co,
+        "caller_shas": sorted(shas),
+        "approved": approved,
+        "latest_approved": approved[-1] if approved else None,
+        "last_exec": last_exec,
+        "billing_suspect": billing,
+        "open_agent_prs": sum(1 for p_ in prs if p_["headRefName"].startswith("agent/")),
+        "max_open_prs": int((cfg.get("budget") or {}).get("max_open_agent_prs", 3)),
+        "agent_ready": sum(1 for i in issues if not {x["name"] for x in i["labels"]} & skip),
+        "merge_classes": list(pol.get("auto_merge_classes") or []),
+        "public": bool(entry.get("public")),
+        "data_class": entry.get("data_class"),
+    }
+
+
+def cmd_preflight(ns: argparse.Namespace) -> int:
+    from autopilot import preflight
+
+    pf = load_portfolio()
+    worst = 0
+    for name in ns.repos:
+        if name not in pf["repos"]:
+            print(f"{name}: not in the portfolio", file=sys.stderr)
+            return 1
+        res = preflight.evaluate(gather_preflight_facts(name, pf["repos"][name], pf["owner"]))
+        p_, w_, f_ = preflight.summarize(res)
+        print(
+            f"== {name}: {p_} pass, {w_} warn, {f_} fail -> {'NOT READY to leave unattended' if f_ else 'ready to run unattended' + (' (with warnings)' if w_ else '')}"
+        )
+        for lv, msg in res:
+            if lv != preflight.PASS or ns.verbose:
+                print(f"  {lv:4} {msg}")
+        worst = max(worst, 1 if f_ else 0)
+    return worst
+
+
 def scan_suggestions(repos: list[dict], pf: dict, now) -> list[dict]:
     """Read-only triage of an owner's repos. Tier A is a human decision, so it is never suggested."""
     import datetime as dt
@@ -1314,6 +1409,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--only", action="append", default=[], help="limit to these repo names")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_rollout)
+    p = sub.add_parser("preflight", help="read-only readiness check before leaving a repo unattended")
+    p.add_argument("repos", nargs="+")
+    p.add_argument("-v", "--verbose", action="store_true", help="also list passing checks")
+    p.set_defaults(fn=cmd_preflight)
     p = sub.add_parser("export-state", help="write the portfolio snapshot the control-plane UI reads")
     p.add_argument("dest", nargs="?", default=str(ROOT / "apps/control-plane/data/state.json"))
     p.add_argument("--sql", action="store_true", help="print the idempotent seed SQL instead of writing the file")

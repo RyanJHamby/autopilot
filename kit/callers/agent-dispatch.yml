@@ -6,6 +6,11 @@ on:
     types: [labeled]
   issue_comment:
     types: [created]
+  workflow_run:             # chain: when an agent run finishes, the gate checks for the next ready issue
+    workflows: ["agent-exec"]
+    types: [completed]
+  push:
+    branches: [main]        # you merged something: open-PR capacity changed
   schedule:
     - cron: "37 5 * * *"      # nightly, ~01:37 ET
     - cron: "23 17 * * 1-5"   # weekday midday, ~13:23 ET

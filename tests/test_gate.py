@@ -137,3 +137,25 @@ def test_owner_hold_blocks_until_it_expires():
     assert not d.allow and "hold" in d.reason
     cfg["hold_until"] = "2026-10-16T10:00:00Z"
     assert gate.decide(cfg, [], 0, role="implementer", now=now).allow
+
+
+def test_inflight_issues_are_not_dispatched_twice():
+    runs = [
+        {"status": "in_progress", "displayTitle": "agent #48 "},
+        {"status": "queued", "displayTitle": "agent #42 [hard]"},
+        {"status": "completed", "displayTitle": "agent #46 "},
+    ]
+    assert gate.inflight_issues(runs) == {48, 42}
+    issues = [{"number": n, "labels": [{"name": "agent-ready"}], "createdAt": f"2026-10-0{n % 9 + 1}"} for n in (48, 42, 46)]
+    branches = [f"agent/{n}-inflight" for n in gate.inflight_issues(runs)]
+    assert gate.pick_issues(issues, branches, 5) == [46]
+
+
+def test_chain_triggers_are_in_the_dispatch_caller_and_gated():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "kit"
+    caller = (root / "callers/agent-dispatch.yml").read_text()
+    wf = (root / "workflows/dispatch.yml").read_text()
+    assert "workflow_run:" in caller and '"agent-exec"' in caller and "push:" in caller
+    assert "github.event.workflow_run.name == 'agent-exec'" in wf and "AUTOPILOT_PAUSED != 'true'" in wf

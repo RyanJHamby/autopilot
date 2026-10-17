@@ -58,6 +58,8 @@
       "Edit(apps/control-plane/lib/ledger.ts)",
       "Edit(apps/control-plane/lib/levers.ts)",
       "Edit(apps/control-plane/lib/task.ts)",
+      "Edit(apps/control-plane/lib/triage-run.ts)",
+      "Edit(apps/control-plane/lib/triage.ts)",
       "Edit(apps/control-plane/proxy.ts)",
       "Edit(apps/control-plane/supabase/**)",
       "Edit(kit/agents/**)",

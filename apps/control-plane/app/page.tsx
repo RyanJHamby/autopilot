@@ -30,7 +30,7 @@ export default async function Portfolio() {
             <div className="meta">
               tier {r.tier} · {r.mode} · priority {r.priority}
               {r.public ? " · public" : ""}
-              {r.hold_until ? ` · held until ${r.hold_until.slice(0, 16).replace("T", " ")}Z` : ""}
+              {r.hold_until && new Date(r.hold_until) > now ? ` · held until ${r.hold_until.slice(0, 16).replace("T", " ")}Z` : ""}
             </div>
             {st !== "dormant" && <Controls key={`${r.name}:${r.paused}:${r.priority}`} repo={`${s.owner}/${r.name}`} priority={r.priority} paused={!!r.paused} />}
             <div className="bar" aria-label={`${pct}% of pool`}>

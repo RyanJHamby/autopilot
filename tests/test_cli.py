@@ -361,7 +361,7 @@ KIT_SHA = "a" * 40
 def test_central_init_writes_pinned_callers_and_no_vendored_scripts(tmp_path):
     repo = make_repo(tmp_path, {"package.json": "{}", "package-lock.json": "{}"})
     cli.init_repo(repo, "A", "standard", central=("acme/autopilot-kit", KIT_SHA))
-    for n in ("agent-exec", "agent-dispatch", "guard", "handshake", "automerge"):
+    for n in ("agent-exec", "agent-dispatch", "guard", "handshake", "automerge", "improve"):
         t = (repo / f".github/workflows/{n}.yml").read_text()
         assert "uses: acme/autopilot-kit/.github/workflows/" in t and f"@{KIT_SHA}" in t
         assert "{{" not in t.replace("${{", "")
@@ -409,6 +409,7 @@ def test_kit_export_tree_and_leak_check(tmp_path):
         ".github/workflows/exec.yml",
         ".github/workflows/guard.yml",
         ".github/workflows/handshake.yml",
+        ".github/workflows/improve.yml",
         "README.md",
         "runtime/automerge.py",
         "runtime/config.py",
@@ -417,6 +418,7 @@ def test_kit_export_tree_and_leak_check(tmp_path):
         "runtime/guard.py",
         "runtime/handshake.py",
         "runtime/patchcheck.py",
+        "runtime/retro.py",
         "runtime/runner.py",
         "runtime/tier.py",
     ]
@@ -627,7 +629,7 @@ def test_exec_flags_runs_with_no_pr_and_no_blocker():
 
 NEW_SHA = "b" * 40
 KIT_SLUG = "acme/autopilot-kit"
-CALLERS = ("agent-exec", "agent-dispatch", "guard", "handshake", "automerge")
+CALLERS = ("agent-exec", "agent-dispatch", "guard", "handshake", "automerge", "improve")
 
 
 def _git(repo, *a):

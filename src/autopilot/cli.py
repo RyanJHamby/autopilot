@@ -1210,6 +1210,51 @@ def cmd_preflight(ns: argparse.Namespace) -> int:
     return worst
 
 
+_REDACT = [
+    (re.compile(r"sk-ant-[A-Za-z0-9_-]{8,}"), "[redacted-key]"),
+    (re.compile(r"\b(ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9_]{12,}"), "[redacted-token]"),
+    (re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{6,}"), "Bearer [redacted]"),
+    (
+        re.compile(r"(?i)\b(authorization|token|secret|password|api[_-]?key)(\s*[:=]\s*)(?!\[redacted)[^\s'\"]{6,}"),
+        r"\1\2[redacted]",
+    ),
+    (re.compile(r"eyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}"), "[redacted-jwt]"),
+]
+
+
+def redact(text: str) -> str:
+    """Strip anything key-shaped from log text before it goes into an issue (belt and braces: the logs are already masked)."""
+    for rx, rep in _REDACT:
+        text = rx.sub(rep, text)
+    return text
+
+
+def cmd_kit_fix(ns: argparse.Namespace) -> int:
+    """Turn a failed agent run into a `kit-fix` issue on the kit-source repo. The label fires the kit-proposer workflow,
+    which drafts a fix PR for your review. Evidence is the failed step's log tail, redacted."""
+    pf = load_portfolio()
+    m = re.fullmatch(r"([\w.-]+)(?:/([\w.-]+))?:(\d+)", ns.run or "")
+    if not m:
+        print("--run must look like REPO:RUN_ID (for example stencil:38989085293)", file=sys.stderr)
+        return 1
+    repo = f"{pf['owner']}/{m.group(2) or m.group(1)}" if "/" not in (ns.run or "") else f"{m.group(1)}/{m.group(2)}"
+    r = subprocess.run(["gh", "run", "view", m.group(3), "-R", repo, "--log-failed"], capture_output=True, text=True)
+    tail = redact("\n".join(r.stdout.splitlines()[-ns.lines :])) if r.returncode == 0 else "(could not read the run log)"
+    body = (
+        f"Failure in `{repo}` run {m.group(3)}.\n\n{ns.note or ''}\n\n<details><summary>failed-step log (last {ns.lines} lines, redacted)</summary>\n\n"
+        f"```\n{tail}\n```\n</details>\n\nThe proposer should find the root cause in `kit/` or `src/autopilot/`, make the smallest fix with a test, and open a PR. "
+        "Anything needing `.github/`, `.autopilot/`, `policy/` or `apps/` is for the owner."
+    )
+    kit_source = f"{pf['owner']}/autopilot"
+    if not ns.apply:
+        print(f"[dry run] would open an issue on {kit_source} labelled kit-fix:\n{ns.title}\n{body[:600]}")
+        return 0
+    subprocess.run(["gh", "label", "create", "kit-fix", "-R", kit_source, "--color", "B60205", "--force"], capture_output=True)
+    url = _run("gh", "issue", "create", "-R", kit_source, "--title", ns.title, "--body", body, "--label", "kit-fix")
+    print(url.strip())
+    return 0
+
+
 def scan_suggestions(repos: list[dict], pf: dict, now) -> list[dict]:
     """Read-only triage of an owner's repos. Tier A is a human decision, so it is never suggested."""
     import datetime as dt
@@ -1413,6 +1458,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("repos", nargs="+")
     p.add_argument("-v", "--verbose", action="store_true", help="also list passing checks")
     p.set_defaults(fn=cmd_preflight)
+    p = sub.add_parser("kit-fix", help="file a kit-fix issue from a failed run; the kit-proposer workflow drafts a fix PR")
+    p.add_argument("title")
+    p.add_argument("--run", required=True, metavar="REPO:RUN_ID")
+    p.add_argument("--note", default="")
+    p.add_argument("--lines", type=int, default=60)
+    p.add_argument("--apply", action="store_true")
+    p.set_defaults(fn=cmd_kit_fix)
     p = sub.add_parser("export-state", help="write the portfolio snapshot the control-plane UI reads")
     p.add_argument("dest", nargs="?", default=str(ROOT / "apps/control-plane/data/state.json"))
     p.add_argument("--sql", action="store_true", help="print the idempotent seed SQL instead of writing the file")

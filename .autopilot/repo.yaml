@@ -32,7 +32,10 @@ guard:
     - apps/control-plane/supabase/**
     - apps/control-plane/github-app/**
     - src/autopilot/picker.py
-  comms_allow: []           # path globs where messaging libs are legitimately part of the product
+  comms_allow:             # this repo writes and tests the guard itself, so its journal and guard tests must be able to name the commands the guard forbids
+    - docs/journal.md
+    - tests/test_guard.py
+    - tests/test_proposer.py           # path globs where messaging libs are legitimately part of the product
 
 # budget:                   # optional overrides of policy defaults
 #   runs_per_day: {A: 2, B: 1}

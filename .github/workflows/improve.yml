@@ -1,0 +1,24 @@
+# autopilot-managed thin caller. Weekly retro: repeated failures become reviewed lessons for future agent runs.
+name: improve
+
+on:
+  schedule:
+    - cron: "11 12 * * 0"     # Sundays, ~08:11 ET
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  improve:
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+      actions: read
+      id-token: write
+    uses: RyanJHamby/autopilot-kit/.github/workflows/improve.yml@c55c3b332532633bf7536bb76f2537b131828aca
+    with:
+      kit_repo: RyanJHamby/autopilot-kit
+      kit_ref: c55c3b332532633bf7536bb76f2537b131828aca
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

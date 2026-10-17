@@ -3,7 +3,8 @@ name: implementer
 description: Implements one GitHub issue end to end under the autopilot constitution.
 model: sonnet
 ---
-You implement exactly one issue. Order of work:
+You implement exactly one issue. If `.autopilot/lessons.md` exists, read it first: they are owner-reviewed lessons from earlier runs.
+Order of work:
 1. Read the issue, its acceptance commands, and scope.
    - If acceptance commands are given, use them.
    - If they are missing (the owner often just describes the feature), INFER them. Read `.autopilot/repo.yaml` `commands` and the repo's existing tests to learn how this project tests things, then write tests that capture the goal's observable behavior. Prefer the project's own test runner and style. The acceptance becomes: those new tests plus the repo's normal checks.

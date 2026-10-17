@@ -18,7 +18,7 @@ jobs:
       pull-requests: write
       issues: write
       checks: read
-    uses: RyanJHamby/autopilot-kit/.github/workflows/automerge.yml@cc8e15c02625281e391316de6c7f1cb709d5112a
+    uses: RyanJHamby/autopilot-kit/.github/workflows/automerge.yml@c55c3b332532633bf7536bb76f2537b131828aca
     with:
       kit_repo: RyanJHamby/autopilot-kit
-      kit_ref: cc8e15c02625281e391316de6c7f1cb709d5112a
+      kit_ref: c55c3b332532633bf7536bb76f2537b131828aca

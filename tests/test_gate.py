@@ -82,7 +82,7 @@ def test_dispatch_fires_allowed_issues_and_stops_at_cap():
     def gh(*a):
         if a[0] == "run":
             return state["runs"]
-        if a[0] == "pr":
+        if a[0] in ("pr", "api"):
             return []
         if a[:2] == ("issue", "list"):
             return [
@@ -126,6 +126,41 @@ def test_dispatch_skips_held_issue():
 
     n = gate.cmd_dispatch({"mode": "standard", "tier": "A"}, 5, gh=gh, run=lambda *a: fired.append(a), sleep=lambda s: None)
     assert n == 0 and not fired
+
+
+def test_merged_agent_pr_is_detected_and_retry_overrides():
+    pulls = [
+        {"head": {"ref": "agent/48-fix"}, "merged_at": "2026-10-16T10:00:00Z"},
+        {"head": {"ref": "agent/50-x"}, "merged_at": None},
+        {"head": {"ref": "feature/51-x"}, "merged_at": "2026-10-16T10:00:00Z"},
+    ]
+    merged = gate.merged_agent_issues(pulls)
+    assert merged == {48}
+    assert gate.skip_merged(48, {"agent-ready"}, merged)
+    assert not gate.skip_merged(48, {"agent-ready", "retry"}, merged)
+    assert not gate.skip_merged(50, {"agent-ready"}, merged)
+
+
+def test_dispatch_skips_issue_with_merged_agent_pr_unless_retry():
+    L = lambda *n: [{"name": x} for x in n]
+
+    def make(labels):
+        def gh(*a):
+            if a[0] in ("run", "pr"):
+                return []
+            if a[0] == "api":
+                return [{"head": {"ref": "agent/48-fix"}, "merged_at": "2026-10-16T10:00:00Z"}]
+            if a[:2] == ("issue", "view"):
+                return {"labels": L(*labels)}
+            raise AssertionError(a)
+
+        return gh
+
+    cfg = {"mode": "standard", "tier": "A"}
+    fired = []
+    assert gate.cmd_dispatch(cfg, 48, gh=make(["agent-ready"]), run=lambda *a: fired.append(a), sleep=lambda s: None) == 0
+    assert not fired
+    assert gate.cmd_dispatch(cfg, 48, gh=make(["agent-ready", "retry"]), run=lambda *a: fired.append(a), sleep=lambda s: None) == 1
 
 
 def test_owner_hold_blocks_until_it_expires():

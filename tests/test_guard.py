@@ -117,3 +117,10 @@ def test_kit_managed_paths_are_exempt_from_comms_but_not_secrets():
     assert analyze(ch, agent=False) == []
     assert "secret" in checks(analyze([FileChange(".autopilot/x.py", added=["AKIAABCDEFGHIJKLMNOP"])], agent=False))
     assert "comms" in checks(analyze([FileChange("src/x.py", added=["import smtplib"])], agent=False))
+
+
+def test_proposer_settings_may_name_publish_commands_to_deny_them():
+    ch = [FileChange(".github/kit-proposer-settings.json", added=['"Bash(npm publish*)"', '"Bash(twine *)"'])]
+    assert "comms" not in checks(analyze(ch, agent=False))
+    other = [FileChange("src/x.json", added=['"Bash(npm publish*)"'])]
+    assert "comms" in checks(analyze(other, agent=False))  # the exemption is for that one protected file only

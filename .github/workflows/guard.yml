@@ -12,7 +12,7 @@ jobs:
   guard:
     permissions:
       contents: read
-    uses: RyanJHamby/autopilot-kit/.github/workflows/guard.yml@20c8b03bdc4f93e5e964f4ed15d93351eb9006d7
+    uses: RyanJHamby/autopilot-kit/.github/workflows/guard.yml@87f934ed2c96604e44f1afe3954a4d1574bbc30a
     with:
       kit_repo: RyanJHamby/autopilot-kit
-      kit_ref: 20c8b03bdc4f93e5e964f4ed15d93351eb9006d7
+      kit_ref: 87f934ed2c96604e44f1afe3954a4d1574bbc30a

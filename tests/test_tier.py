@@ -156,3 +156,13 @@ def test_kit_bump_cannot_smuggle_other_files():
     new_file = bump()
     new_file.status = "A"
     assert classify([new_file], POL)["tier"] == 2
+
+
+def test_every_shipped_caller_can_be_part_of_a_kit_bump():
+    # a caller missing from KIT_CALLERS turns every bump into tier 2 (found when `audit` shipped)
+    from pathlib import Path
+
+    import tier
+
+    shipped = {f".github/workflows/{p.name}" for p in (Path(__file__).resolve().parents[1] / "kit" / "callers").glob("*.yml")}
+    assert shipped == tier.KIT_CALLERS

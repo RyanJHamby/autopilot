@@ -125,7 +125,15 @@ def sensitive_findings(repo: Path, *, never_paths: list[str] | None = None, limi
     return found[:limit]
 
 
-AUTOPILOT_WORKFLOWS = {"agent-dispatch.yml", "agent-exec.yml", "guard.yml", "handshake.yml", "automerge.yml", "improve.yml"}
+AUTOPILOT_WORKFLOWS = {
+    "agent-dispatch.yml",
+    "agent-exec.yml",
+    "guard.yml",
+    "handshake.yml",
+    "automerge.yml",
+    "improve.yml",
+    "audit.yml",
+}
 
 
 def secret_exposed_workflows(repo: Path) -> list[str]:
@@ -1440,7 +1448,7 @@ Shared, deterministic building blocks for [autopilot](https://github.com): reusa
 zero-token scripts they run (`guard`, `gate`, `handshake`, `config`). Consuming repos hold thin callers that pin this
 repo by full commit SHA, so a change here reaches a repo only when its owner merges a PR bumping the SHA.
 
-- `.github/workflows/{exec,dispatch,guard,handshake,automerge,improve}.yml`: `workflow_call` workflows
+- `.github/workflows/{exec,dispatch,guard,handshake,automerge,improve,audit}.yml`: `workflow_call` workflows
 - `runtime/*.py`: stdlib + PyYAML; no network access, no secrets
 
 Contains no tokens or personal configuration. Never reference it by branch or tag; always by commit SHA.

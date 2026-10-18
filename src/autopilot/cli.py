@@ -1285,6 +1285,90 @@ def scan_suggestions(repos: list[dict], pf: dict, now) -> list[dict]:
     return out
 
 
+def _latest_approved(kit_repo: str) -> str:
+    approved = _load_runtime("automerge").fetch_approved(kit_repo)
+    if not approved:
+        raise SystemExit(f"no approved kit sha on {kit_repo}'s approvals repo; run `ap approve` and merge it first")
+    return approved[-1]
+
+
+def _detect_checks(slug: str) -> list[str]:
+    """Names of the repo's own CI checks on its default branch head (everything except autopilot's)."""
+    names = _run("gh", "api", f"repos/{slug}/commits/HEAD/check-runs", "--jq", ".check_runs[].name", check=False).split()
+    skip = ("guard", "automerge", "dispatch", "handshake", "agent")
+    return sorted({n for n in names if not n.lower().startswith(skip)})
+
+
+def cmd_onboard(ns: argparse.Namespace) -> int:
+    """Opt a repo in. Stage 1 opens the scaffold PR (safety checks included). After you merge it, `--finish` applies the ruleset,
+    enables the repo and runs preflight. The only manual steps are the ones that must be yours: the token and the App."""
+    import tempfile
+
+    pf = load_portfolio()
+    slug = _slug(ns.repo, pf["owner"])
+    name = slug.split("/")[1]
+    kit_repo = ns.kit_repo
+    if ns.finish:
+        checks = ns.check or _detect_checks(slug)
+        print(f"required checks besides guard: {checks or 'none detected (pass --check)'}")
+        ruleset_ns = argparse.Namespace(repo=slug, check=checks, central=True, apply=ns.apply)
+        if cmd_ruleset(ruleset_ns):
+            return 1
+        cmd_vars(argparse.Namespace(cmd="enable", repo=name, apply=ns.apply))
+        if ns.apply:
+            cmd_preflight(argparse.Namespace(repos=[name], verbose=False))
+        return 0
+    if name not in pf["repos"] and ns.apply:
+        if not ns.tier or not ns.mode:
+            print(f"{name} is new: pass --tier A|B|C --mode standard|yolo|dormant", file=sys.stderr)
+            return 1
+        cmd_portfolio(argparse.Namespace(cmd="add", repo=name, tier=ns.tier, mode=ns.mode, enabled="false"))
+    sha = ns.sha or _latest_approved(kit_repo)
+    if not ns.apply:
+        print(f"[dry run] would open a scaffold PR in {slug} pinned to {kit_repo}@{sha[:7]}")
+        return 0
+    with tempfile.TemporaryDirectory(prefix="ap-onboard-") as td:
+        dest = Path(td) / name
+        _run("gh", "repo", "clone", slug, str(dest))
+        rc = cmd_init(
+            argparse.Namespace(
+                repo=str(dest), tier=ns.tier, mode=ns.mode, kit=f"{kit_repo}@{sha}", allow_sensitive=False, dry_run=False
+            )
+        )
+        if rc:
+            return rc
+        _run("git", "add", "-A", cwd=dest)
+        _run("git", "commit", "-q", "-S", "-m", "autopilot: scaffold on the shared kit", cwd=dest)
+        _run("git", "push", "-q", "-u", "origin", "autopilot/init", "--force-with-lease", cwd=dest)
+        url = _run(
+            "gh",
+            "pr",
+            "create",
+            "-R",
+            slug,
+            "--base",
+            _run("gh", "repo", "view", slug, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name").strip(),
+            "--head",
+            "autopilot/init",
+            "--title",
+            "autopilot: scaffold on the shared kit",
+            "--body",
+            f"Thin caller workflows pinned to `{kit_repo}@{sha}`, plus config, constitution and deny rules. Nothing runs until the repo is enabled.\n\n\U0001f916 Generated with [Claude Code](https://claude.com/claude-code)",
+            cwd=dest,
+        ).strip()
+    secrets = _run("gh", "secret", "list", "-R", slug, check=False)
+    print(url)
+    print("\nYour steps (nothing else is manual):")
+    print(f"  1. review + merge {url}")
+    if "CLAUDE_CODE_OAUTH_TOKEN" not in secrets:
+        print(
+            f'  2. token: run `claude setup-token`, then: read -rs T; gh secret set CLAUDE_CODE_OAUTH_TOKEN -R {slug} --body "$T"; unset T'
+        )
+    print(f"  3. add {name} to the Claude GitHub App (github.com/settings/installations)")
+    print(f"  4. then I run: ap onboard {name} --finish --apply")
+    return 0
+
+
 def cmd_scan(ns: argparse.Namespace) -> int:
     import datetime as dt
 
@@ -1454,6 +1538,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--only", action="append", default=[], help="limit to these repo names")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_rollout)
+    p = sub.add_parser("onboard", help="opt a repo in: scaffold PR now, ruleset+enable+preflight with --finish")
+    p.add_argument("repo")
+    p.add_argument("--tier", choices=list("ABC"))
+    p.add_argument("--mode", choices=["standard", "yolo", "dormant"])
+    p.add_argument("--sha", help="kit sha (default: newest approved)")
+    p.add_argument("--kit-repo", default="RyanJHamby/autopilot-kit")
+    p.add_argument("--check", action="append", default=[], help="required CI check name (default: detected)")
+    p.add_argument("--finish", action="store_true")
+    p.add_argument("--apply", action="store_true")
+    p.set_defaults(fn=cmd_onboard)
     p = sub.add_parser("preflight", help="read-only readiness check before leaving a repo unattended")
     p.add_argument("repos", nargs="+")
     p.add_argument("-v", "--verbose", action="store_true", help="also list passing checks")

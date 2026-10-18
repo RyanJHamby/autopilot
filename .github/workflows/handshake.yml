@@ -11,7 +11,7 @@ jobs:
   handshake:
     permissions:
       contents: read
-    uses: RyanJHamby/autopilot-kit/.github/workflows/handshake.yml@d99a925ffc21566e3e3beae32465805fb8cbaec7
+    uses: RyanJHamby/autopilot-kit/.github/workflows/handshake.yml@5d64489412b23ccdc1932320e3fb34f7944fcdfe
     with:
       kit_repo: RyanJHamby/autopilot-kit
-      kit_ref: d99a925ffc21566e3e3beae32465805fb8cbaec7
+      kit_ref: 5d64489412b23ccdc1932320e3fb34f7944fcdfe

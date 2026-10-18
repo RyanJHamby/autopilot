@@ -1,0 +1,22 @@
+# autopilot-managed thin caller. Weekly audit: files a few small issues that serve the repo charter, within its caps.
+name: audit
+
+on:
+  schedule:
+    - cron: "43 11 * * 1"     # Mondays, ~07:43 ET
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  audit:
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    uses: RyanJHamby/autopilot-kit/.github/workflows/audit.yml@20c8b03bdc4f93e5e964f4ed15d93351eb9006d7
+    with:
+      kit_repo: RyanJHamby/autopilot-kit
+      kit_ref: 20c8b03bdc4f93e5e964f4ed15d93351eb9006d7
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

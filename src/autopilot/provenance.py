@@ -28,7 +28,12 @@ CLI_PATH = "src/autopilot/cli.py"
 # sha256 over the source text of C's `render` and `export_kit` (see export_hash). BUMP WHEN THE EXPORT FORMAT CHANGES: any
 # edit to those two functions in src/autopilot/cli.py (a new substitution, a new input dir, a changed mode) must be mirrored
 # in render_kit below and then the new hash added here. A hash this module does not know fails closed.
-KNOWN_EXPORT_HASHES = frozenset({"bc29f868f9c0a92a5c92165a7da94080893d9c33ca300e765d1ef95af1f33c2d"})
+KNOWN_EXPORT_HASHES = frozenset(
+    {
+        "bc29f868f9c0a92a5c92165a7da94080893d9c33ca300e765d1ef95af1f33c2d",  # before #50: export_kit(dest)
+        "5baf7dee46744931f22d80c9005a0577eba019375d4541836c548bf010cf86e6",  # #50: adds the optional `kit` root; output unchanged
+    }
+)
 
 # Verifier's own copy; never taken from C, so a hostile commit cannot weaken it.
 KIT_FORBIDDEN = [r"RyanJHamby", r"ryanhamby", r"/Users/", r"sk-ant-oat\d*-[A-Za-z0-9_-]{16,}", r"@gmail", r"ampentra"]

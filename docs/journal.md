@@ -252,3 +252,7 @@ provenance CI glue: the helper agent could not start (its worktree predated #52 
 ## 2026-10-19 08:06 EDT (at f6e7a89)
 
 release --ci: wrote src/autopilot/release_ci.py + tests/test_release_ci.py (fake GitHub, 68 tests). Decisions: head must be strictly ahead of base tip (compare) and unmanaged paths must equal base; approval PR must add exactly the expected line; CI skips rollout state (App not installed downstream); workflow needs pip install -e (ap finds kit/ relative to the checkout). Mutation check found 2 of my tamper tests passed for the wrong reason (stale runtime/old.py left in head); fixed. Nothing run against live GitHub.
+
+## 2026-10-19 08:45 EDT (at 2dea081)
+
+rollout --ci: rollout_ci.py (ROLLOUT_TOKEN, REST only, client refuses merge/DELETE), bump_files/bump_inputs extracted from cmd_rollout (scratch-dir init_repo); release_ci announces kit_sha to GITHUB_OUTPUT. Decisions: APPROVED read anonymously (rollout App not installed on approvals repo); deletions and existing-branch-without-PR fail that repo closed. Found: first guard regex matched automerge.yml contents path, narrowed. Noted existing init_repo quirk: re-run drops user-owned files from manifest. Not run live; full suite 360 passed.

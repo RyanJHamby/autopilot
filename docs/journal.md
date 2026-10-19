@@ -244,3 +244,7 @@ provenance verifier: pure module src/autopilot/provenance.py (REST only, injecte
 ## 2026-10-19 07:11 EDT (at 71742f8)
 
 provenance rebased onto #50: added the post-#50 export hash and kept the old one (the only export_kit change is the optional kit root, output identical). ap release now resolves autopilot main to one sha, compares the tree at that sha, and passes it as source= to ap approve, so main cannot move between the comparison and the approval. Rebase needed two hand-resolved conflicts (cli.py, journal.md), both additive.
+
+## 2026-10-19 07:22 EDT (at 297f4de)
+
+provenance CI glue: the helper agent could not start (its worktree predated #52 and merge --ff-only was denied), so I branched agent/provenance-ci from my merged worktree and wrote it directly. Decisions: no path filter on the workflow (a required check that never runs on other PRs would block them; instead any PR touching more than APPROVED runs and fails); no daily re-verify yet (not built); previous_source chains through added lines. Drafts for the approved repo are in the scratchpad, not the repo.

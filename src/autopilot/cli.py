@@ -999,6 +999,40 @@ def _approve_branch(sha: str) -> str:
     return f"approve-{sha[:7]}"
 
 
+def _head_sha() -> str:
+    r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def cmd_provenance(ns: argparse.Namespace) -> int:
+    """Read-only: is the kit tree at SHA exactly the render of kit/ at an autopilot commit on main? Exit 1 on any failure."""
+    from autopilot import provenance as prov
+
+    kit_repo, sha = _kit_slug_and_sha(ns.kit)
+    opener = prov._default_opener
+    approvals = _load_runtime("automerge").approvals_repo(kit_repo)
+    try:
+        source = ns.source or prov.parse_source_hint(
+            prov._get(opener, f"{prov.API}/repos/{approvals}/contents/APPROVED?ref=main").decode(), sha
+        )
+        if ns.pins:
+            pins = json.loads(Path(ns.pins).read_text())
+        else:
+            pins = json.loads(prov._get(opener, f"{prov.API}/repos/{approvals}/contents/.github/provenance/pins.json?ref=main"))
+    except (prov.ProvenanceError, ValueError, OSError) as e:
+        print(f"FAIL {e}", file=sys.stderr)
+        return 1
+    problems = prov.verify_provenance(
+        kit_repo, sha, source, pins, previous_source=ns.previous_source, source_repo=ns.source_repo, opener=opener
+    )
+    if problems:
+        for pr in problems:
+            print(f"FAIL {pr}", file=sys.stderr)
+        return 1
+    print(f"OK {kit_repo}@{sha[:7]} is the render of autopilot@{source[:7]}")
+    return 0
+
+
 def cmd_approve(ns: argparse.Namespace) -> int:
     """Open a PR on the approvals repo adding a kit sha to APPROVED. Merging that PR (only you can) is the one approval a release
     needs; repos with the `kit-bump` class then take the pin bump without a second review."""
@@ -1014,9 +1048,17 @@ def cmd_approve(ns: argparse.Namespace) -> int:
     if sha in body:
         print(f"{sha[:7]} is already approved")
         return 0
-    body = body.rstrip("\n") + f"\n{sha}  {ns.note or 'approved'}\n"
+    # `source=<autopilot sha>` names the commit this kit was exported from, so `ap provenance` can verify it; fetch_approved reads
+    # only the first token of the line, so the note (and this hint) never affect which shas are approved.
+    source = ns.source or _head_sha()
+    if not re.fullmatch(r"[0-9a-f]{40}", source):
+        print("--source must be the 40-hex autopilot commit the kit was exported from", file=sys.stderr)
+        return 1
+    note = " ".join(((ns.note or "approved") + f" source={source}").split())
+    line = f"{sha}  {note}"
+    body = body.rstrip("\n") + f"\n{line}\n"
     if not ns.apply:
-        print(f"[dry run] would open a PR on {kit} adding:\n{sha}  {ns.note or 'approved'}")
+        print(f"[dry run] would open a PR on {kit} adding:\n{line}")
         return 0
     import tempfile
 
@@ -1556,13 +1598,22 @@ def publish_tree() -> dict[str, str]:
         return _local_tree(Path(td))
 
 
-def main_publish_tree(gh, repo: str) -> dict[str, str]:
-    """What export_kit would publish from kit/ at `repo`@main: fetch those blobs by REST (each verified against its git sha) and
+def main_head_sha(gh, repo: str) -> str:
+    """The commit autopilot main points at right now; release pins every later step to it so main cannot move underneath."""
+    c = gh(f"repos/{repo}/commits/main")
+    sha = c.get("sha") if isinstance(c, dict) else None
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ReleaseError(f"cannot resolve {repo}@main to a commit sha")
+    return sha
+
+
+def main_publish_tree(gh, repo: str, ref: str = "main") -> dict[str, str]:
+    """What export_kit would publish from kit/ at `repo`@ref: fetch those blobs by REST (each verified against its git sha) and
     run export_kit itself on them, so the comparison uses the real transformation."""
     import base64
     import tempfile
 
-    remote = _remote_tree(gh, repo, "main", "kit/")
+    remote = _remote_tree(gh, repo, ref, "kit/")
     if not remote:
         return {}
     with tempfile.TemporaryDirectory(prefix="ap-release-main-") as td:
@@ -1587,8 +1638,10 @@ def gather_release_state(ns, gh=_gh_get, *, main_publish: dict | None = None, pu
     kit = ns.kit_repo
     approvals = _load_runtime("automerge").approvals_repo(kit)
     publish = publish_tree() if publish is None else publish
-    main_publish = main_publish_tree(gh, ns.autopilot_repo) if main_publish is None else main_publish
+    source = main_head_sha(gh, ns.autopilot_repo)  # the autopilot commit this release is exported from (recorded as source=)
+    main_publish = main_publish_tree(gh, ns.autopilot_repo, source) if main_publish is None else main_publish
     st: dict = {
+        "source": source,
         "tree_ok": bool(main_publish) and main_publish == publish,
         "kit_pr": _pr_facts(gh, kit, ns.branch),
         "kit_merged_tree_ok": None,
@@ -1689,8 +1742,8 @@ def exec_open_kit_pr(ns) -> str:
     return url.strip()
 
 
-def exec_open_approval_pr(ns, sha: str) -> int:
-    return cmd_approve(argparse.Namespace(kit=f"{ns.kit_repo}@{sha}", note=f"release {ns.branch}", apply=True))
+def exec_open_approval_pr(ns, sha: str, source: str) -> int:
+    return cmd_approve(argparse.Namespace(kit=f"{ns.kit_repo}@{sha}", note=f"release {ns.branch}", source=source, apply=True))
 
 
 def exec_rollout(ns, sha: str) -> int:
@@ -1729,6 +1782,8 @@ def cmd_release(ns: argparse.Namespace, gh=_gh_get, executors: dict | None = Non
         url = ex[action](ns)
         print(url or "kit repo already matches this tree: nothing to publish (use `ap approve` for an existing sha)")
         return 0
+    if action == "open_approval_pr":
+        return ex[action](ns, st["sha"], st["source"])
     return ex[action](ns, st["sha"])
 
 
@@ -1785,8 +1840,16 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("approve", help="open a PR on <owner>/autopilot-approved approving a kit sha for automatic pin bumps")
     p.add_argument("--kit", required=True, metavar="OWNER/REPO@SHA")
     p.add_argument("--note", default="")
+    p.add_argument("--source", help="autopilot commit the kit was exported from (default: HEAD of this checkout)")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_approve)
+    p = sub.add_parser("provenance", help="read-only: verify the kit tree at SHA is the render of kit/ at an autopilot commit")
+    p.add_argument("--kit", required=True, metavar="OWNER/REPO@SHA")
+    p.add_argument("--source", help="autopilot commit (default: the source= hint on the kit sha's APPROVED line)")
+    p.add_argument("--previous-source", help="previously approved source commit; must be an ancestor of --source")
+    p.add_argument("--source-repo", metavar="OWNER/REPO", help="default: <kit owner>/autopilot")
+    p.add_argument("--pins", metavar="FILE", help="approved pins.json (default: fetched from the approvals repo)")
+    p.set_defaults(fn=cmd_provenance)
     p = sub.add_parser("rollout", help="open pin-bump PRs in every enabled repo for an APPROVED kit sha")
     p.add_argument("--kit", required=True, metavar="OWNER/REPO@SHA")
     p.add_argument("--only", action="append", default=[], help="limit to these repo names")

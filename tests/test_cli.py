@@ -619,8 +619,18 @@ def test_rollout_refuses_unapproved_sha_and_dry_runs_approved(monkeypatch, capsy
 def test_approve_dry_run_prints_the_line(monkeypatch, capsys):
     sha = "e" * 40
     monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 1, "stdout": "", "stderr": ""})())
-    assert cli.main(["approve", "--kit", f"me/kit@{sha}", "--note", "canary green"]) == 0
-    assert f"{sha}  canary green" in capsys.readouterr().out
+    src = "c" * 40
+    assert cli.main(["approve", "--kit", f"me/kit@{sha}", "--note", "canary green", "--source", src]) == 0
+    assert f"{sha}  canary green source={src}" in capsys.readouterr().out
+    # no source (and no git answer): refuse rather than record an approval that cannot be verified
+    assert cli.main(["approve", "--kit", f"me/kit@{sha}"]) == 1
+
+
+def test_approved_line_with_source_hint_still_parses_for_automerge():
+    am = cli._load_runtime("automerge")
+    sha, src = "e" * 40, "c" * 40
+    text = f"# header\n{'a' * 40}  old\n{sha}  canary green source={src}\n"
+    assert am.fetch_approved("me/kit", opener=lambda u: text) == ["a" * 40, sha]
 
 
 def test_exec_flags_runs_with_no_pr_and_no_blocker():

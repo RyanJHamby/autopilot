@@ -9,6 +9,7 @@ import pytest
 from autopilot import cli
 
 SHA = "a" * 40
+MAIN = "c" * 40  # autopilot main's head, the source= of the approval
 TREE = {"runtime/x.py": "1" * 40, "README.md": "2" * 40}
 APPROVALS = "me/autopilot-approved"
 
@@ -30,6 +31,8 @@ class World:
         self.calls.append(path)
         if self.fail:
             raise cli.ReleaseError(f"GET {path} failed")
+        if path == "repos/me/autopilot/commits/main":
+            return {"sha": MAIN}
         if "/git/trees/" in path and path.startswith("repos/me/kit/"):
             return {"truncated": False, "tree": [{"type": "blob", "path": p, "sha": h} for p, h in self.kit_tree.items()]}
         if path.startswith("repos/me/kit/pulls"):
@@ -52,7 +55,7 @@ def world(monkeypatch):
     am = cli._load_runtime("automerge")
     monkeypatch.setattr(am, "fetch_approved", lambda kit: list(w.approved))
     monkeypatch.setattr(cli, "_load_runtime", lambda n: am)
-    monkeypatch.setattr(cli, "main_publish_tree", lambda gh, repo: dict(w.main_publish))
+    monkeypatch.setattr(cli, "main_publish_tree", lambda gh, repo, ref="main": dict(w.main_publish))
     monkeypatch.setattr(cli, "publish_tree", lambda: dict(TREE))
     monkeypatch.setattr(
         cli, "load_portfolio", lambda: {"owner": "me", "repos": {"r1": {"enabled": True}, "off": {"enabled": False}}}
@@ -71,7 +74,7 @@ class Rec:
     def executors(self):
         return {
             "open_kit_pr": lambda n: self.ran.append("open_kit_pr") or "https://github.com/me/kit/pull/9",
-            "open_approval_pr": lambda n, sha: self.ran.append(f"open_approval_pr {sha}") or 0,
+            "open_approval_pr": lambda n, sha, src: self.ran.append(f"open_approval_pr {sha} source={src}") or 0,
             "rollout": lambda n, sha: self.ran.append(f"rollout {sha}") or 0,
         }
 
@@ -109,11 +112,18 @@ def test_resume_uses_kit_merge_sha(world):
     world.kit_prs = [pr("merged", SHA)]
     rec = Rec()
     assert cli.cmd_release(ns(apply=True), world.gh, rec.executors()) == 0
-    assert rec.ran == [f"open_approval_pr {SHA}"]
+    assert rec.ran == [f"open_approval_pr {SHA} source={MAIN}"]  # the approval records the commit the tree was compared against
     world.approved = [SHA]
     rec.ran.clear()
     assert cli.cmd_release(ns(apply=True), world.gh, rec.executors()) == 0
     assert rec.ran == [f"rollout {SHA}"]
+
+
+def test_main_head_sha_fails_closed(world):
+    assert cli.main_head_sha(world.gh, "me/autopilot") == MAIN
+    for bad in (None, {}, {"sha": "main"}, {"sha": "C" * 40}, [1]):
+        with pytest.raises(cli.ReleaseError):
+            cli.main_head_sha(lambda p, b=bad: b, "me/autopilot")
 
 
 def test_dry_run_makes_no_writes(world, capsys):
@@ -221,7 +231,7 @@ def test_real_executors_never_merge(world, monkeypatch):
     monkeypatch.setattr(cli, "export_kit", fake_export)
     assert cli.exec_open_kit_pr(ns()) == "https://github.com/me/kit/pull/9"
     kit_pushes = [c for c in seen if list(c[:2]) == ["git", "push"]]
-    cli.exec_open_approval_pr(ns(), SHA)
+    cli.exec_open_approval_pr(ns(), SHA, MAIN)
     flat = [" ".join(c) for c in seen]
     assert any(c.startswith("git commit -q -S") for c in flat)  # signed local commit
     assert not any(a == "merge" or a.endswith("/merge") for c in seen for a in c)  # argv-level; PR prose may say "merge"

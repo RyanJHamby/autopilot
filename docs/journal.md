@@ -236,3 +236,7 @@ ap release: planner (state->action) + thin executors reusing cmd_approve/cmd_rol
 ## 2026-10-19 07:02 EDT (at a7e9173)
 
 ap release: removed the agent's force-push of the release branch (constitution: never force-push); a re-run on an existing branch now fails closed. Found while reviewing: ap approve (cli.py ~1032) and the rollout/onboard pushes still use -f / --force-with-lease; left untouched, flagged in the PR.
+
+## 2026-10-19 07:06 EDT (at a7e9173)
+
+provenance verifier: pure module src/autopilot/provenance.py (REST only, injected opener, ast not exec, KNOWN_EXPORT_HASHES fail-closed); ap provenance + approve source= hint; compare/{C}...main must be ahead or identical; existing approve test needed --source (rev-parse faked to fail there); not run against live GitHub

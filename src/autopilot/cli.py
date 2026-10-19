@@ -999,6 +999,40 @@ def _approve_branch(sha: str) -> str:
     return f"approve-{sha[:7]}"
 
 
+def _head_sha() -> str:
+    r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def cmd_provenance(ns: argparse.Namespace) -> int:
+    """Read-only: is the kit tree at SHA exactly the render of kit/ at an autopilot commit on main? Exit 1 on any failure."""
+    from autopilot import provenance as prov
+
+    kit_repo, sha = _kit_slug_and_sha(ns.kit)
+    opener = prov._default_opener
+    approvals = _load_runtime("automerge").approvals_repo(kit_repo)
+    try:
+        source = ns.source or prov.parse_source_hint(
+            prov._get(opener, f"{prov.API}/repos/{approvals}/contents/APPROVED?ref=main").decode(), sha
+        )
+        if ns.pins:
+            pins = json.loads(Path(ns.pins).read_text())
+        else:
+            pins = json.loads(prov._get(opener, f"{prov.API}/repos/{approvals}/contents/.github/provenance/pins.json?ref=main"))
+    except (prov.ProvenanceError, ValueError, OSError) as e:
+        print(f"FAIL {e}", file=sys.stderr)
+        return 1
+    problems = prov.verify_provenance(
+        kit_repo, sha, source, pins, previous_source=ns.previous_source, source_repo=ns.source_repo, opener=opener
+    )
+    if problems:
+        for pr in problems:
+            print(f"FAIL {pr}", file=sys.stderr)
+        return 1
+    print(f"OK {kit_repo}@{sha[:7]} is the render of autopilot@{source[:7]}")
+    return 0
+
+
 def cmd_approve(ns: argparse.Namespace) -> int:
     """Open a PR on the approvals repo adding a kit sha to APPROVED. Merging that PR (only you can) is the one approval a release
     needs; repos with the `kit-bump` class then take the pin bump without a second review."""
@@ -1014,9 +1048,17 @@ def cmd_approve(ns: argparse.Namespace) -> int:
     if sha in body:
         print(f"{sha[:7]} is already approved")
         return 0
-    body = body.rstrip("\n") + f"\n{sha}  {ns.note or 'approved'}\n"
+    # `source=<autopilot sha>` names the commit this kit was exported from, so `ap provenance` can verify it; fetch_approved reads
+    # only the first token of the line, so the note (and this hint) never affect which shas are approved.
+    source = ns.source or _head_sha()
+    if not re.fullmatch(r"[0-9a-f]{40}", source):
+        print("--source must be the 40-hex autopilot commit the kit was exported from", file=sys.stderr)
+        return 1
+    note = " ".join(((ns.note or "approved") + f" source={source}").split())
+    line = f"{sha}  {note}"
+    body = body.rstrip("\n") + f"\n{line}\n"
     if not ns.apply:
-        print(f"[dry run] would open a PR on {kit} adding:\n{sha}  {ns.note or 'approved'}")
+        print(f"[dry run] would open a PR on {kit} adding:\n{line}")
         return 0
     import tempfile
 
@@ -1785,8 +1827,16 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("approve", help="open a PR on <owner>/autopilot-approved approving a kit sha for automatic pin bumps")
     p.add_argument("--kit", required=True, metavar="OWNER/REPO@SHA")
     p.add_argument("--note", default="")
+    p.add_argument("--source", help="autopilot commit the kit was exported from (default: HEAD of this checkout)")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_approve)
+    p = sub.add_parser("provenance", help="read-only: verify the kit tree at SHA is the render of kit/ at an autopilot commit")
+    p.add_argument("--kit", required=True, metavar="OWNER/REPO@SHA")
+    p.add_argument("--source", help="autopilot commit (default: the source= hint on the kit sha's APPROVED line)")
+    p.add_argument("--previous-source", help="previously approved source commit; must be an ancestor of --source")
+    p.add_argument("--source-repo", metavar="OWNER/REPO", help="default: <kit owner>/autopilot")
+    p.add_argument("--pins", metavar="FILE", help="approved pins.json (default: fetched from the approvals repo)")
+    p.set_defaults(fn=cmd_provenance)
     p = sub.add_parser("rollout", help="open pin-bump PRs in every enabled repo for an APPROVED kit sha")
     p.add_argument("--kit", required=True, metavar="OWNER/REPO@SHA")
     p.add_argument("--only", action="append", default=[], help="limit to these repo names")

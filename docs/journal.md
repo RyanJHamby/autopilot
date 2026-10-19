@@ -248,3 +248,7 @@ provenance rebased onto #50: added the post-#50 export hash and kept the old one
 ## 2026-10-19 07:22 EDT (at 297f4de)
 
 provenance CI glue: the helper agent could not start (its worktree predated #52 and merge --ff-only was denied), so I branched agent/provenance-ci from my merged worktree and wrote it directly. Decisions: no path filter on the workflow (a required check that never runs on other PRs would block them; instead any PR touching more than APPROVED runs and fails); no daily re-verify yet (not built); previous_source chains through added lines. Drafts for the approved repo are in the scratchpad, not the repo.
+
+## 2026-10-19 08:06 EDT (at f6e7a89)
+
+release --ci: wrote src/autopilot/release_ci.py + tests/test_release_ci.py (fake GitHub, 68 tests). Decisions: head must be strictly ahead of base tip (compare) and unmanaged paths must equal base; approval PR must add exactly the expected line; CI skips rollout state (App not installed downstream); workflow needs pip install -e (ap finds kit/ relative to the checkout). Mutation check found 2 of my tamper tests passed for the wrong reason (stale runtime/old.py left in head); fixed. Nothing run against live GitHub.

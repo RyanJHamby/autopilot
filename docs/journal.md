@@ -240,3 +240,7 @@ ap release: removed the agent's force-push of the release branch (constitution: 
 ## 2026-10-19 07:06 EDT (at a7e9173)
 
 provenance verifier: pure module src/autopilot/provenance.py (REST only, injected opener, ast not exec, KNOWN_EXPORT_HASHES fail-closed); ap provenance + approve source= hint; compare/{C}...main must be ahead or identical; existing approve test needed --source (rev-parse faked to fail there); not run against live GitHub
+
+## 2026-10-19 07:11 EDT (at 71742f8)
+
+provenance rebased onto #50: added the post-#50 export hash and kept the old one (the only export_kit change is the optional kit root, output identical). ap release now resolves autopilot main to one sha, compares the tree at that sha, and passes it as source= to ap approve, so main cannot move between the comparison and the approval. Rebase needed two hand-resolved conflicts (cli.py, journal.md), both additive.

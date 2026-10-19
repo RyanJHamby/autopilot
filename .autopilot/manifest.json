@@ -8,16 +8,16 @@
     ".claude/agents/reviewer.md": "b87d59f6e3d49ef01707f818f7deb67cd80371146d62af1abf3989e930bbdcbd",
     ".claude/agents/triage.md": "56358627525211c4db2212d7faae64e8f32de0fa0e272fee221540a8411b4bd8",
     ".claude/settings.json": "201dae95aaf2f3f56fe40278730ac369d296cd26cdd60535621bdf732a37454f",
-    ".github/CODEOWNERS": "92c6487a815939ecf2f11be8ab2d393b9ff3a1698d033f4f501ca49ba12badc4",
+    ".github/CODEOWNERS": "e88a33b7f535b10a1ae07336478e91349263be3b22a2b5bc1ef74f12d690d593",
     ".github/ISSUE_TEMPLATE/agent-task.md": "9c1d25f7995517b1f8286fa0d5342b873c2dbf94eef99eff22cb6100d92852e4",
     ".github/pull_request_template.md": "6b1c5e0f7e6a2bb50068c4b710f147ec9f8a0d251eac53ad9619bfeefcfa1249",
-    ".github/workflows/agent-dispatch.yml": "d3993dd84c25211c182f17e0da83570e9a4bfb42e1c670945d7f7a96f1eb1283",
-    ".github/workflows/agent-exec.yml": "6afc353513583c410ee4082c7e0af39b3b89bf5a49e30c9362ff87d2ba22a424",
-    ".github/workflows/audit.yml": "b7095969740aab09000fd6fcc4056793962958647b0233546e3922d6bcd1f953",
-    ".github/workflows/automerge.yml": "3384496c7846c7513ee1d39facf11fb3d69e96c61778c0ae715cb4ff25307818",
-    ".github/workflows/guard.yml": "711be842402df305ce799efa7cc05a208df9661fc123fd9c9709b899ace3d556",
-    ".github/workflows/handshake.yml": "b0868af5e153059ef8ad970175397d095c45b7c3d4865560a479b9f19eac9649",
-    ".github/workflows/improve.yml": "f2cf3a431e7cd0d9484d84acf854040083b15be3b9e18c8260cdf3ae091544db"
+    ".github/workflows/agent-dispatch.yml": "ff77eb201d795175bb0927e3f232550a9fb60fae87a25c60ec9ec7caf4e0c725",
+    ".github/workflows/agent-exec.yml": "bc9a9c9085a8e694f021e1e79a7fcf7020f15478ed695a31660823544d39fb8c",
+    ".github/workflows/audit.yml": "5c01858e1bf84b6bf3b4038f6b415204d47d0570bf0ffaeb13b63b295389ae7e",
+    ".github/workflows/automerge.yml": "addafa2a29c6c18eea16cf65e6d65f04c882abcf8acba58f8f95ba6f5922ac4e",
+    ".github/workflows/guard.yml": "3d5c977e865e6d87b44dd2ca66d232b6d0225647bfed1970dd4ec1339c7454d6",
+    ".github/workflows/handshake.yml": "b14d20132634554d3c744e550d10bcb03eaf4277cc618c5d1e1264ed9068496f",
+    ".github/workflows/improve.yml": "3e4f8a714474298de72d2e69cbd4427b1770f2506d65f52a8079565bbf4e1ebf"
   },
   "kit_version": "0.1.0"
 }

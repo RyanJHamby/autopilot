@@ -1632,13 +1632,19 @@ def main_publish_tree(gh, repo: str, ref: str = "main") -> dict[str, str]:
         return _local_tree(Path(td) / "out")
 
 
-def gather_release_state(ns, gh=_gh_get, *, main_publish: dict | None = None, publish: dict | None = None) -> dict:
+def gather_release_state(
+    ns, gh=_gh_get, *, main_publish: dict | None = None, publish: dict | None = None, check_rollout: bool = True
+) -> dict:
     """Read-only facts the planner needs. Raises ReleaseError on any API problem. `publish` is what export_kit makes of the local
     kit/; `main_publish` is what it makes of kit/ at autopilot main; they must match (tamper guard)."""
     kit = ns.kit_repo
     approvals = _load_runtime("automerge").approvals_repo(kit)
     publish = publish_tree() if publish is None else publish
-    source = main_head_sha(gh, ns.autopilot_repo)  # the autopilot commit this release is exported from (recorded as source=)
+    source = getattr(ns, "source", None) or main_head_sha(
+        gh, ns.autopilot_repo
+    )  # the autopilot commit exported (recorded as source=)
+    if not re.fullmatch(r"[0-9a-f]{40}", source):
+        raise ReleaseError("--source must be a 40-hex autopilot commit sha")
     main_publish = main_publish_tree(gh, ns.autopilot_repo, source) if main_publish is None else main_publish
     st: dict = {
         "source": source,
@@ -1661,7 +1667,7 @@ def gather_release_state(ns, gh=_gh_get, *, main_publish: dict | None = None, pu
     st["kit_merged_tree_ok"] = all(remote.get(p) == h for p, h in publish.items())
     st["approved"] = sha in _load_runtime("automerge").fetch_approved(kit)
     st["approval_pr"] = _pr_facts(gh, approvals, _approve_branch(sha))
-    if st["approved"]:
+    if st["approved"] and check_rollout:  # CI skips this: its token is not installed on the downstream repos
         pf = load_portfolio()
         slugs = [_slug(n, pf["owner"]) for n, _ in rollout_candidates(pf, getattr(ns, "only", None))]
         st["rollout_done"] = all(_pr_facts(gh, slug, _rollout_branch(sha)) is not None for slug in slugs)
@@ -1758,6 +1764,10 @@ def cmd_release(ns: argparse.Namespace, gh=_gh_get, executors: dict | None = Non
         "rollout": exec_rollout,
         **(executors or {}),
     }
+    if getattr(ns, "ci", False):  # GitHub App mode: merges only what it has verified (src/autopilot/release_ci.py)
+        from autopilot import release_ci
+
+        return release_ci.run(ns)
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", ns.kit_repo or "") or not re.fullmatch(r"release/[\w.-]+", ns.branch or ""):
         raise SystemExit("--kit-repo must be OWNER/REPO and --branch must be release/NAME")
     try:
@@ -1857,9 +1867,13 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_rollout)
     p = sub.add_parser("release", help="resumable: kit PR -> approval PR -> rollout; prints the next step, never merges")
     p.add_argument("--kit-repo", required=True, metavar="OWNER/REPO")
-    p.add_argument("--branch", required=True, metavar="release/NAME")
+    p.add_argument("--branch", metavar="release/NAME", help="required unless --ci (then release/<source[:7]>)")
     p.add_argument("--autopilot-repo", default="RyanJHamby/autopilot")
     p.add_argument("--only", action="append", default=[], help="limit rollout to these repo names")
+    p.add_argument("--source", metavar="SHA", help="release this autopilot commit instead of resolving main (CI: $GITHUB_SHA)")
+    p.add_argument(
+        "--ci", action="store_true", help="GitHub App mode (GH_TOKEN): kit PR, verified merges, approval PR, no rollout"
+    )
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_release)
     p = sub.add_parser("onboard", help="opt a repo in: scaffold PR now, ruleset+enable+preflight with --finish")

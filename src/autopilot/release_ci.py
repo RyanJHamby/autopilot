@@ -2,7 +2,7 @@
 
 Flow after a human merged a kit/** change to autopilot main:
     kit PR (contents API) -> verified kit merge -> approval PR -> provenance check run -> verified approval merge.
-Rollout stays a separate manual command (the App is not installed on the downstream repos).
+Rollout is a separate App and job (`ap rollout --ci`); this run only announces the approved kit sha (kit_sha in $GITHUB_OUTPUT).
 
 Hard rules, each enforced in the client as well as in the callers, so a bug in one cannot defeat the other:
 - REST only (stdlib urllib, injected transport), authenticated by GH_TOKEN, the App installation token.
@@ -402,6 +402,17 @@ def merge_approval_pr(c: GitHub, ns, sha: str, source: str, sleep: Callable, clo
     return f"merged approval PR #{number} at head {head[:7]}"
 
 
+def announce_kit_sha(sha: str) -> None:
+    """Print the approved kit sha and, in Actions, append `kit_sha=<sha>` to $GITHUB_OUTPUT so a later step can roll it out."""
+    if not HEX40.fullmatch(sha):
+        raise CIError("refusing to announce a kit sha that is not 40-hex")
+    print(f"kit_sha={sha}")
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a", encoding="utf-8") as f:
+            f.write(f"kit_sha={sha}\n")
+
+
 # --- the loop -----------------------------------------------------------------------------------------------------------
 
 
@@ -438,6 +449,7 @@ def _run(ns, client, sleep, clock) -> int:
             return 1
         if action == "rollout":
             print(f"approved {st['sha'][:7]} from autopilot {source[:7]}; rollout is a separate manual command (`ap rollout`)")
+            announce_kit_sha(st["sha"])
             break
         if action == "done":
             print(detail)

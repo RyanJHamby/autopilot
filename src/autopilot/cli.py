@@ -995,6 +995,10 @@ def _kit_slug_and_sha(ns_kit: str) -> tuple[str, str]:
     return m.group(1), m.group(2)
 
 
+def _approve_branch(sha: str) -> str:
+    return f"approve-{sha[:7]}"
+
+
 def cmd_approve(ns: argparse.Namespace) -> int:
     """Open a PR on the approvals repo adding a kit sha to APPROVED. Merging that PR (only you can) is the one approval a release
     needs; repos with the `kit-bump` class then take the pin bump without a second review."""
@@ -1016,7 +1020,7 @@ def cmd_approve(ns: argparse.Namespace) -> int:
         return 0
     import tempfile
 
-    branch = f"approve-{sha[:7]}"
+    branch = _approve_branch(sha)
     with tempfile.TemporaryDirectory(prefix="ap-approve-") as td:
         dest = Path(td) / "approved"
         _run("gh", "repo", "clone", kit, str(dest))
@@ -1054,6 +1058,20 @@ def _load_runtime_picker_held(entry: dict) -> bool:
     return picker.held(entry, dt.datetime.now(dt.timezone.utc))
 
 
+def rollout_candidates(pf: dict, only: list[str] | None = None):
+    """(name, entry) for every repo a rollout may touch (enabled, not dormant, not restricted, selected)."""
+    for name, e in pf["repos"].items():
+        if not e.get("enabled") or e.get("mode") == "dormant" or e.get("data_class") == "restricted":
+            continue
+        if only and name not in only:
+            continue
+        yield name, e
+
+
+def _rollout_branch(sha: str) -> str:
+    return f"autopilot/kit-bump-{sha[:7]}"
+
+
 def cmd_rollout(ns: argparse.Namespace) -> int:
     """Open a pin-bump PR in every enabled central-mode repo for an APPROVED kit sha. Repos that opted into `kit-bump` merge
     it themselves once checks pass; the rest wait for you like any other PR."""
@@ -1069,11 +1087,7 @@ def cmd_rollout(ns: argparse.Namespace) -> int:
         )
         return 1
     pf = load_portfolio()
-    for name, e in pf["repos"].items():
-        if not e.get("enabled") or e.get("mode") == "dormant" or e.get("data_class") == "restricted":
-            continue
-        if ns.only and name not in ns.only:
-            continue
+    for name, e in rollout_candidates(pf, ns.only):
         if _load_runtime_picker_held(e):
             print(f"{name}: held by the owner until {e['hold_until']}; skipped")
             continue
@@ -1087,7 +1101,7 @@ def cmd_rollout(ns: argparse.Namespace) -> int:
             if r.returncode:
                 print(f"{slug}: clone failed")
                 continue
-            branch = f"autopilot/kit-bump-{sha[:7]}"
+            branch = _rollout_branch(sha)
             if (
                 "autopilot-kit" not in (dest / ".github/workflows/agent-exec.yml").read_text()
                 if (dest / ".github/workflows/agent-exec.yml").exists()
@@ -1456,13 +1470,14 @@ Contains no tokens or personal configuration. Never reference it by branch or ta
 KIT_FORBIDDEN = [r"RyanJHamby", r"ryanhamby", r"/Users/", r"sk-ant-oat\d*-[A-Za-z0-9_-]{16,}", r"@gmail", r"ampentra"]  # regexes
 
 
-def export_kit(dest: Path) -> list[str]:
+def export_kit(dest: Path, kit: Path | None = None) -> list[str]:
     """Assemble the public shared-kit tree (reusable workflows + runtime scripts) and refuse if anything personal leaked."""
     subs = {"CHECKOUT_SHA": CHECKOUT_SHA, "ACTION_SHA": ACTION_SHA, "SETUP_NODE_SHA": SETUP_NODE_SHA}
+    kit = kit or KIT
     files: dict[str, str] = {"README.md": KIT_README}
-    for f in sorted((KIT / "workflows").glob("*.yml")):
+    for f in sorted((kit / "workflows").glob("*.yml")):
         files[f".github/workflows/{f.name}"] = render(f.read_text(), subs)
-    for f in sorted((KIT / "runtime").glob("*.py")):
+    for f in sorted((kit / "runtime").glob("*.py")):
         files[f"runtime/{f.name}"] = f.read_text()
     for rel, text in files.items():
         for bad in KIT_FORBIDDEN:
@@ -1484,6 +1499,237 @@ def cmd_kit(ns: argparse.Namespace) -> int:
         print(f"  {rel}")
     print(f"\nexported to {dest}. Review every file, then publish by hand (nothing was pushed).")
     return 0
+
+
+# ---- ap release: kit mirror PR -> approval PR -> rollout; resumable, never merges anything -------------------------------------
+
+
+class ReleaseError(Exception):
+    """Any unreachable API or unexpected answer: release fails closed."""
+
+
+def _blob_sha(data: bytes) -> str:
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()  # noqa: S324 - git object id, not security
+
+
+def _gh_get(path: str):
+    r = subprocess.run(["gh", "api", path], capture_output=True, text=True)
+    if r.returncode:
+        raise ReleaseError(f"GET {path} failed: {r.stderr.strip()[:200]}")
+    try:
+        return json.loads(r.stdout)
+    except ValueError as e:
+        raise ReleaseError(f"GET {path} returned non-JSON") from e
+
+
+def _pr_facts(gh, repo: str, branch: str) -> dict | None:
+    """The newest PR whose head is `owner:branch` (any state) as {url, state, merge_sha}; None if there is none."""
+    prs = gh(f"repos/{repo}/pulls?state=all&per_page=5&head={repo.split('/')[0]}:{branch}")
+    if not isinstance(prs, list):
+        raise ReleaseError(f"unexpected pulls answer for {repo}")
+    if not prs:
+        return None
+    pr = prs[0]
+    state = "merged" if pr.get("merged_at") else pr.get("state")
+    if state not in ("open", "closed", "merged"):
+        raise ReleaseError(f"unexpected PR state {state!r} for {pr.get('html_url')}")
+    return {"url": pr.get("html_url", ""), "state": state, "merge_sha": pr.get("merge_commit_sha") if state == "merged" else None}
+
+
+def _remote_tree(gh, repo: str, ref: str, prefix: str = "") -> dict[str, str]:
+    t = gh(f"repos/{repo}/git/trees/{ref}?recursive=1")
+    if not isinstance(t, dict) or t.get("truncated") or not isinstance(t.get("tree"), list):
+        raise ReleaseError(f"tree of {repo}@{ref} unavailable or truncated")
+    return {e["path"][len(prefix) :]: e["sha"] for e in t["tree"] if e.get("type") == "blob" and e["path"].startswith(prefix)}
+
+
+def _local_tree(root: Path) -> dict[str, str]:
+    return {str(f.relative_to(root)): _blob_sha(f.read_bytes()) for f in sorted(root.rglob("*")) if f.is_file()}
+
+
+def publish_tree() -> dict[str, str]:
+    """{path in the kit repo: blob sha} of what a release publishes (export_kit of the local kit/)."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="ap-release-tree-") as td:
+        export_kit(Path(td))
+        return _local_tree(Path(td))
+
+
+def main_publish_tree(gh, repo: str) -> dict[str, str]:
+    """What export_kit would publish from kit/ at `repo`@main: fetch those blobs by REST (each verified against its git sha) and
+    run export_kit itself on them, so the comparison uses the real transformation."""
+    import base64
+    import tempfile
+
+    remote = _remote_tree(gh, repo, "main", "kit/")
+    if not remote:
+        return {}
+    with tempfile.TemporaryDirectory(prefix="ap-release-main-") as td:
+        for rel, sha in remote.items():
+            if not (rel.startswith("workflows/") or rel.startswith("runtime/")):
+                continue
+            blob = gh(f"repos/{repo}/git/blobs/{sha}")
+            if not isinstance(blob, dict) or blob.get("encoding") != "base64":
+                raise ReleaseError(f"blob {sha} unavailable")
+            data = base64.b64decode(blob["content"])
+            if _blob_sha(data) != sha:
+                raise ReleaseError(f"blob {sha} failed its hash check")
+            (Path(td) / "kit" / rel).parent.mkdir(parents=True, exist_ok=True)
+            (Path(td) / "kit" / rel).write_bytes(data)
+        export_kit(Path(td) / "out", kit=Path(td) / "kit")
+        return _local_tree(Path(td) / "out")
+
+
+def gather_release_state(ns, gh=_gh_get, *, main_publish: dict | None = None, publish: dict | None = None) -> dict:
+    """Read-only facts the planner needs. Raises ReleaseError on any API problem. `publish` is what export_kit makes of the local
+    kit/; `main_publish` is what it makes of kit/ at autopilot main; they must match (tamper guard)."""
+    kit = ns.kit_repo
+    approvals = _load_runtime("automerge").approvals_repo(kit)
+    publish = publish_tree() if publish is None else publish
+    main_publish = main_publish_tree(gh, ns.autopilot_repo) if main_publish is None else main_publish
+    st: dict = {
+        "tree_ok": bool(main_publish) and main_publish == publish,
+        "kit_pr": _pr_facts(gh, kit, ns.branch),
+        "kit_merged_tree_ok": None,
+        "approved": False,
+        "approval_pr": None,
+        "rollout_done": False,
+        "sha": None,
+    }
+    pr = st["kit_pr"]
+    if not pr or pr["state"] != "merged":
+        return st
+    sha = pr["merge_sha"]
+    if not sha or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ReleaseError("merged kit PR has no merge commit sha")
+    st["sha"] = sha
+    remote = _remote_tree(gh, kit, sha)
+    st["kit_merged_tree_ok"] = all(remote.get(p) == h for p, h in publish.items())
+    st["approved"] = sha in _load_runtime("automerge").fetch_approved(kit)
+    st["approval_pr"] = _pr_facts(gh, approvals, _approve_branch(sha))
+    if st["approved"]:
+        pf = load_portfolio()
+        slugs = [_slug(n, pf["owner"]) for n, _ in rollout_candidates(pf, getattr(ns, "only", None))]
+        st["rollout_done"] = all(_pr_facts(gh, slug, _rollout_branch(sha)) is not None for slug in slugs)
+    return st
+
+
+def plan_release(st: dict) -> tuple[str, str]:
+    """Pure: state in -> (next action, detail). Actions: open_kit_pr, wait, open_approval_pr, rollout, done, refuse."""
+    if not st["tree_ok"]:
+        return (
+            "refuse",
+            "the tree to publish differs from what export_kit makes of autopilot main's kit/ (or that kit/ is empty): refusing to publish",
+        )
+    pr = st["kit_pr"]
+    if pr is None:
+        return "open_kit_pr", "mirror kit/ into the kit repo on the release branch and open the kit PR"
+    if pr["state"] == "open":
+        return "wait", f"kit PR is open; merge it, then re-run: {pr['url']}"
+    if pr["state"] == "closed":
+        return "refuse", f"kit PR was closed without merging: {pr['url']}; use a new --branch"
+    sha = st["sha"]
+    if not st["kit_merged_tree_ok"]:
+        return "refuse", f"kit repo at {sha[:7]} does not contain the tree this release publishes (tamper guard)"
+    if st["approved"]:
+        if st["rollout_done"]:
+            return "done", f"{sha[:7]} is approved and every target repo has its pin-bump PR"
+        return "rollout", f"open pin-bump PRs for {sha[:7]}"
+    ap = st["approval_pr"]
+    if ap is None:
+        return "open_approval_pr", f"open the approval PR for {sha[:7]}"
+    if ap["state"] == "open":
+        return "wait", f"approval PR is open; merge it (only you), then re-run: {ap['url']}"
+    if ap["state"] == "closed":
+        return "refuse", f"approval PR was closed without merging: {ap['url']}"
+    return "refuse", f"approval PR merged but {sha[:7]} is not on APPROVED (unreadable or edited); not rolling out"
+
+
+def _release_steps(st: dict) -> list[tuple[str, str]]:
+    pr, ap = st["kit_pr"], st["approval_pr"]
+    return [
+        ("1 kit PR opened", "done" if pr else "todo"),
+        ("2 kit PR merged by owner", "done" if pr and pr["state"] == "merged" else "todo"),
+        ("3 approval PR opened", "done" if ap or st["approved"] else "todo"),
+        ("4 approval PR merged by owner", "done" if st["approved"] else "todo"),
+        ("5 rollout PRs opened", "done" if st["rollout_done"] else "todo"),
+    ]
+
+
+def exec_open_kit_pr(ns) -> str:
+    """Local clone of the kit repo, signed commit of the publish tree, push the release branch, open the PR. Never merges."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="ap-release-") as td:
+        tree = Path(td) / "tree"
+        files = export_kit(tree)
+        dest = Path(td) / "kit"
+        _run("gh", "repo", "clone", ns.kit_repo, str(dest))
+        base = _run("git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD", cwd=dest).strip()
+        _run("git", "checkout", "-q", "-B", ns.branch, base, cwd=dest)
+        for sub in (".github/workflows", "runtime"):  # managed dirs mirror exactly; other kit-repo files stay
+            for old in (dest / sub).glob("*"):
+                if old.is_file() and f"{sub}/{old.name}" not in files:
+                    old.unlink()
+        for rel in files:
+            (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+            (dest / rel).write_bytes((tree / rel).read_bytes())
+        _run("git", "add", "-A", cwd=dest)
+        if not _run("git", "status", "--porcelain", cwd=dest).strip():
+            return ""
+        title = f"release: mirror autopilot kit ({ns.branch})"
+        _run("git", "commit", "-q", "-S", "-m", title, cwd=dest)
+        _run("git", "push", "-q", "origin", ns.branch, cwd=dest)
+        body = "Mirror of `kit/` from autopilot main (exported by `ap release`). Review, then merge it yourself; `ap release` never merges."
+        url = _run(
+            "gh", "pr", "create", "-R", ns.kit_repo, "--base", base.split("/", 1)[-1],
+            "--head", ns.branch, "--title", title, "--body", body, cwd=dest,
+        )  # fmt: skip
+    return url.strip()
+
+
+def exec_open_approval_pr(ns, sha: str) -> int:
+    return cmd_approve(argparse.Namespace(kit=f"{ns.kit_repo}@{sha}", note=f"release {ns.branch}", apply=True))
+
+
+def exec_rollout(ns, sha: str) -> int:
+    return cmd_rollout(argparse.Namespace(kit=f"{ns.kit_repo}@{sha}", only=getattr(ns, "only", []), apply=True))
+
+
+def cmd_release(ns: argparse.Namespace, gh=_gh_get, executors: dict | None = None) -> int:
+    """Print where the release stands and do (with --apply) only the next step. Re-run after each owner merge."""
+    ex = {
+        "open_kit_pr": exec_open_kit_pr,
+        "open_approval_pr": exec_open_approval_pr,
+        "rollout": exec_rollout,
+        **(executors or {}),
+    }
+    if not re.fullmatch(r"[\w.-]+/[\w.-]+", ns.kit_repo or "") or not re.fullmatch(r"release/[\w.-]+", ns.branch or ""):
+        raise SystemExit("--kit-repo must be OWNER/REPO and --branch must be release/NAME")
+    try:
+        st = gather_release_state(ns, gh)
+    except ReleaseError as e:
+        print(f"release: failing closed: {e}", file=sys.stderr)
+        return 1
+    for label, status in _release_steps(st):
+        print(f"  [{status}] {label}")
+    action, detail = plan_release(st)
+    if action == "refuse":
+        print(f"release: refusing: {detail}", file=sys.stderr)
+        return 1
+    if action in ("wait", "done"):
+        print(detail)
+        return 0
+    if not ns.apply:
+        print(f"[dry run] next: {detail}")
+        return 0
+    print(f"next: {detail}")
+    if action == "open_kit_pr":
+        url = ex[action](ns)
+        print(url or "kit repo already matches this tree: nothing to publish (use `ap approve` for an existing sha)")
+        return 0
+    return ex[action](ns, st["sha"])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1546,6 +1792,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--only", action="append", default=[], help="limit to these repo names")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_rollout)
+    p = sub.add_parser("release", help="resumable: kit PR -> approval PR -> rollout; prints the next step, never merges")
+    p.add_argument("--kit-repo", required=True, metavar="OWNER/REPO")
+    p.add_argument("--branch", required=True, metavar="release/NAME")
+    p.add_argument("--autopilot-repo", default="RyanJHamby/autopilot")
+    p.add_argument("--only", action="append", default=[], help="limit rollout to these repo names")
+    p.add_argument("--apply", action="store_true")
+    p.set_defaults(fn=cmd_release)
     p = sub.add_parser("onboard", help="opt a repo in: scaffold PR now, ruleset+enable+preflight with --finish")
     p.add_argument("repo")
     p.add_argument("--tier", choices=list("ABC"))

@@ -1598,13 +1598,22 @@ def publish_tree() -> dict[str, str]:
         return _local_tree(Path(td))
 
 
-def main_publish_tree(gh, repo: str) -> dict[str, str]:
-    """What export_kit would publish from kit/ at `repo`@main: fetch those blobs by REST (each verified against its git sha) and
+def main_head_sha(gh, repo: str) -> str:
+    """The commit autopilot main points at right now; release pins every later step to it so main cannot move underneath."""
+    c = gh(f"repos/{repo}/commits/main")
+    sha = c.get("sha") if isinstance(c, dict) else None
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ReleaseError(f"cannot resolve {repo}@main to a commit sha")
+    return sha
+
+
+def main_publish_tree(gh, repo: str, ref: str = "main") -> dict[str, str]:
+    """What export_kit would publish from kit/ at `repo`@ref: fetch those blobs by REST (each verified against its git sha) and
     run export_kit itself on them, so the comparison uses the real transformation."""
     import base64
     import tempfile
 
-    remote = _remote_tree(gh, repo, "main", "kit/")
+    remote = _remote_tree(gh, repo, ref, "kit/")
     if not remote:
         return {}
     with tempfile.TemporaryDirectory(prefix="ap-release-main-") as td:
@@ -1629,8 +1638,10 @@ def gather_release_state(ns, gh=_gh_get, *, main_publish: dict | None = None, pu
     kit = ns.kit_repo
     approvals = _load_runtime("automerge").approvals_repo(kit)
     publish = publish_tree() if publish is None else publish
-    main_publish = main_publish_tree(gh, ns.autopilot_repo) if main_publish is None else main_publish
+    source = main_head_sha(gh, ns.autopilot_repo)  # the autopilot commit this release is exported from (recorded as source=)
+    main_publish = main_publish_tree(gh, ns.autopilot_repo, source) if main_publish is None else main_publish
     st: dict = {
+        "source": source,
         "tree_ok": bool(main_publish) and main_publish == publish,
         "kit_pr": _pr_facts(gh, kit, ns.branch),
         "kit_merged_tree_ok": None,
@@ -1731,8 +1742,8 @@ def exec_open_kit_pr(ns) -> str:
     return url.strip()
 
 
-def exec_open_approval_pr(ns, sha: str) -> int:
-    return cmd_approve(argparse.Namespace(kit=f"{ns.kit_repo}@{sha}", note=f"release {ns.branch}", apply=True))
+def exec_open_approval_pr(ns, sha: str, source: str) -> int:
+    return cmd_approve(argparse.Namespace(kit=f"{ns.kit_repo}@{sha}", note=f"release {ns.branch}", source=source, apply=True))
 
 
 def exec_rollout(ns, sha: str) -> int:
@@ -1771,6 +1782,8 @@ def cmd_release(ns: argparse.Namespace, gh=_gh_get, executors: dict | None = Non
         url = ex[action](ns)
         print(url or "kit repo already matches this tree: nothing to publish (use `ap approve` for an existing sha)")
         return 0
+    if action == "open_approval_pr":
+        return ex[action](ns, st["sha"], st["source"])
     return ex[action](ns, st["sha"])
 
 

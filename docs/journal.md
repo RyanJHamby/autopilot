@@ -228,3 +228,11 @@ The proposer fixed #36 end to end, but a human still had to file the issue. Clos
 ## 2026-10-18 10:11 EDT (at 5190ddd)
 
 charter + weekly audit: bounds (goals, non-goals, no new deps, weekly line budget, proposal/backlog caps) enforced by guard/gate/charter.py; model only writes JSON, trusted step files issues. stencil automerge fetch bug: private repo checkout has no credentials.
+
+## 2026-10-18 22:35 EDT (at a7e9173)
+
+ap release: planner (state->action) + thin executors reusing cmd_approve/cmd_rollout; tamper guard compares local kit/ to autopilot main via REST trees and the merged kit sha to the export tree; never calls merge. Decided resumability comes from re-deriving state from PRs each run (no local state file). Not run live with --apply.
+
+## 2026-10-19 07:02 EDT (at a7e9173)
+
+ap release: removed the agent's force-push of the release branch (constitution: never force-push); a re-run on an existing branch now fails closed. Found while reviewing: ap approve (cli.py ~1032) and the rollout/onboard pushes still use -f / --force-with-lease; left untouched, flagged in the PR.

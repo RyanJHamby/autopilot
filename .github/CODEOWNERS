@@ -24,3 +24,6 @@
 /apps/control-plane/github-app/ @RyanJHamby
 /src/autopilot/picker.py @RyanJHamby
 # END autopilot
+
+# owner-managed, outside the autopilot block: export_kit and its pinned SHAs live here, so changes need your review
+/src/autopilot/cli.py @RyanJHamby

@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -1114,13 +1115,64 @@ def _rollout_branch(sha: str) -> str:
     return f"autopilot/kit-bump-{sha[:7]}"
 
 
+def _bump_scratch(files: dict[str, str]):
+    td = tempfile.TemporaryDirectory(prefix="ap-bump-")
+    for rel, content in files.items():
+        p = Path(td.name) / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+    return td
+
+
+def bump_inputs(
+    paths: list[str], kit_slug: str, sha: str, tier: str = "B", mode: str = "standard"
+) -> tuple[list[str], list[str]]:
+    """Which of a repo's files `bump_files` needs. `paths` = every file path in the repo. Returns (read these, presence only):
+    the files init_repo would manage or merge, plus the stack markers and package-lock.json whose existence (not content)
+    picks commands and setup steps. Presence-only files are passed to bump_files with empty content."""
+    with tempfile.TemporaryDirectory(prefix="ap-bump-") as td:
+        root = Path(td)
+        init_repo(root, tier, mode, central=(kit_slug, sha))
+        managed = {str(q.relative_to(root)) for q in root.rglob("*") if q.is_file()}
+    managed |= {".autopilot/repo.yaml", ".nvmrc"} | {f".autopilot/{n}" for n in RUNTIME_FILES}  # the last: removed when migrating
+    markers = set(STACKS) | {"package-lock.json"}
+    have = set(paths)
+    present = {
+        p
+        for p in have
+        if (parts := p.split("/"))
+        and parts[-1] in markers
+        and (len(parts) == 1 or (len(parts) == 2 and parts[0] not in SKIP_DIRS and not parts[0].startswith(".")))
+    }
+    return sorted(managed & have), sorted(present - managed)
+
+
+def bump_files(
+    files: dict[str, str], kit_slug: str, sha: str, tier: str = "B", mode: str = "standard"
+) -> dict[str, str | None] | None:
+    """Pure core of a rollout: a repo's current files (see bump_inputs) -> {path: new content} for what changes
+    (None = delete). Returns None when the repo is not on the shared kit yet or nothing changes. It is exactly what
+    `ap init --kit` would do, run on a scratch copy, so the local and CI rollouts cannot drift apart."""
+    if "autopilot-kit" not in files.get(".github/workflows/agent-exec.yml", ""):
+        return None
+    with _bump_scratch(files) as td:
+        root = Path(td)
+        init_repo(root, tier, mode, central=(kit_slug, sha))
+        after = {str(q.relative_to(root)): q.read_text() for q in root.rglob("*") if q.is_file()}
+    out: dict[str, str | None] = {p: c for p, c in after.items() if files.get(p) != c}
+    out.update({p: None for p in files if p not in after})
+    return out or None
+
+
 def cmd_rollout(ns: argparse.Namespace) -> int:
     """Open a pin-bump PR in every enabled central-mode repo for an APPROVED kit sha. Repos that opted into `kit-bump` merge
     it themselves once checks pass; the rest wait for you like any other PR."""
-    import tempfile
-
     fetch_approved = _load_runtime("automerge").fetch_approved
 
+    if getattr(ns, "ci", False):  # GitHub App mode (ROLLOUT_TOKEN): opens the PRs over REST, never merges
+        from autopilot import rollout_ci
+
+        return rollout_ci.run(ns)
     kit, sha = _kit_slug_and_sha(ns.kit)
     if sha not in fetch_approved(kit):
         print(
@@ -1152,7 +1204,18 @@ def cmd_rollout(ns: argparse.Namespace) -> int:
                 print(f"{slug}: not on the shared kit yet; migrate it with `ap init --kit` first (rollout only bumps pins)")
                 continue
             _run("git", "checkout", "-q", "-B", branch, cwd=dest)
-            init_repo(dest, e.get("tier", "B"), e.get("mode", "standard"), central=(kit, sha))
+            have = sorted(
+                str(q.relative_to(dest)) for q in dest.rglob("*") if q.is_file() and ".git" not in q.relative_to(dest).parts
+            )
+            fetch, present = bump_inputs(have, kit, sha, e.get("tier", "B"), e.get("mode", "standard"))
+            files = {rel: (dest / rel).read_text() for rel in fetch} | {rel: "" for rel in present}
+            changes = bump_files(files, kit, sha, e.get("tier", "B"), e.get("mode", "standard"))
+            for rel, content in (changes or {}).items():
+                if content is None:
+                    (dest / rel).unlink()
+                else:
+                    (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+                    (dest / rel).write_text(content)
             if not _run("git", "status", "--porcelain", cwd=dest):
                 print(f"{slug}: already on {sha[:7]}")
                 continue
@@ -1863,6 +1926,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("rollout", help="open pin-bump PRs in every enabled repo for an APPROVED kit sha")
     p.add_argument("--kit", required=True, metavar="OWNER/REPO@SHA")
     p.add_argument("--only", action="append", default=[], help="limit to these repo names")
+    p.add_argument("--ci", action="store_true", help="GitHub App mode (ROLLOUT_TOKEN): open the PRs over REST, never merge")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_rollout)
     p = sub.add_parser("release", help="resumable: kit PR -> approval PR -> rollout; prints the next step, never merges")

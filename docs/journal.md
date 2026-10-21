@@ -256,3 +256,7 @@ release --ci: wrote src/autopilot/release_ci.py + tests/test_release_ci.py (fake
 ## 2026-10-19 08:45 EDT (at 2dea081)
 
 rollout --ci: rollout_ci.py (ROLLOUT_TOKEN, REST only, client refuses merge/DELETE), bump_files/bump_inputs extracted from cmd_rollout (scratch-dir init_repo); release_ci announces kit_sha to GITHUB_OUTPUT. Decisions: APPROVED read anonymously (rollout App not installed on approvals repo); deletions and existing-branch-without-PR fail that repo closed. Found: first guard regex matched automerge.yml contents path, narrowed. Noted existing init_repo quirk: re-run drops user-owned files from manifest. Not run live; full suite 360 passed.
+
+## 2026-10-20 22:21 EDT (at 4fffdba)
+
+ship-kit: src/autopilot/ship.py + scripts/ship-kit + tests/test_ship.py (34 tests, scripted fake of git/gh). One user-run command: preflight (signed commits, kit/tests/docs only, on top of origin/main), tests, push, PR, wait green, admin-merge the kit PR, watch release, verify each bump PR (rollout App author, autopilot/kit-bump-<approved sha> branch, owner's repo), merge pinned to checked head via --match-head-commit unless the repo's automerge already did. Decisions: only gh pr/run/repo-view and git (nothing the project deny list blocks for me, runs as the owner); superseded bump PRs are reported, never closed; no force push, no --no-verify. Mutation check: 12 safety mutations in a scratch copy all caught (first run all 'survived' because pytest pythonpath=src shadowed the copy; fixed harness and added a control). Not run against live GitHub yet.

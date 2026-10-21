@@ -98,7 +98,7 @@ Goal: the owner's whole job per kit change is to write it and press one button. 
 
 ### Ideas, in order of payoff per unit of effort
 
-A. **`scripts/ship-kit` (user-run, one command).** Takes a branch with the kit edit committed, then: runs the focused tests,
+A. **`scripts/ship-kit` (user-run, one command). BUILT 2026-10-21 (PR pending merge; not yet run live).** Takes a branch with the kit edit committed, then: runs the focused tests,
    pushes, opens the PR, waits for checks, merges it with the owner's admin bypass only if every check is green, watches
    the release run, then lists the bump PRs and merges the ones that are green, the autopilot self-bump included.
    The owner's review is still the one deliberate act: running the script. It never runs on its own, and it stops on any red

@@ -14,7 +14,7 @@ OWNER = "RyanJHamby"
 NAME = "newrepo"
 SLUG = f"{OWNER}/{NAME}"
 OWN = f"{OWNER}/autopilot"
-TOKEN = "SENTINEL-not-a-real-credential-0123456789"
+PROBE = "SENTINEL-not-a-real-credential-0123456789"
 SCAFFOLD_PR = f"https://github.com/{SLUG}/pull/5"
 PORTFOLIO_PR = f"https://github.com/{OWN}/pull/9"
 
@@ -162,7 +162,7 @@ def ns(**kw):
     return argparse.Namespace(**base)
 
 
-def mk(gh, *, portfolio=None, ask=lambda _: "y", secret=lambda _: TOKEN, lines=None):
+def mk(gh, *, portfolio=None, ask=lambda _: "y", secret=lambda _: PROBE, lines=None):
     pf = portfolio or {"owner": OWNER, "repos": {}, "excluded": []}
     sink = lines if lines is not None else []
     return launch.LaunchEnv(
@@ -195,11 +195,11 @@ def test_full_launch_runs_every_stage_and_reads_each_one_back():
 def test_the_token_goes_only_to_stdin_and_never_into_argv_or_output():
     gh = GH()
     _, lines = go(gh)
-    assert not any(TOKEN in a for c in gh.calls for a in c)
-    assert not any(TOKEN in a for c, _ in gh.stdin for a in c)
-    assert not any(TOKEN in ln for ln in lines)
+    assert not any(PROBE in a for c in gh.calls for a in c)
+    assert not any(PROBE in a for c, _ in gh.stdin for a in c)
+    assert not any(PROBE in ln for ln in lines)
     secret_calls = [(c, t) for c, t in gh.stdin if c[:3] == ["gh", "secret", "set"]]
-    assert len(secret_calls) == 1 and secret_calls[0][1] == TOKEN
+    assert len(secret_calls) == 1 and secret_calls[0][1] == PROBE
 
 
 def test_nothing_forces_skips_signing_or_pushes_from_the_orchestrator():
@@ -325,10 +325,10 @@ def test_a_change_that_does_not_read_back_stops_the_run():
 
 
 def test_token_from_the_environment_and_its_failure_modes(monkeypatch):
-    monkeypatch.setenv("LAUNCH_T", TOKEN)
+    monkeypatch.setenv("LAUNCH_T", PROBE)
     gh = GH()
     report, _ = go(gh, token_env="LAUNCH_T")
-    assert report.green and any(t == TOKEN for _, t in gh.stdin)
+    assert report.green and any(t == PROBE for _, t in gh.stdin)
     monkeypatch.delenv("LAUNCH_T")
     result, _ = go(GH(), token_env="LAUNCH_T")
     assert isinstance(result, ship.Stop) and "not set" in str(result)

@@ -47,11 +47,21 @@ protected paths. Enforced by: no connectors in the Action runtime; `.claude/sett
 job permissions + owner-only triggers; a `guard` required check (secrets, messaging/social/mail SDKs and URLs,
 protected paths, test weakening, size) run from the base branch copy; branch ruleset; CODEOWNERS.
 
-## Setup checklist (per repo, done by hand)
-1. `claude setup-token` once; `gh secret set CLAUDE_CODE_OAUTH_TOKEN -R RyanJHamby/<repo>`.
-2. Install the Claude GitHub App on the repo.
-3. Merge the `autopilot/init` PR, then `ap ruleset <repo> --check ci --apply`, then `ap enable <repo> --apply`.
-4. Audit claude.ai connectors; remove all from any routine, toggle off for cloud sessions on these repos.
+## Launching a repo (one command)
+```
+claude setup-token                                   # once per repo; copy the token it prints
+scripts/launch-repo <repo> --tier B --mode standard --dry-run   # read-only: shows what is todo
+scripts/launch-repo <repo> --tier B --mode standard             # asks once, then runs every stage
+```
+It sets the repo's Actions setting and variables, creates the labels, opens and merges the scaffold PR, stores the token
+(hidden prompt or `--token-env NAME`; piped to `gh secret set` on stdin, never printed), adds the repo to the
+`autopilot-rollout` and Claude App installations (falls back to one URL if the API refuses), applies the ruleset,
+enables the repo, adds it to `policy/portfolio.yaml` on autopilot's main, and opens a charter issue. Each stage is read
+back from GitHub, and a stopped run resumes where it stopped. After that, steering is specs and issues.
+`--smoke` also opens one tiny `agent-ready` issue to prove the pipeline end to end.
+
+Still yours, once: audit claude.ai connectors; remove all from any routine, toggle off for cloud sessions on these repos.
+The old manual steps (`gh secret set`, `ap ruleset`, `ap enable`) still work, and `ap onboard` is unchanged.
 
 ## Pilot results (drillpad-workspace, 2026-10-15)
 - V1 PROVEN: agent run opened a PR from `agent/8-<run>` whose commit is Verified (`claude[bot]`, signed via the action's `github_file_ops`).

@@ -155,3 +155,7 @@ The kit PR merge stays the one human approval, and `provenance` stays the only g
 
 - 2026-10-21: file created. `gh api repos/actions/*` allow rule added to `~/.claude/settings.json`; denial persisted
   in the same session.
+- 2026-10-21: `scripts/launch-repo` built (PRs #70 and this one). One command takes an existing repo to launched: settings,
+  labels, scaffold PR merged, secret on stdin, App installs, ruleset, enable, portfolio entry, charter issue. Replaces about
+  eight hand steps. Not yet run against live GitHub. Still the owner's: the `claude setup-token` paste, one-time
+  `release.yml` edit (drop the hard-coded `repositories:`), kit template default `auto_merge_classes: [kit-bump]`.

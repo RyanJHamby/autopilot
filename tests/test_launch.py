@@ -156,8 +156,8 @@ class GH:
 
 
 def ns(**kw):
-    base = dict(repo=NAME, tier="B", mode="standard", kit_repo=None,
-                token_env=None, allow_public=False, dry_run=False, yes=True, timeout_minutes=20)  # fmt: skip
+    base = dict(repo=NAME, tier="B", mode="standard", kit_repo=None, claude_app="claude", rollout_app="autopilot-rollout",
+                token_env=None, smoke=False, allow_public=False, dry_run=False, yes=True, timeout_minutes=20)  # fmt: skip
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -168,7 +168,7 @@ def mk(gh, *, portfolio=None, ask=lambda _: "y", secret=lambda _: PROBE, lines=N
     return launch.LaunchEnv(
         run=gh.run, say=sink.append, ask=ask, sleep=gh.sleep, clock=gh.clock, timeout=600.0,
         run_in=gh.run_in, secret=secret, portfolio=lambda: pf, approved=lambda kit: "d" * 40,
-        scaffold=gh.scaffold,
+        scaffold=gh.scaffold, portfolio_pr=gh.portfolio_pr,
     )  # fmt: skip
 
 
@@ -186,10 +186,12 @@ def test_full_launch_runs_every_stage_and_reads_each_one_back():
     gh = GH()
     report, _ = go(gh)
     assert isinstance(report, launch.Report) and report.green
-    assert gh.perm and gh.vars == {"AUTOPILOT_DEBUG": "false"}
+    assert gh.perm and gh.vars == {"AUTOPILOT_DEBUG": "false", "AUTOPILOT_ENABLED": "true"}
     assert gh.labels == set(launch.LABELS) and launch.SECRET in gh.secrets
-    assert gh.manifest and gh.scaffolds == 1
-    assert gh.merged == [f"5@{SLUG}"]  # only the scaffold PR is merged by part 1
+    assert all(v["repos"] == {777} for v in gh.installs.values())
+    assert gh.manifest and gh.portfolio_on and gh.scaffolds == 1 and gh.portfolio_prs == 1
+    assert sorted(gh.merged) == sorted([f"5@{SLUG}", f"9@{OWN}"])
+    assert [t for t, _ in gh.issues] == [launch.CHARTER_TITLE] and gh.issues[0][1] == "needs-human"
 
 
 def test_the_token_goes_only_to_stdin_and_never_into_argv_or_output():
@@ -214,12 +216,12 @@ def test_second_run_changes_nothing():
     gh = GH()
     go(gh)
     before = len(gh.calls)
-    gh.scaffolds = 0
+    gh.scaffolds = gh.portfolio_prs = 0
     report, _ = go(gh)
     assert report.green
     marks = ("gh label create", "gh variable set", "gh pr merge", "gh issue create", "gh api --method")
     assert not [c for c in gh.calls[before:] if " ".join(c).startswith(marks)]
-    assert gh.scaffolds == 0 and len(gh.stdin) == 1  # only the first run's secret
+    assert gh.scaffolds == 0 and gh.portfolio_prs == 0 and len(gh.stdin) == 2  # only the first run's secret + ruleset
 
 
 def test_dry_run_writes_nothing():
@@ -316,6 +318,13 @@ def test_a_new_repo_with_no_ci_at_all_still_gets_its_scaffold_merged():
     assert report.green and f"5@{SLUG}" in gh.merged and gh.now >= ship.NO_CHECKS_GRACE
 
 
+def test_red_checks_on_the_portfolio_pr_stop_before_its_merge():
+    gh = GH()
+    gh.checks[OWN] = [{"name": "test", "bucket": "fail"}]
+    result, _ = go(gh)
+    assert isinstance(result, ship.Stop) and f"9@{OWN}" not in gh.merged
+
+
 def test_a_change_that_does_not_read_back_stops_the_run():
     gh = GH()
     gh.drop_var = "AUTOPILOT_DEBUG"  # GitHub accepts the write but the variable never shows up
@@ -341,6 +350,95 @@ def test_an_existing_secret_is_left_alone():
     gh.secrets.add(launch.SECRET)
     report, _ = go(gh)
     assert report.green and not [c for c, _ in gh.stdin if c[:3] == ["gh", "secret", "set"]]
+
+
+def test_apps_all_repositories_installation_needs_no_change():
+    gh = GH()
+    for v in gh.installs.values():
+        v["sel"] = "all"
+    report, _ = go(gh)
+    assert report.green and not gh.ran("gh api --method PUT /user/installations")
+
+
+def test_apps_fall_back_to_the_url_when_the_api_refuses_and_verify_afterwards():
+    gh = GH()
+    gh.api_add_ok = False
+    seen: list[str] = []
+
+    def ask(prompt):
+        if "added?" in prompt:
+            seen.append(prompt)
+            for v in gh.installs.values():
+                v["repos"].add(777)
+            return ""
+        return "y"
+
+    report, lines = go(gh, yes=False, ask=ask)
+    assert report.green and seen
+    assert any("settings/installations/11" in ln for ln in lines)
+
+
+def test_apps_fallback_never_claims_success_unverified_or_without_a_terminal():
+    gh = GH()
+    gh.api_add_ok = False
+    result, _ = go(gh, yes=False, ask=lambda p: "" if "added?" in p else "y")
+    assert isinstance(result, ship.Stop) and "still not on" in str(result)
+
+    gh2 = GH()
+    gh2.api_add_ok = False
+
+    def ask(p):
+        if "added?" in p:
+            raise EOFError
+        return "y"
+
+    result, _ = go(gh2, yes=False, ask=ask)
+    assert isinstance(result, ship.Stop) and "no terminal" in str(result)
+
+
+def test_apps_stage_still_runs_when_only_one_app_has_the_repo():
+    gh = GH()
+    gh.installs["autopilot-rollout"]["repos"].add(777)
+    report, _ = go(gh)
+    assert report.green and gh.installs["claude"]["repos"] == {777}
+    assert len(gh.ran("gh api --method PUT /user/installations/22")) == 1
+    assert not gh.ran("gh api --method PUT /user/installations/11")
+
+
+def test_a_missing_app_installation_is_named():
+    gh = GH()
+    del gh.installs["claude"]
+    result, _ = go(gh)
+    assert isinstance(result, ship.Stop) and "claude" in str(result) and "github.com/apps/claude" in str(result)
+    assert not gh.portfolio_on  # later stages did not run
+
+
+def test_ruleset_requires_guard_plus_the_repos_own_ci_but_not_autopilot_checks():
+    gh = GH()
+    go(gh)
+    body = gh.rulesets[0]["body"]
+    flat = json.dumps(body)
+    assert "guard / guard" in flat and "build" in flat
+    assert "automerge" not in flat and "dispatch" not in flat
+    assert gh.rulesets[0]["method"] == "POST"
+
+
+def test_an_existing_ruleset_is_updated_in_place():
+    from autopilot import cli
+
+    gh = GH()
+    name = cli.ruleset_json(["guard / guard"])["name"]
+    gh.rulesets = [{"id": 42, "name": name}]
+    gh.vars["AUTOPILOT_ENABLED"] = "false"
+    go(gh)
+    put = [c for c, _ in gh.stdin if "--input" in c]
+    assert put and put[0][put[0].index("--method") + 1] == "PUT" and put[0][2].endswith("/42")
+
+
+def test_smoke_opens_one_extra_agent_ready_issue():
+    gh = GH()
+    go(gh, smoke=True)
+    assert sorted(gh.issues) == sorted([(launch.CHARTER_TITLE, "needs-human"), (launch.SMOKE_TITLE, "agent-ready")])
 
 
 def test_main_exits_nonzero_with_the_reason_on_a_stop(monkeypatch, capsys):

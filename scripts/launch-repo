@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# One command from "a repo exists" to "autopilot runs on it". See src/autopilot/launch.py for the stages and refusals.
+#   scripts/launch-repo NAME --tier B --mode standard --dry-run   # read-only plan
+#   scripts/launch-repo NAME --tier B --mode standard             # asks once, then runs
+#   scripts/launch-repo NAME ... --token-env MY_TOKEN_VAR         # token from the environment instead of a hidden prompt
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec env PYTHONPATH="$here/src" python3 -m autopilot.launch "$@"

@@ -1,0 +1,74 @@
+# Draft for the owner to review and paste into autopilot as .github/workflows/release.yml.
+# After a human merges a kit/** change to main, this opens the kit PR, merges it only after re-verifying its tree, opens the
+# approval PR, waits for the `provenance` check, and merges it only if that check passed on the exact head.
+# Then, only if a kit sha ended up approved, a SECOND App (autopilot-rollout) opens the pin-bump PRs downstream. It never merges:
+# each downstream repo's own automerge (class kit-bump) does that.
+name: release
+
+on:
+  push:
+    branches: [main]
+    paths: ['kit/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read # the App token below carries every write; this token only reads the checkout
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      # Pinned to the commit of the v3.2.0 tag (released 2026-05-12, over two weeks old when pinned).
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            autopilot-kit
+            autopilot-approved
+
+      # Editable install: `ap` finds kit/ relative to the checkout, so a regular (copying) install would not work.
+      - name: Install
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -e .
+
+      - name: Release
+        id: release
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          RELEASE_SOURCE: ${{ github.sha }}
+        run: |
+          .venv/bin/ap release --ci --apply --source "$RELEASE_SOURCE" --kit-repo RyanJHamby/autopilot-kit
+
+      # A different App with a different token, installed only on the downstream repos. Same pin as above.
+      - id: rollout_app
+        if: steps.release.outputs.kit_sha != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.ROLLOUT_APP_ID }}
+          private-key: ${{ secrets.ROLLOUT_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            drillpad-workspace
+            stencil
+            autopilot
+
+      - name: Roll out
+        if: steps.release.outputs.kit_sha != ''
+        env:
+          ROLLOUT_TOKEN: ${{ steps.rollout_app.outputs.token }}
+          KIT_SHA: ${{ steps.release.outputs.kit_sha }}
+        run: |
+          .venv/bin/ap rollout --ci --apply --kit "RyanJHamby/autopilot-kit@$KIT_SHA"

@@ -11,13 +11,13 @@
     ".github/CODEOWNERS": "e88a33b7f535b10a1ae07336478e91349263be3b22a2b5bc1ef74f12d690d593",
     ".github/ISSUE_TEMPLATE/agent-task.md": "9c1d25f7995517b1f8286fa0d5342b873c2dbf94eef99eff22cb6100d92852e4",
     ".github/pull_request_template.md": "6b1c5e0f7e6a2bb50068c4b710f147ec9f8a0d251eac53ad9619bfeefcfa1249",
-    ".github/workflows/agent-dispatch.yml": "ff77eb201d795175bb0927e3f232550a9fb60fae87a25c60ec9ec7caf4e0c725",
-    ".github/workflows/agent-exec.yml": "bc9a9c9085a8e694f021e1e79a7fcf7020f15478ed695a31660823544d39fb8c",
-    ".github/workflows/audit.yml": "5c01858e1bf84b6bf3b4038f6b415204d47d0570bf0ffaeb13b63b295389ae7e",
-    ".github/workflows/automerge.yml": "addafa2a29c6c18eea16cf65e6d65f04c882abcf8acba58f8f95ba6f5922ac4e",
-    ".github/workflows/guard.yml": "3d5c977e865e6d87b44dd2ca66d232b6d0225647bfed1970dd4ec1339c7454d6",
-    ".github/workflows/handshake.yml": "b14d20132634554d3c744e550d10bcb03eaf4277cc618c5d1e1264ed9068496f",
-    ".github/workflows/improve.yml": "3e4f8a714474298de72d2e69cbd4427b1770f2506d65f52a8079565bbf4e1ebf"
+    ".github/workflows/agent-dispatch.yml": "dc8723149ec707231a2be1887f0f70f5db2ece7af956c6433d070d7de2ae1a61",
+    ".github/workflows/agent-exec.yml": "a1b26a8cb477fead87571b70f7b6ec4096c936fd019daa34c812988901fec632",
+    ".github/workflows/audit.yml": "a1fbfa6b06bb21a460e28303ac1d61eb9300790d10f16f8fa8c1b95f9a5c064c",
+    ".github/workflows/automerge.yml": "97cf480fe71a11aae80e5b33cd96b9a198524afedcee4b2f853884451ac23d8a",
+    ".github/workflows/guard.yml": "564602c24ab5173a1325ba87deaf2953d3ebdd6601a7a33176245571cc1fc699",
+    ".github/workflows/handshake.yml": "efca104b12d60e61b6dc666fab43650138d04df7d7fb8fc0ee186321c18116c2",
+    ".github/workflows/improve.yml": "d73bd98e8c3df6d563ee5438be87b92004e95782c9dd78aac1fd9e2c403cf152"
   },
   "kit_version": "0.1.0"
 }

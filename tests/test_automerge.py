@@ -69,6 +69,46 @@ def test_history_flags_reverts_and_red(monkeypatch):
     assert len(h) == 1 and h[0]["class"] == "docs-only" and h[0]["reverted"] and h[0]["main_red"]
 
 
+def _history_gh(merge_runs, head_runs, head="h" * 40):
+    """Fake gh: one automerged PR whose own head ran `head_runs` and whose merge commit later carries `merge_runs`."""
+
+    def gh(*a):
+        path = a[1]
+        if "pulls?state=closed" in path:
+            return [
+                {
+                    "number": 7,
+                    "title": "t",
+                    "body": "",
+                    "merged_at": "2026-10-19T00:00:00Z",
+                    "merge_commit_sha": "a" * 40,
+                    "head": {"sha": head},
+                    "labels": [{"name": "automerged:kit-bump"}],
+                }
+            ]
+        assert "per_page=100" in path, path
+        runs = head_runs if f"/commits/{head}/" in path else merge_runs
+        return {"check_runs": [{"name": n, "conclusion": c} for n, c in runs]}
+
+    return gh
+
+
+def test_a_failing_scheduled_workflow_is_not_blamed_on_the_pr_merged_at_that_head():
+    own = [("build", "success"), ("guard / guard", "success")]
+    later = own + [("automerge / automerge", "success"), ("audit / audit", "failure")]
+    assert automerge.history(_history_gh(later, own))[0]["main_red"] is False
+
+
+def test_a_failure_of_the_prs_own_check_on_main_still_trips_the_breaker():
+    own = [("build", "success"), ("guard / guard", "success")]
+    assert automerge.history(_history_gh([("build", "failure"), ("audit / audit", "success")], own))[0]["main_red"] is True
+    assert automerge.history(_history_gh([("build", "timed_out")], own))[0]["main_red"] is True
+
+
+def test_unknown_own_checks_fall_back_to_any_failure():
+    assert automerge.history(_history_gh([("audit / audit", "failure")], []))[0]["main_red"] is True
+
+
 def test_kit_bump_prs_only_from_the_owner(monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "me")
     res = {"tier": 0, "class": "kit-bump", "reasons": ["x"]}

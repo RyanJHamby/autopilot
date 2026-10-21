@@ -1,4 +1,4 @@
-"""launch-repo: one command from "a repo exists" to "autopilot runs on it" (part 1: the framework and the first four stages).
+"""launch-repo: one command from "a repo exists" to "autopilot runs on it". Only steering (specs, issues) is left.
 
 Run by the owner, as the owner (their `gh` login). It prints the plan, asks once (`--yes` skips the question), then runs
 stages in order. Every stage is idempotent and read-back verified: it checks whether it is already done, does it if not,
@@ -7,16 +7,20 @@ then re-reads GitHub and stops if the change did not take. Re-running after a st
   1. repo settings   Actions may open PRs; AUTOPILOT_DEBUG=false
   2. labels          the labels the dispatcher reads
   3. scaffold        thin callers pinned to the latest APPROVED kit sha, as a PR, merged (callers must be on the default
-                     branch before a ruleset requires `guard / guard`)
+                     branch before the ruleset requires `guard / guard`)
   4. secret          CLAUDE_CODE_OAUTH_TOKEN, read hidden (or from --token-env) and piped to `gh secret set` on stdin only
+  5. apps            the repo is on the rollout App's and the Claude App's installations (REST; never claimed unverified)
+  6. ruleset+enable  the autopilot-main ruleset with the repo's own CI checks, then AUTOPILOT_ENABLED=true
+  7. portfolio       the repo joins policy/portfolio.yaml on autopilot's main, so rollout reaches it
+  8. steering        a charter issue for the owner; `--smoke` also opens one tiny agent-ready issue
 
-Part 2 adds: App installations, the ruleset and enabling, the portfolio entry, and the steering issues.
 Never force-pushes, never skips signing, never prints the token. Nothing runs without the one confirmation.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 import getpass
 import os
 import re
@@ -32,6 +36,8 @@ from .ship import Stop, _json, _out, sh
 
 INIT_BRANCH = "autopilot/init"
 SECRET = "CLAUDE_CODE_OAUTH_TOKEN"
+CHARTER_TITLE = "Fill in the charter: goals and commands in .autopilot/repo.yaml"
+SMOKE_TITLE = "autopilot smoke test: add a one-line note to the README"
 NAME_RE = re.compile(r"^[\w.-]+$")
 LABELS = {
     "agent-ready": ("0E8A16", "An agent may pick this up"),
@@ -86,7 +92,11 @@ class Ctx:
     kit_sha: str
     repo_id: int
     default_branch: str
+    own_repo: str
     token_env: str | None = None
+    claude_app: str = "claude"
+    rollout_app: str = "autopilot-rollout"
+    smoke: bool = False
 
 
 @dataclass
@@ -96,9 +106,11 @@ class LaunchEnv(ship.Env):
     portfolio: Callable[[], dict] = field(default=lambda: _load_portfolio())  # late-bound so tests can replace the loader
     approved: Callable[[str], str] = _latest_approved
     scaffold: Callable[..., str] | None = None
+    portfolio_pr: Callable[..., str] | None = None
 
     def __post_init__(self) -> None:
         self.scaffold = self.scaffold or real_scaffold
+        self.portfolio_pr = self.portfolio_pr or real_portfolio_pr
 
 
 @dataclass
@@ -161,7 +173,11 @@ def preflight(env: LaunchEnv, ns: argparse.Namespace) -> Ctx:
         kit_sha=env.approved(kit_repo),
         repo_id=int(repo["id"]),
         default_branch=repo.get("default_branch") or "main",
+        own_repo=f"{owner}/autopilot",
         token_env=ns.token_env,
+        claude_app=ns.claude_app,
+        rollout_app=ns.rollout_app,
+        smoke=ns.smoke,
     )
 
 
@@ -313,11 +329,212 @@ def secret_apply(env: LaunchEnv, ctx: Ctx) -> None:
         raise Stop(f"gh secret set failed for {ctx.slug}")
 
 
+# --- 5 apps ------------------------------------------------------------------------------------------------------
+
+
+def _installations(env: LaunchEnv) -> dict[str, tuple[str, str]]:
+    rc, out = env.run(
+        [
+            "gh",
+            "api",
+            "/user/installations",
+            "--paginate",
+            "--jq",
+            '.installations[] | "\\(.id) \\(.app_slug) \\(.repository_selection)"',
+        ]
+    )
+    found: dict[str, tuple[str, str]] = {}
+    if rc == 0:
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) == 3:
+                found[parts[1]] = (parts[0], parts[2])
+    return found
+
+
+def _on_installation(env: LaunchEnv, ctx: Ctx, app: str) -> bool | None:
+    """True/False, or None when the installation is not visible to this login (cannot verify)."""
+    inst = _installations(env).get(app)
+    if not inst:
+        return None
+    iid, selection = inst
+    if selection == "all":
+        return True
+    rc, out = env.run(["gh", "api", f"/user/installations/{iid}/repositories", "--paginate", "--jq", ".repositories[].id"])
+    return rc == 0 and str(ctx.repo_id) in out.split()
+
+
+def apps_done(env: LaunchEnv, ctx: Ctx) -> bool:
+    return all(_on_installation(env, ctx, a) is True for a in (ctx.rollout_app, ctx.claude_app))
+
+
+def apps_apply(env: LaunchEnv, ctx: Ctx) -> None:
+    for app in (ctx.rollout_app, ctx.claude_app):
+        state = _on_installation(env, ctx, app)
+        if state is True:
+            continue
+        inst = _installations(env).get(app)
+        if not inst:
+            raise Stop(
+                f"the {app} App is not installed on {ctx.owner}'s account (or your login cannot see it): https://github.com/apps/{app}"
+            )
+        iid = inst[0]
+        rc, _ = env.run(["gh", "api", "--method", "PUT", f"/user/installations/{iid}/repositories/{ctx.repo_id}"])
+        if rc == 0 and _on_installation(env, ctx, app) is True:
+            continue
+        env.say(f"  could not add {ctx.slug} to {app} through the API. Add it here, then press Enter:")
+        env.say(f"    https://github.com/settings/installations/{iid}")
+        try:
+            env.ask("  added? ")
+        except EOFError:
+            raise Stop(
+                f"no terminal to wait on; add the repo at https://github.com/settings/installations/{iid} and re-run"
+            ) from None
+        if _on_installation(env, ctx, app) is not True:
+            raise Stop(f"{ctx.slug} is still not on the {app} installation; re-run once it is")
+
+
+# --- 6 ruleset + enable -----------------------------------------------------------------------------------------
+
+
+def _ruleset_body(env: LaunchEnv, ctx: Ctx) -> dict:
+    from . import cli
+
+    rc, out = env.run(["gh", "api", f"repos/{ctx.slug}/commits/HEAD/check-runs", "--jq", ".check_runs[].name"])
+    names = out.split("\n") if rc == 0 else []
+    checks = sorted({n.strip() for n in names if n.strip() and not n.lower().startswith(SKIP_CHECKS)})
+    return cli.ruleset_json(["guard / guard", *checks])
+
+
+def _ruleset_id(env: LaunchEnv, ctx: Ctx, name: str) -> int | None:
+    rc, out = env.run(["gh", "api", f"repos/{ctx.slug}/rulesets"])
+    found = _json(out, []) if rc == 0 else []
+    return next((x["id"] for x in found if isinstance(x, dict) and x.get("name") == name), None)
+
+
+def ruleset_done(env: LaunchEnv, ctx: Ctx) -> bool:
+    from . import cli
+
+    name = cli.ruleset_json(["guard / guard"])["name"]
+    return _ruleset_id(env, ctx, name) is not None and _variables(env, ctx).get("AUTOPILOT_ENABLED") == "true"
+
+
+def ruleset_apply(env: LaunchEnv, ctx: Ctx) -> None:
+    import json
+
+    body = _ruleset_body(env, ctx)
+    rid = _ruleset_id(env, ctx, body["name"])
+    url, method = (f"repos/{ctx.slug}/rulesets/{rid}", "PUT") if rid else (f"repos/{ctx.slug}/rulesets", "POST")
+    rc, _ = env.run_in(["gh", "api", url, "--method", method, "--input", "-"], json.dumps(body))
+    if rc:
+        raise Stop(f"could not {method} the ruleset on {ctx.slug}")
+    _out(env, ["gh", "variable", "set", "AUTOPILOT_ENABLED", "--body", "true", "-R", ctx.slug])
+
+
+# --- 7 portfolio -------------------------------------------------------------------------------------------------
+
+
+def portfolio_entry(env: LaunchEnv, ctx: Ctx) -> dict | None:
+    import yaml
+
+    rc, out = env.run(["gh", "api", f"repos/{ctx.own_repo}/contents/policy/portfolio.yaml", "--jq", ".content"])
+    if rc != 0:
+        return None
+    try:
+        data = yaml.safe_load(base64.b64decode(out.strip()).decode())
+    except Exception:  # noqa: BLE001 (unreadable means "not verified")
+        return None
+    return ((data or {}).get("repos") or {}).get(ctx.name)
+
+
+def portfolio_done(env: LaunchEnv, ctx: Ctx) -> bool:
+    entry = portfolio_entry(env, ctx)
+    return bool(entry) and entry.get("enabled") is True and entry.get("mode") != "dormant"
+
+
+def portfolio_apply(env: LaunchEnv, ctx: Ctx) -> None:
+    url = _open_pr_for(env, ctx.own_repo, f"launch/{ctx.name}") or env.portfolio_pr(env, ctx)
+    repo, number = ship._split_url(url)
+    ship.wait_checks(env, repo, number, f"PR {url}")
+    _out(env, ["gh", "pr", "merge", number, "--repo", repo, "--merge", "--admin"])
+    _poll(env, lambda: portfolio_done(env, ctx), "the portfolio entry on autopilot's main")
+
+
+def real_portfolio_pr(env: LaunchEnv, ctx: Ctx) -> str:
+    import yaml
+
+    from . import cli
+
+    dest = Path(tempfile.mkdtemp(prefix="ap-launch-")) / "autopilot"
+    branch = f"launch/{ctx.name}"
+    _out(env, ["gh", "repo", "clone", ctx.own_repo, str(dest)])
+    g = ["git", "-C", str(dest)]
+    _out(env, [*g, "switch", "-c", branch])
+    path = dest / "policy" / "portfolio.yaml"
+    text = path.read_text()
+    present = ctx.name in ((yaml.safe_load(text) or {}).get("repos") or {})
+    out = cli.edit_portfolio(text, ctx.name, {"tier": ctx.tier, "mode": ctx.mode, "enabled": True}, add=not present)
+    yaml.safe_load(out)  # never write a file that does not parse
+    path.write_text(out)
+    _out(env, [*g, "add", "policy/portfolio.yaml"])
+    _out(env, [*g, "commit", "-q", "-S", "-m", f"portfolio: launch {ctx.name} ({ctx.tier}/{ctx.mode})"])
+    rc, _ = env.run([*g, "push", "-q", "-u", "origin", branch])
+    if rc:
+        raise Stop(f"could not push {branch} (already exists without a PR? delete it on GitHub and re-run)")
+    body = f"Adds `{ctx.name}` to the rollout: tier {ctx.tier}, mode {ctx.mode}, enabled.\n\n\U0001f916 Generated with [Claude Code](https://claude.com/claude-code)"
+    created = _out(
+        env,
+        ["gh", "pr", "create", "-R", ctx.own_repo, "--base", "main", "--head", branch,
+         "--title", f"portfolio: launch {ctx.name}", "--body", body],
+    )  # fmt: skip
+    return created.splitlines()[-1].strip()
+
+
+# --- 8 steering --------------------------------------------------------------------------------------------------
+
+CHARTER_BODY = (
+    "autopilot is launched on this repo. The one thing it cannot do for you: say what the repo is for.\n\n"
+    "- Fill in `goals` and the build/test `commands` in `.autopilot/repo.yaml`.\n"
+    "- Then steer: write `specs/<id>.md` (template: `specs/_TEMPLATE.md`) or open an issue from the agent-task template and label it `agent-ready`.\n"
+)
+SMOKE_BODY = (
+    "Acceptance: the README ends with the line `autopilot smoke test`. Scope: README.md only. "
+    "Opened by launch-repo --smoke to prove the pipeline end to end; safe to close."
+)
+
+
+def _issue_titles(env: LaunchEnv, ctx: Ctx) -> set[str]:
+    rc, out = env.run(["gh", "issue", "list", "-R", ctx.slug, "--state", "all", "--limit", "100", "--json", "title"])
+    return {x["title"] for x in _json(out, [])} if rc == 0 else set()
+
+
+def steering_done(env: LaunchEnv, ctx: Ctx) -> bool:
+    titles = _issue_titles(env, ctx)
+    return CHARTER_TITLE in titles and (not ctx.smoke or SMOKE_TITLE in titles)
+
+
+def steering_apply(env: LaunchEnv, ctx: Ctx) -> None:
+    titles = _issue_titles(env, ctx)
+    if CHARTER_TITLE not in titles:
+        _out(
+            env,
+            ["gh", "issue", "create", "-R", ctx.slug, "--title", CHARTER_TITLE, "--body", CHARTER_BODY, "--label", "needs-human"],
+        )
+    if ctx.smoke and SMOKE_TITLE not in titles:
+        _out(
+            env, ["gh", "issue", "create", "-R", ctx.slug, "--title", SMOKE_TITLE, "--body", SMOKE_BODY, "--label", "agent-ready"]
+        )
+
+
 STAGES = [
     Stage("repo settings", settings_done, settings_apply),
     Stage("labels", labels_done, labels_apply),
     Stage("scaffold merged", scaffolded, scaffold_apply),
     Stage("token secret", secret_done, secret_apply),
+    Stage("App installations", apps_done, apps_apply),
+    Stage("ruleset + enabled", ruleset_done, ruleset_apply),
+    Stage("portfolio entry", portfolio_done, portfolio_apply),
+    Stage("steering issues", steering_done, steering_apply),
 ]
 
 
@@ -377,7 +594,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tier", choices=["A", "B", "C"])
     ap.add_argument("--mode", choices=["standard", "yolo"])
     ap.add_argument("--kit-repo")
+    ap.add_argument("--claude-app", default="claude", help="slug of the Claude GitHub App")
+    ap.add_argument("--rollout-app", default="autopilot-rollout")
     ap.add_argument("--token-env", help="name of an environment variable holding the token (otherwise a hidden prompt)")
+    ap.add_argument("--smoke", action="store_true", help="also open one tiny agent-ready issue to prove the pipeline")
     ap.add_argument("--allow-public", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--yes", action="store_true")

@@ -268,3 +268,7 @@ ship-kit first live run (PR #67, kit sha 262d51a): merged the kit PR, release ra
 ## 2026-10-21 07:48 EDT (at 7884c77)
 
 launch-repo part 1 (framework + stages 1-4: settings, labels, scaffold merged, secret). Plan approved in plan mode; the full module was 1091 changed lines so the guard's 800 cap forced a real split: part 1 = framework + first four stages with their tests, part 2 = apps, ruleset, portfolio, steering, launcher, README. Decisions: launch does the scaffold itself instead of calling cmd_onboard (which edits the local portfolio file and force-pushes); every stage is done()/apply()/read-back so reruns resume and a write that does not show up stops the run; token only on stdin (secrets hook rightly blocked a test token that looked like an API key; sentinel renamed); 22 safety mutations over the full module all caught, 16 for part 1, control passes. Harness lessons: pytest pythonpath and cli.py's kit/ lookup both shadow a scratch copy, and a monkeypatched default was bound at class definition (test silently read the real portfolio file). Not run against live GitHub.
+
+## 2026-10-21 09:20 EDT (at 726c981)
+
+launch-repo part 2 (apps, ruleset+enable, portfolio PR, steering issues, launcher script, README section replacing the stale setup checklist). Full 22-mutation harness: all caught, control passes. Suite 434 passed, ruff clean. Not run live yet: App-installation REST call for a gh OAuth token (URL fallback exists), real scaffold and portfolio PR paths. Next: user dry-runs it on a throwaway private repo.

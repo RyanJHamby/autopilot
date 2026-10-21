@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# One command from a committed kit branch to merged bump PRs. See src/autopilot/ship.py for what it does and refuses.
+#   scripts/ship-kit            # asks once, then ships
+#   scripts/ship-kit --dry-run  # preflight and tests only
+#   scripts/ship-kit --yes      # no question
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec env PYTHONPATH="$here/src" python3 -m autopilot.ship "$@"

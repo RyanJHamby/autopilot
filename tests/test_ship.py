@@ -186,6 +186,20 @@ def test_declining_the_confirmation_pushes_nothing():
     assert code == 0 and f2.ran("git push -u origin feat-x")
 
 
+def test_no_terminal_to_ask_on_is_a_clean_no(capsys):
+    f = scripted()
+
+    def eof(_):
+        raise EOFError
+
+    lines: list[str] = []
+    env = ship.Env(run=f.run, say=lines.append, ask=eof, sleep=f.sleep, clock=f.clock, timeout=600.0)
+    with pytest.raises(ship.Stop) as e:
+        ship.ship(env, assume_yes=False, dry_run=False)
+    assert "not confirmed" in str(e.value) and "--yes" in str(e.value)
+    assert not f.ran("git push") and not f.ran("gh pr")
+
+
 def test_red_kit_pr_checks_leave_it_unmerged():
     f = scripted()
     f.on(f"gh pr checks 70 --repo {REPO}", checks("pass", "fail"))

@@ -245,6 +245,15 @@ def report_superseded(env: Env, repos: list[str], keep: list[str], result: Resul
                 result.notes.append(f"older bump PR still open: {pr['url']}  (close: gh pr close {pr['number']} --repo {repo})")
 
 
+def confirmed(env: Env, n_files: int) -> bool:
+    """Only an explicit "y" counts. No terminal to ask on (EOF) is a no, never a crash and never a yes."""
+    try:
+        answer = env.ask(f"Push, merge to main with admin bypass, and release? {n_files} file(s) [y/N] ")
+    except EOFError:
+        return False
+    return answer.strip().lower() == "y"
+
+
 def ship(env: Env, *, assume_yes: bool, dry_run: bool) -> Result:
     result = Result()
     branch, files = preflight(env)
@@ -257,11 +266,8 @@ def ship(env: Env, *, assume_yes: bool, dry_run: bool) -> Result:
     if dry_run:
         env.say("dry run: stopping before the push")
         return result
-    if (
-        not assume_yes
-        and env.ask(f"Push, merge to main with admin bypass, and release? {len(files)} file(s) [y/N] ").strip().lower() != "y"
-    ):
-        raise Stop("not confirmed; nothing was pushed")
+    if not assume_yes and not confirmed(env, len(files)):
+        raise Stop("not confirmed; nothing was pushed (no terminal to ask on? pass --yes)")
     url = open_pr(env, repo, branch)
     pr_repo, number = _split_url(url)
     env.say(f"PR {url}")

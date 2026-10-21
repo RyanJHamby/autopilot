@@ -260,3 +260,7 @@ rollout --ci: rollout_ci.py (ROLLOUT_TOKEN, REST only, client refuses merge/DELE
 ## 2026-10-20 22:21 EDT (at 4fffdba)
 
 ship-kit: src/autopilot/ship.py + scripts/ship-kit + tests/test_ship.py (34 tests, scripted fake of git/gh). One user-run command: preflight (signed commits, kit/tests/docs only, on top of origin/main), tests, push, PR, wait green, admin-merge the kit PR, watch release, verify each bump PR (rollout App author, autopilot/kit-bump-<approved sha> branch, owner's repo), merge pinned to checked head via --match-head-commit unless the repo's automerge already did. Decisions: only gh pr/run/repo-view and git (nothing the project deny list blocks for me, runs as the owner); superseded bump PRs are reported, never closed; no force push, no --no-verify. Mutation check: 12 safety mutations in a scratch copy all caught (first run all 'survived' because pytest pythonpath=src shadowed the copy; fixed harness and added a control). Not run against live GitHub yet.
+
+## 2026-10-20 22:48 EDT (at dd16ee3)
+
+ship-kit first live run (PR #67, kit sha 262d51a): merged the kit PR, release ran, merged autopilot #68 and stencil #85 pinned to checked heads; left drillpad-workspace #61 open (red pip-audit on certifi, not the kit) and exited 1 as designed. Bug found live: a ! command has no stdin, so input() raised EOFError. Fixed: EOF is a clean 'not confirmed' (never a yes); test + mutation added. Also found and fixed the circuit-breaker false positive (scheduled audit failure blamed on the bump merged at that head).

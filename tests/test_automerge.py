@@ -79,6 +79,15 @@ def test_kit_bump_prs_only_from_the_owner(monkeypatch):
     assert not d(pr=mine, res=res, enabled=("kit-bump",))[0]
 
 
+def test_kit_bump_prs_from_the_rollout_app_are_accepted(monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "me")
+    res = {"tier": 0, "class": "kit-bump", "reasons": ["x"]}
+    bump = {**PR, "headRefName": "autopilot/kit-bump-abc1234", "author": {"login": "autopilot-rollout[bot]"}}
+    assert d(pr=bump, res=res, enabled=("kit-bump",)) == (True, "kit-bump")
+    assert not d(pr={**bump, "headRefName": "feature/x"}, res=res, enabled=("kit-bump",))[0]
+    assert not d(pr={**bump, "author": {"login": "other-app[bot]"}}, res=res, enabled=("kit-bump",))[0]
+
+
 def test_fetch_approved_parses_and_fails_closed():
     txt = "# approved kit shas\n" + "a" * 40 + "  2026-10-16 canary green\nnot-a-sha\n" + "b" * 40 + "\n"
     seen = []

@@ -185,8 +185,12 @@ def preflight(env: LaunchEnv, ns: argparse.Namespace) -> Ctx:
 
 
 def _variables(env: LaunchEnv, ctx: Ctx) -> dict[str, str]:
-    rc, out = env.run(["gh", "variable", "list", "-R", ctx.slug, "--json", "name,value"])
-    return {v["name"]: v["value"] for v in _json(out, [])} if rc == 0 else {}
+    # plain output (name, value, updated, tab-separated): `--json` is not available on every gh version
+    rc, out = env.run(["gh", "variable", "list", "-R", ctx.slug])
+    if rc != 0:
+        return {}
+    rows = (line.split("\t") for line in out.splitlines() if line.strip())
+    return {r[0]: r[1] if len(r) > 1 else "" for r in rows}
 
 
 def _can_open_prs(env: LaunchEnv, ctx: Ctx) -> bool:

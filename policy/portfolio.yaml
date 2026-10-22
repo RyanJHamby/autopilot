@@ -46,6 +46,7 @@ repos:
   lift_app:                {tier: C, mode: dormant, enabled: false}
   autopilot:             {tier: B, mode: standard, enabled: true}
   stencil:               {tier: A, mode: standard, enabled: true}
+  launch-scratch:        {tier: B, mode: standard, enabled: true}
 
 # data_class per repo: public | internal (default) | restricted. restricted = crown-jewel IP or personal data:
 # `ap init`, `ap enable` and `ap pick` refuse it, so no cloud agent ever sees it. Add `data_class: restricted` to an entry.

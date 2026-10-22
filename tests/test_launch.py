@@ -60,7 +60,9 @@ class GH:
             self.perm = True
             return 0, ""
         if line.startswith(f"gh variable list -R {SLUG}"):
-            return 0, json.dumps([{"name": k, "value": v} for k, v in self.vars.items()])
+            if "--json" in cmd:  # not every gh version has it; the real call must not depend on it
+                return 1, "unknown flag: --json"
+            return 0, "".join(f"{k}\t{v}\t2026-10-22T11:27:22Z\n" for k, v in self.vars.items())
         if line.startswith("gh variable set"):
             name, val = cmd[3], cmd[5]
             if name != self.drop_var:

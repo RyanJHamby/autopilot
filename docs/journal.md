@@ -272,3 +272,7 @@ launch-repo part 1 (framework + stages 1-4: settings, labels, scaffold merged, s
 ## 2026-10-21 09:20 EDT (at 726c981)
 
 launch-repo part 2 (apps, ruleset+enable, portfolio PR, steering issues, launcher script, README section replacing the stale setup checklist). Full 22-mutation harness: all caught, control passes. Suite 434 passed, ruff clean. Not run live yet: App-installation REST call for a gh OAuth token (URL fallback exists), real scaffold and portfolio PR paths. Next: user dry-runs it on a throwaway private repo.
+
+## 2026-10-22 07:28 EDT (at 2c3be46)
+
+launch-repo first live run stopped at stage 1: settings write took (variable exists, Actions permission true) but read-back said not done. Suspect: gh variable list --json unsupported on this gh, so the read-back saw an empty list. Cause not confirmed by running it. Fix: parse plain tab output; test fake now rejects --json.

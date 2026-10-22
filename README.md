@@ -54,10 +54,9 @@ scripts/launch-repo <repo> --tier B --mode standard --dry-run   # read-only: sho
 scripts/launch-repo <repo> --tier B --mode standard             # asks once, then runs every stage
 ```
 It sets the repo's Actions setting and variables, creates the labels, opens and merges the scaffold PR, stores the token
-(hidden prompt or `--token-env NAME`; piped to `gh secret set` on stdin, never printed), adds the repo to the
-`autopilot-rollout` and Claude App installations (falls back to one URL if the API refuses), applies the ruleset,
+(hidden prompt or `--token-env NAME`; piped to `gh secret set` on stdin, never printed), applies the ruleset,
 enables the repo, adds it to `policy/portfolio.yaml` on autopilot's main, and opens a charter issue. Each stage is read
-back from GitHub, and a stopped run resumes where it stopped. After that, steering is specs and issues.
+back from GitHub, and a stopped run resumes where it stopped. Adding the repo to the `autopilot-rollout` and Claude Apps is yours: GitHub gives a `gh` login no API for installations, so the run stops there, prints the page, and you re-run with `--apps-done` (reported as "attested, not verified"). After that, steering is specs and issues.
 `--smoke` also opens one tiny `agent-ready` issue to prove the pipeline end to end.
 
 Still yours, once: audit claude.ai connectors; remove all from any routine, toggle off for cloud sessions on these repos.

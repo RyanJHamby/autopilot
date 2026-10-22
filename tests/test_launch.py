@@ -35,11 +35,6 @@ class GH:
         self.rulesets: list[dict] = []
         self.issues: list[tuple[str, str]] = []
         self.portfolio_on = False
-        self.installs = {
-            "autopilot-rollout": {"id": "11", "sel": "selected", "repos": set()},
-            "claude": {"id": "22", "sel": "selected", "repos": set()},
-        }
-        self.api_add_ok = True
         self.ci = ["build", "guard / guard", "automerge / automerge", "dispatch / dispatch"]
         self.open_prs: dict[str, str] = {}
         self.checks = {"default": [{"name": "guard", "bucket": "pass"}]}
@@ -92,19 +87,6 @@ class GH:
             return 0, ""
         if line.startswith(f"gh secret list -R {SLUG}"):
             return 0, json.dumps([{"name": n} for n in sorted(self.secrets)])
-        if line.startswith("gh api /user/installations --paginate"):
-            return 0, "\n".join(f"{v['id']} {k} {v['sel']}" for k, v in self.installs.items())
-        if line.startswith("gh api /user/installations/") and "--paginate" in cmd:
-            iid = cmd[2].split("/")[3]
-            app = next(v for v in self.installs.values() if v["id"] == iid)
-            return 0, "\n".join(str(r) for r in sorted(app["repos"]))
-        if line.startswith("gh api --method PUT /user/installations/"):
-            if not self.api_add_ok:
-                return 1, ""
-            parts = cmd[4].split("/")
-            app = next(v for v in self.installs.values() if v["id"] == parts[3])
-            app["repos"].add(int(parts[5]))
-            return 0, ""
         if line.startswith(f"gh api repos/{SLUG}/commits/HEAD/check-runs"):
             return 0, "\n".join(self.ci)
         if line == f"gh api repos/{SLUG}/rulesets":
@@ -159,7 +141,7 @@ class GH:
 
 def ns(**kw):
     base = dict(repo=NAME, tier="B", mode="standard", kit_repo=None, claude_app="claude", rollout_app="autopilot-rollout",
-                token_env=None, smoke=False, allow_public=False, dry_run=False, yes=True, timeout_minutes=20)  # fmt: skip
+                token_env=None, smoke=False, apps_done=True, allow_public=False, dry_run=False, yes=True, timeout_minutes=20)  # fmt: skip
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -190,7 +172,6 @@ def test_full_launch_runs_every_stage_and_reads_each_one_back():
     assert isinstance(report, launch.Report) and report.green
     assert gh.perm and gh.vars == {"AUTOPILOT_DEBUG": "false", "AUTOPILOT_ENABLED": "true"}
     assert gh.labels == set(launch.LABELS) and launch.SECRET in gh.secrets
-    assert all(v["repos"] == {777} for v in gh.installs.values())
     assert gh.manifest and gh.portfolio_on and gh.scaffolds == 1 and gh.portfolio_prs == 1
     assert sorted(gh.merged) == sorted([f"5@{SLUG}", f"9@{OWN}"])
     assert [t for t, _ in gh.issues] == [launch.CHARTER_TITLE] and gh.issues[0][1] == "needs-human"
@@ -354,65 +335,27 @@ def test_an_existing_secret_is_left_alone():
     assert report.green and not [c for c, _ in gh.stdin if c[:3] == ["gh", "secret", "set"]]
 
 
-def test_apps_all_repositories_installation_needs_no_change():
+def test_apps_stage_stops_for_the_owner_and_names_both_apps_and_the_page():
     gh = GH()
-    for v in gh.installs.values():
-        v["sel"] = "all"
-    report, _ = go(gh)
-    assert report.green and not gh.ran("gh api --method PUT /user/installations")
+    result, lines = go(gh, apps_done=False)
+    assert isinstance(result, ship.Stop) and "--apps-done" in str(result)
+    said = "\n".join(lines)
+    assert "github.com/settings/installations" in said and "autopilot-rollout" in said and "claude" in said
+    assert not gh.portfolio_on and not gh.rulesets  # later stages did not run
+    assert not gh.ran("gh api /user/installations") and not gh.ran("gh api --method PUT /user/installations")
 
 
-def test_apps_fall_back_to_the_url_when_the_api_refuses_and_verify_afterwards():
+def test_apps_done_resumes_the_later_stages_and_is_reported_as_attested():
     gh = GH()
-    gh.api_add_ok = False
-    seen: list[str] = []
-
-    def ask(prompt):
-        if "added?" in prompt:
-            seen.append(prompt)
-            for v in gh.installs.values():
-                v["repos"].add(777)
-            return ""
-        return "y"
-
-    report, lines = go(gh, yes=False, ask=ask)
-    assert report.green and seen
-    assert any("settings/installations/11" in ln for ln in lines)
+    report, lines = go(gh, apps_done=True)
+    assert report.green and gh.rulesets and gh.portfolio_on
+    note = next(n for name, _, n in report.rows if name == "App installations")
+    assert "not verified" in note
 
 
-def test_apps_fallback_never_claims_success_unverified_or_without_a_terminal():
-    gh = GH()
-    gh.api_add_ok = False
-    result, _ = go(gh, yes=False, ask=lambda p: "" if "added?" in p else "y")
-    assert isinstance(result, ship.Stop) and "still not on" in str(result)
-
-    gh2 = GH()
-    gh2.api_add_ok = False
-
-    def ask(p):
-        if "added?" in p:
-            raise EOFError
-        return "y"
-
-    result, _ = go(gh2, yes=False, ask=ask)
-    assert isinstance(result, ship.Stop) and "no terminal" in str(result)
-
-
-def test_apps_stage_still_runs_when_only_one_app_has_the_repo():
-    gh = GH()
-    gh.installs["autopilot-rollout"]["repos"].add(777)
-    report, _ = go(gh)
-    assert report.green and gh.installs["claude"]["repos"] == {777}
-    assert len(gh.ran("gh api --method PUT /user/installations/22")) == 1
-    assert not gh.ran("gh api --method PUT /user/installations/11")
-
-
-def test_a_missing_app_installation_is_named():
-    gh = GH()
-    del gh.installs["claude"]
-    result, _ = go(gh)
-    assert isinstance(result, ship.Stop) and "claude" in str(result) and "github.com/apps/claude" in str(result)
-    assert not gh.portfolio_on  # later stages did not run
+def test_dry_run_with_apps_done_still_labels_the_stage_unverified():
+    report, _ = go(GH(), dry_run=True, apps_done=True)
+    assert "not verified" in next(n for name, _, n in report.rows if name == "App installations")
 
 
 def test_ruleset_requires_guard_plus_the_repos_own_ci_but_not_autopilot_checks():

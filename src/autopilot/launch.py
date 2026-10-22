@@ -9,7 +9,8 @@ then re-reads GitHub and stops if the change did not take. Re-running after a st
   3. scaffold        thin callers pinned to the latest APPROVED kit sha, as a PR, merged (callers must be on the default
                      branch before the ruleset requires `guard / guard`)
   4. secret          CLAUDE_CODE_OAUTH_TOKEN, read hidden (or from --token-env) and piped to `gh secret set` on stdin only
-  5. apps            the repo is on the rollout App's and the Claude App's installations (REST; never claimed unverified)
+  5. apps            the repo is on the rollout App's and the Claude App's installations: the owner's step (GitHub gives a
+                     `gh` login no API for it), stops until re-run with --apps-done, reported "attested, not verified"
   6. ruleset+enable  the autopilot-main ruleset with the repo's own CI checks, then AUTOPILOT_ENABLED=true
   7. portfolio       the repo joins policy/portfolio.yaml on autopilot's main, so rollout reaches it
   8. steering        a charter issue for the owner; `--smoke` also opens one tiny agent-ready issue
@@ -97,6 +98,7 @@ class Ctx:
     claude_app: str = "claude"
     rollout_app: str = "autopilot-rollout"
     smoke: bool = False
+    apps_attested: bool = False
 
 
 @dataclass
@@ -178,6 +180,7 @@ def preflight(env: LaunchEnv, ns: argparse.Namespace) -> Ctx:
         claude_app=ns.claude_app,
         rollout_app=ns.rollout_app,
         smoke=ns.smoke,
+        apps_attested=ns.apps_done,
     )
 
 
@@ -336,66 +339,17 @@ def secret_apply(env: LaunchEnv, ctx: Ctx) -> None:
 # --- 5 apps ------------------------------------------------------------------------------------------------------
 
 
-def _installations(env: LaunchEnv) -> dict[str, tuple[str, str]]:
-    rc, out = env.run(
-        [
-            "gh",
-            "api",
-            "/user/installations",
-            "--paginate",
-            "--jq",
-            '.installations[] | "\\(.id) \\(.app_slug) \\(.repository_selection)"',
-        ]
-    )
-    found: dict[str, tuple[str, str]] = {}
-    if rc == 0:
-        for line in out.splitlines():
-            parts = line.split()
-            if len(parts) == 3:
-                found[parts[1]] = (parts[0], parts[2])
-    return found
-
-
-def _on_installation(env: LaunchEnv, ctx: Ctx, app: str) -> bool | None:
-    """True/False, or None when the installation is not visible to this login (cannot verify)."""
-    inst = _installations(env).get(app)
-    if not inst:
-        return None
-    iid, selection = inst
-    if selection == "all":
-        return True
-    rc, out = env.run(["gh", "api", f"/user/installations/{iid}/repositories", "--paginate", "--jq", ".repositories[].id"])
-    return rc == 0 and str(ctx.repo_id) in out.split()
-
-
 def apps_done(env: LaunchEnv, ctx: Ctx) -> bool:
-    return all(_on_installation(env, ctx, a) is True for a in (ctx.rollout_app, ctx.claude_app))
+    return ctx.apps_attested
 
 
 def apps_apply(env: LaunchEnv, ctx: Ctx) -> None:
-    for app in (ctx.rollout_app, ctx.claude_app):
-        state = _on_installation(env, ctx, app)
-        if state is True:
-            continue
-        inst = _installations(env).get(app)
-        if not inst:
-            raise Stop(
-                f"the {app} App is not installed on {ctx.owner}'s account (or your login cannot see it): https://github.com/apps/{app}"
-            )
-        iid = inst[0]
-        rc, _ = env.run(["gh", "api", "--method", "PUT", f"/user/installations/{iid}/repositories/{ctx.repo_id}"])
-        if rc == 0 and _on_installation(env, ctx, app) is True:
-            continue
-        env.say(f"  could not add {ctx.slug} to {app} through the API. Add it here, then press Enter:")
-        env.say(f"    https://github.com/settings/installations/{iid}")
-        try:
-            env.ask("  added? ")
-        except EOFError:
-            raise Stop(
-                f"no terminal to wait on; add the repo at https://github.com/settings/installations/{iid} and re-run"
-            ) from None
-        if _on_installation(env, ctx, app) is not True:
-            raise Stop(f"{ctx.slug} is still not on the {app} installation; re-run once it is")
+    # Only a GitHub App user token can list or edit installations; a `gh` login (OAuth token) gets HTTP 403, so this
+    # stage cannot read anything back. It is the owner's step, acknowledged with --apps-done and reported as such.
+    env.say(f"  add {ctx.slug} to both Apps (Configure -> Repository access), then re-run with --apps-done:")
+    env.say("    https://github.com/settings/installations")
+    env.say(f"    Apps: {ctx.rollout_app} and {ctx.claude_app}")
+    raise Stop("App installations are not verifiable from here; add the repo to both Apps and re-run with --apps-done")
 
 
 # --- 6 ruleset + enable -----------------------------------------------------------------------------------------
@@ -559,7 +513,9 @@ def launch(env: LaunchEnv, ns: argparse.Namespace) -> Report:
         env.say(f"  {'todo' if s in todo else 'ok  '}  {s.name}")
     report = Report()
     if ns.dry_run or not todo:
-        report.rows = [(s.name, s not in todo, "already done" if s not in todo else "would run") for s in STAGES]
+        report.rows = [
+            (s.name, s not in todo, _note(ctx, s) or ("already done" if s not in todo else "would run")) for s in STAGES
+        ]
         if ns.dry_run:
             env.say("dry run: nothing was changed")
         return report
@@ -571,8 +527,12 @@ def launch(env: LaunchEnv, ns: argparse.Namespace) -> Report:
         if not s.done(env, ctx):
             raise Stop(f"{s.name}: ran, but GitHub does not read back as done; stopping so you can look")
         env.say(f"  done  {s.name}")
-    report.rows = [(s.name, s.done(env, ctx), "") for s in STAGES]
+    report.rows = [(s.name, s.done(env, ctx), _note(ctx, s)) for s in STAGES]
     return report
+
+
+def _note(ctx: Ctx, s: Stage) -> str:
+    return "attested by owner, not verified" if s.done is apps_done and ctx.apps_attested else ""
 
 
 def _confirmed(env: LaunchEnv, ctx: Ctx, todo: list[Stage]) -> bool:
@@ -602,6 +562,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--rollout-app", default="autopilot-rollout")
     ap.add_argument("--token-env", help="name of an environment variable holding the token (otherwise a hidden prompt)")
     ap.add_argument("--smoke", action="store_true", help="also open one tiny agent-ready issue to prove the pipeline")
+    ap.add_argument(
+        "--apps-done", action="store_true", help="you added the repo to both Apps (cannot be verified with a gh login)"
+    )
     ap.add_argument("--allow-public", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--yes", action="store_true")

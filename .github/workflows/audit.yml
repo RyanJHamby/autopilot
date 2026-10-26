@@ -14,9 +14,9 @@ jobs:
       contents: read
       issues: write
       id-token: write
-    uses: RyanJHamby/autopilot-kit/.github/workflows/audit.yml@262d51a10455f89d8aa355a90cb9be97b9857498
+    uses: RyanJHamby/autopilot-kit/.github/workflows/audit.yml@72a6b1c7928faaa7ff3d7d94afcb1a505442fe1a
     with:
       kit_repo: RyanJHamby/autopilot-kit
-      kit_ref: 262d51a10455f89d8aa355a90cb9be97b9857498
+      kit_ref: 72a6b1c7928faaa7ff3d7d94afcb1a505442fe1a
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

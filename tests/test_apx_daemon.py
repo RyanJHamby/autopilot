@@ -366,3 +366,35 @@ def test_pre_push_hook_runs_the_same_checks_as_ci():
     ci = (root / ".github/workflows/ci.yml").read_text()
     assert "ruff check ." in ci and "pytest -q" in ci  # the hook and CI must keep running the same commands
     assert os.access(root / "scripts/install-hooks", os.X_OK)
+
+
+def test_run_once_in_shadow_mode_never_plans_an_agent_run(tmp_path, monkeypatch):
+    def factory(token):
+        def api(method, path, body=None):
+            if path.startswith("/app/"):
+                return {"token": "t", "expires_at": "2099-01-01T00:00:00Z"}
+            assert method == "GET"
+            if "/actions/variables/AUTOPILOT_ENABLED" in path:
+                return {"value": "true"}
+            if "/actions/variables/" in path:
+                raise GitHubError(404, path, "")
+            if "contents/.autopilot/repo.yaml" in path:
+                return {"content": base64.b64encode(b"mode: standard\ntier: A\n").decode()}
+            if "/issues?" in path:
+                return [
+                    {
+                        "number": 9,
+                        "created_at": "2026-10-20T00:00:00Z",
+                        "user": {"login": "RyanJHamby"},
+                        "labels": [{"name": "agent-ready"}],
+                    }
+                ]
+            return []
+
+        return api
+
+    monkeypatch.delenv("APX_LIVE", raising=False)
+    shadow = dm.run_once(dm.Settings.from_env(env(tmp_path)), api_factory=factory)
+    assert not any("run-agent" in line for line in shadow)
+    cut = dm.run_once(dm.Settings.from_env(env(tmp_path, APX_SHADOW="0")), api_factory=factory)
+    assert any(line.startswith("DRY-RUN run-agent") for line in cut)

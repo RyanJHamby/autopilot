@@ -284,3 +284,7 @@ Added kit job `rebase` (decide/run in kit/runtime/rebase.py, reusable workflow, 
 ## 2026-10-22 08:04 EDT (at 249d412)
 
 launch-repo live run 2: stages 1-4 passed live (settings, labels, scaffold merged, token). Stage 5 stopped: GET /user/installations returns 403 for a gh OAuth token (only GitHub App user tokens may list or edit installations), so my 'REST with URL fallback' design could never verify. Decision (owner approved): apps stage becomes an owner step that prints the page and stops until re-run with --apps-done; reported as 'attested, not verified'. Claude App proven by --smoke; rollout App check deferred (needs release.yml edit). 25 mutations incl. 3 new, all caught; suite 432 passed.
+
+## 2026-10-27 21:59 EDT (at abcce43)
+
+Secure fabric: red-teamed the compute design (found repo secrets readable from agent-branch workflows, open exec egress), moved model secrets to a main-only Environment (PR #83), built firewall/DNS allowlist renderer + runner controller logic + in-sandbox red-team probe (PR #84). Not run on hardware; Pi 4 identified, RAM/router isolation still unknown. Actions minutes cap blocks all private CI until Nov 1.

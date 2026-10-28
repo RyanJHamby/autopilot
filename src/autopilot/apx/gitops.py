@@ -6,7 +6,9 @@ from __future__ import annotations
 import base64
 import os
 import re
+import shutil
 import subprocess
+import time
 from pathlib import Path
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -36,10 +38,38 @@ def _git(cwd: Path, token: str | None, *args: str) -> str:
     return p.stdout
 
 
-def checkout_pr(repo: str, sha: str, base_branch: str, dest: Path, token: str | None, *, url: str | None = None) -> Path:
+def _clear_previous(dest: Path, root: Path | None) -> None:
+    """Start from nothing: a leftover checkout from an earlier pass is removed, but only if it is inside `root` and really
+    is a git checkout (has .git). Never deletes anything else."""
+    if not dest.exists():
+        return
+    if root is None or not dest.resolve().is_relative_to(root.resolve()) or dest.resolve() == root.resolve():
+        raise ValueError("refusing to reuse or remove a directory outside the apx work dir")
+    if not (dest / ".git").exists():
+        raise ValueError("refusing to remove a directory that is not a git checkout")
+    shutil.rmtree(dest)
+
+
+def prune_work(work_dir: Path, max_age_seconds: int = 24 * 3600, now: float | None = None) -> list[str]:
+    """Remove stale per-pass scratch (checkouts, homes, temp dirs) older than max_age. Keeps the kit cache and the lock."""
+    now = time.time() if now is None else now
+    removed = []
+    for p in work_dir.iterdir() if work_dir.exists() else []:
+        if not p.is_dir() or not (p.name.startswith(("pr-", "main-", "home-", "tmp")) and p.name != "kit"):
+            continue
+        if now - p.stat().st_mtime > max_age_seconds:
+            shutil.rmtree(p, ignore_errors=True)
+            removed.append(p.name)
+    return removed
+
+
+def checkout_pr(
+    repo: str, sha: str, base_branch: str, dest: Path, token: str | None, *, url: str | None = None, root: Path | None = None
+) -> Path:
     """Fresh checkout of `sha` with `origin/<base_branch>` present, so guard can diff base...head."""
     if not SHA_RE.match(sha) or not REPO_RE.match(repo) or not re.match(r"^[A-Za-z0-9._/-]+$", base_branch):
         raise ValueError("bad repo, sha or base branch")
+    _clear_previous(dest, root)
     dest.mkdir(parents=True, exist_ok=True)
     _git(dest, None, "init", "-q")
     remote = url or f"https://github.com/{repo}.git"

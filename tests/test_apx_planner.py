@@ -1,5 +1,6 @@
 import base64
 import datetime as dt
+import re
 
 import pytest
 
@@ -24,6 +25,8 @@ class Fake:
         self.issues = kw.get("issues", [])
         self.checks = kw.get("checks", {})
         self.cfg = kw.get("cfg", CFG)
+        self.pulls = kw.get("pulls", {})  # number -> {"mergeable_state": ..., "labels": [...]}
+        self.files = kw.get("files", {})  # number -> [filenames]
         self.writes = []
 
     def __call__(self, method, path, body=None):
@@ -37,6 +40,12 @@ class Fake:
             return {"value": self.vars[name]}
         if "/contents/.autopilot/repo.yaml" in path:
             return {"content": base64.b64encode(self.cfg.encode()).decode()}
+        m = re.match(r".*/pulls/(\d+)/files", path)
+        if m:
+            return [{"filename": f} for f in self.files.get(int(m.group(1)), [])]
+        m = re.match(r".*/pulls/(\d+)$", path)
+        if m:
+            return {"mergeable_state": "clean", "labels": [], **self.pulls.get(int(m.group(1)), {})}
         if "pulls?state=open" in path:
             return self.open
         if "pulls?state=closed" in path:
@@ -135,3 +144,50 @@ def test_api_error_fails_closed_and_never_writes():
     f = Boom()
     r = go(f)
     assert r["actions"] == [] and "fail closed" in r["note"] and f.writes == []
+
+
+def kinds(r):
+    return sorted((a.kind, a.ref) for a in r["actions"] if a.kind in ("update-branch", "run-agent"))
+
+
+def test_behind_agent_pr_gets_update_branch_and_nothing_else():
+    f = Fake(open=[pr(1, "agent/5-1", "s1")], pulls={1: {"mergeable_state": "behind"}}, checks={"s1": ["guard / guard", "build"]})
+    assert kinds(go(f)) == [("update-branch", "1")]
+
+
+def test_conflicted_agent_pr_reruns_its_issue_through_the_gate_cap():
+    f = Fake(open=[pr(1, "agent/5-1", "s1")], pulls={1: {"mergeable_state": "dirty"}}, checks={"s1": ["guard / guard", "build"]})
+    r = go(f)
+    assert kinds(r) == [("run-agent", "5")] and "rebase=1" in [a for a in r["actions"] if a.kind == "run-agent"][0].detail
+
+
+def test_conflicted_pr_touching_protected_paths_is_left_alone():
+    f = Fake(
+        open=[pr(1, "agent/5-1", "s1")],
+        pulls={1: {"mergeable_state": "dirty"}},
+        files={1: [".github/workflows/ci.yml"]},
+        checks={"s1": ["guard / guard", "build"]},
+    )
+    assert kinds(go(f)) == []
+
+
+def test_rebase_rerun_is_once_a_day_and_respects_the_daily_cap():
+    f = Fake(open=[pr(1, "agent/5-1", "s1")], pulls={1: {"mergeable_state": "dirty"}}, checks={"s1": ["guard / guard", "build"]})
+    led = Ledger()
+    rid = led.start(REPO, 5, now=NOW - dt.timedelta(hours=3))
+    led.finish(rid, "success", now=NOW - dt.timedelta(hours=3))
+    assert kinds(go(f, led)) == []  # already attempted within 24h
+    capped = Ledger()
+    for i in range(2):
+        r = capped.start(REPO, 90 + i, now=NOW - dt.timedelta(hours=2 + i))
+        capped.finish(r, "success", now=NOW - dt.timedelta(hours=2 + i))
+    assert kinds(go(f, capped)) == []  # gate says daily cap reached, so no re-run either
+
+
+def test_non_agent_and_fork_prs_never_get_rebase_actions():
+    f = Fake(
+        open=[pr(1, "feature/x", "s1"), pr(2, "agent/6-1", "s2", repo="attacker/stencil")],
+        pulls={1: {"mergeable_state": "behind"}, 2: {"mergeable_state": "behind"}},
+        checks={"s1": ["guard / guard", "build"], "s2": ["guard / guard", "build"]},
+    )
+    assert kinds(go(f)) == []

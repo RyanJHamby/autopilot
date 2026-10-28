@@ -70,6 +70,13 @@ class Ledger:
         rows = self.db.execute(f"select issue from runs where repo=? and status in ({q})", (repo, *IN_FLIGHT)).fetchall()
         return {int(r["issue"]) for r in rows}
 
+    def attempted_since(self, repo: str, issue: int, since: dt.datetime) -> bool:
+        """True if any run (any outcome) for this issue started after `since`; used to cap re-dispatches to one a day."""
+        row = self.db.execute(
+            "select 1 from runs where repo=? and issue=? and created_at >= ? limit 1", (repo, issue, _iso(since))
+        ).fetchone()
+        return row is not None
+
     def abandon_stale(self, max_age: dt.timedelta, *, now: dt.datetime | None = None) -> int:
         """A crashed executor leaves in_progress rows that would block the issue forever; close them as timed_out."""
         now = now or dt.datetime.now(dt.timezone.utc)

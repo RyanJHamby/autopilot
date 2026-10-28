@@ -134,6 +134,7 @@ AUTOPILOT_WORKFLOWS = {
     "automerge.yml",
     "improve.yml",
     "audit.yml",
+    "rebase.yml",
 }
 
 

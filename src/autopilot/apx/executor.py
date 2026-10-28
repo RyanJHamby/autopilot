@@ -131,8 +131,11 @@ def execute(
             continue
         if a.kind == "check-pr":
             ctx = contexts[a.repo]
-            r = run_check_pr(api, deps, a, guard_ctx=ctx["guard"], ci_ctx=ctx["ci"], head_ref=head_refs[(a.repo, a.ref)])
-            log.append(f"check-pr {a.repo} {a.ref[:7]} {r}")
+            try:
+                r = run_check_pr(api, deps, a, guard_ctx=ctx["guard"], ci_ctx=ctx["ci"], head_ref=head_refs[(a.repo, a.ref)])
+                log.append(f"check-pr {a.repo} {a.ref[:7]} {r}")
+            except Exception as e:  # noqa: BLE001 - e.g. a network error posting a check; the next pass retries this PR
+                log.append(f"check-pr {a.repo} {a.ref[:7]} failed: {type(e).__name__}")
         elif a.kind == "run-agent":
             try:
                 log.append(f"run-agent {a.repo} #{a.ref} {run_agent(api, ledger, deps, a)}")

@@ -186,3 +186,13 @@ def test_prune_removes_only_old_scratch_and_keeps_kit_and_lock(tmp_path):
     assert sorted(removed) == ["pr-a", "tmpabc"]  # old scratch only
     assert (tmp_path / "kit").exists() and (tmp_path / "other").exists() and (tmp_path / "apx.lock").exists()
     assert (tmp_path / "main-b").exists() and (tmp_path / "home-1").exists()  # fresh scratch stays
+
+
+def test_a_hung_git_command_times_out_instead_of_holding_the_lock_forever(tmp_path, monkeypatch):
+    def hang(argv, **kw):
+        assert kw.get("timeout") == gitops.GIT_TIMEOUT  # every git call is bounded
+        raise subprocess.TimeoutExpired(argv, kw["timeout"])
+
+    monkeypatch.setattr(gitops.subprocess, "run", hang)
+    with pytest.raises(RuntimeError, match="timed out"):
+        gitops._git(tmp_path, None, "fetch")

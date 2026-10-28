@@ -11,6 +11,7 @@ import subprocess
 import time
 from pathlib import Path
 
+GIT_TIMEOUT = 600  # seconds per git command
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
@@ -31,7 +32,11 @@ def _env(token: str | None) -> dict:
 
 
 def _git(cwd: Path, token: str | None, *args: str) -> str:
-    p = subprocess.run(["git", "-C", str(cwd), *args], env=_env(token), capture_output=True, text=True)
+    try:
+        p = subprocess.run(["git", "-C", str(cwd), *args], env=_env(token), capture_output=True, text=True, timeout=GIT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        # a hung fetch must not hold the single-instance lock forever and silently stop the whole timer
+        raise RuntimeError(f"git {args[0]} timed out after {GIT_TIMEOUT}s") from None
     if p.returncode != 0:
         # git's stderr can contain the remote URL; it never contains the token (header only), but keep it short anyway
         raise RuntimeError(f"git {args[0]} failed: {p.stderr.strip()[-200:]}")

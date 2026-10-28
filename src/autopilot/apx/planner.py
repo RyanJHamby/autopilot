@@ -224,6 +224,14 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
             updates = [a for a in rebases if a.kind == "update-branch"]
             merges = plan_merges(api, repo, owner) if meta.get("merge") else []  # off in shadow mode: Actions still merges
             result[repo] = {"actions": actions + runs + updates + merges, "note": note}
-        except (GitHubError, KeyError, ValueError, TypeError, AttributeError, yaml.YAMLError) as e:
+        except (
+            GitHubError,
+            OSError,
+            KeyError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            yaml.YAMLError,
+        ) as e:  # OSError: DNS/URLError
             result[repo] = {"actions": [], "note": f"planner error (fail closed): {type(e).__name__}"}
     return result

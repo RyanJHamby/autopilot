@@ -13,6 +13,17 @@ apx runs model output and PR code. Do not run it as your normal login.
 3. macOS has no network egress firewall per user. Until the Oracle host exists this is a **spike machine**: keep it to
    throwaway PRs on `autopilot` (see step 5), not your other repos.
 
+## Move into the apx account (after setup, before any timer)
+
+```
+DRY_RUN=1 bash deploy/apx-install-mac.sh     # preview, changes nothing
+sudo bash deploy/apx-install-mac.sh          # do it
+```
+Copies the App key, App id and Claude token into `/Users/apx/.apx` (mode 600/700, owned by `apx`), rewrites the settings
+so only `REPOS` (default: autopilot) is enabled, copies `uv` and `claude` into `/Users/apx/.local/bin`, clones the public
+repo, and runs the doctor as `apx`. Then remove your own copies of `app.pem` and `claude-oauth` from `~/.apx`. The timer is
+`deploy/launchd/com.autopilot.apx.daemon.plist` (runs as `apx`, no login needed; install steps are in its header).
+
 ## Fast path: the setup helper (replaces steps 2 and 3 below)
 
 ```

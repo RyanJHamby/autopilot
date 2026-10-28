@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- apx timer as a system LaunchDaemon that runs AS the unprivileged apx account (no login session needed).
+     Install ONLY after the doctor passes as apx and a shadow comparison looks right:
+       sudo cp deploy/launchd/com.autopilot.apx.daemon.plist /Library/LaunchDaemons/
+       sudo chown root:wheel /Library/LaunchDaemons/com.autopilot.apx.plist
+       sudo chmod 644 /Library/LaunchDaemons/com.autopilot.apx.plist
+       sudo launchctl bootstrap system /Library/LaunchDaemons/com.autopilot.apx.plist
+     Stop immediately:  sudo launchctl bootout system/com.autopilot.apx
+     The job is not started at load. Settings come from /Users/apx/.apx/apx.env (paths and ids only, no secrets inside).
+     Shadow mode stays on unless APX_SHADOW=0 is set in that file. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.autopilot.apx</string>
+  <key>UserName</key><string>apx</string>
+  <key>GroupName</key><string>staff</string>
+  <key>WorkingDirectory</key><string>/Users/apx/autopilot</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>set -a; . /Users/apx/.apx/apx.env; set +a; export APX_LIVE=1; exec /Users/apx/.local/bin/uv run python -m autopilot.apx.daemon --once --live</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/apx</string>
+    <key>PATH</key><string>/Users/apx/.local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key><integer>120</integer>
+  <key>RunAtLoad</key><false/>
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
+  <key>Nice</key><integer>10</integer>
+  <key>StandardOutPath</key><string>/Users/apx/Library/Logs/apx.log</string>
+  <key>StandardErrorPath</key><string>/Users/apx/Library/Logs/apx.err.log</string>
+</dict>
+</plist>

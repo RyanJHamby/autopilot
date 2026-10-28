@@ -326,3 +326,28 @@ def test_each_pass_prunes_stale_scratch_from_the_work_dir(tmp_path, monkeypatch)
     monkeypatch.delenv("APX_LIVE", raising=False)
     dm.run_once(s, api_factory=factory)
     assert not stale.exists() and fresh.exists()
+
+
+def test_launchd_daemon_template_runs_as_the_unprivileged_account_and_holds_no_secret():
+    import plistlib
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "deploy"
+    p = plistlib.loads((root / "launchd/com.autopilot.apx.daemon.plist").read_bytes())
+    assert p["UserName"] == "apx" and p["UserName"] != "root" and p["RunAtLoad"] is False
+    cmd = p["ProgramArguments"][-1]
+    assert "--once --live" in cmd and "APX_LIVE=1" in cmd and "/Users/apx/.apx/apx.env" in cmd
+    assert "TOKEN" not in cmd.upper() and "SECRET" not in cmd.upper()
+    assert p["EnvironmentVariables"]["HOME"] == "/Users/apx"
+    assert "ryanhamby" not in plistlib.dumps(p).decode()  # nothing points back into the owner's home
+
+
+def test_install_script_refuses_admin_keeps_scope_narrow_and_deletes_nothing():
+    from pathlib import Path
+
+    s = (Path(__file__).resolve().parent.parent / "deploy/apx-install-mac.sh").read_text()
+    assert "set -euo pipefail" in s and 'REPOS="${REPOS:-RyanJHamby/autopilot}"' in s
+    assert "must NOT be an admin" in s and "DRY_RUN" in s
+    assert "rm -r" not in s and "rm -f $" not in s.replace('rm -f "$TMP"', "")  # only its own temp file is ever removed
+    for secret in ("app.pem", "claude-oauth"):
+        assert f"install -m 600" in s and secret in s

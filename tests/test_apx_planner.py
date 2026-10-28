@@ -203,3 +203,14 @@ def test_rebase_reruns_cannot_exceed_remaining_daily_slots():
     rid = led.start(REPO, 90, now=NOW - dt.timedelta(hours=2))  # one of tier A's two daily runs used
     led.finish(rid, "success", now=NOW - dt.timedelta(hours=2))
     assert len(kinds(go(f, led))) == 1
+
+
+def test_unexpected_response_shape_fails_closed():
+    class Weird(Fake):
+        def __call__(self, method, path, body=None):
+            if re.match(r".*/pulls/\d+$", path):
+                return []  # a list where a dict is expected
+            return super().__call__(method, path, body)
+
+    r = go(Weird(open=[pr(1, "agent/5-1", "s1")], checks={"s1": ["guard / guard", "build"]}))
+    assert r["actions"] == [] and "fail closed" in r["note"]

@@ -177,6 +177,6 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
             runs, note = plan_agent_runs(api, repo, owner, ledger, meta.get("default_branch", "main"), now, rebase_issues=redo)
             updates = [a for a in rebases if a.kind == "update-branch"]
             result[repo] = {"actions": actions + runs + updates, "note": note}
-        except (GitHubError, KeyError, ValueError, yaml.YAMLError) as e:
+        except (GitHubError, KeyError, ValueError, TypeError, AttributeError, yaml.YAMLError) as e:
             result[repo] = {"actions": [], "note": f"planner error (fail closed): {type(e).__name__}"}
     return result

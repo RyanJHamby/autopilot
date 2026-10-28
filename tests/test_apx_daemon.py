@@ -350,4 +350,19 @@ def test_install_script_refuses_admin_keeps_scope_narrow_and_deletes_nothing():
     assert "must NOT be an admin" in s and "DRY_RUN" in s
     assert "rm -r" not in s and "rm -f $" not in s.replace('rm -f "$TMP"', "")  # only its own temp file is ever removed
     for secret in ("app.pem", "claude-oauth"):
-        assert f"install -m 600" in s and secret in s
+        assert "install -m 600" in s and secret in s
+
+
+def test_pre_push_hook_runs_the_same_checks_as_ci():
+    import os
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    hook = root / ".githooks/pre-push"
+    s = hook.read_text()
+    cmds = [ln.strip() for ln in s.splitlines() if ln.strip().startswith("$RUN ")]  # the commands, not the echo messages
+    assert os.access(hook, os.X_OK) and "set -e" in s
+    assert "$RUN ruff check ." in cmds and "$RUN pytest -q" in cmds
+    ci = (root / ".github/workflows/ci.yml").read_text()
+    assert "ruff check ." in ci and "pytest -q" in ci  # the hook and CI must keep running the same commands
+    assert os.access(root / "scripts/install-hooks", os.X_OK)

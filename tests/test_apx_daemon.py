@@ -216,3 +216,47 @@ def test_run_once_is_dry_run_unless_both_flags(tmp_path, monkeypatch):
     assert any(line.startswith("DRY-RUN check-pr") for line in out) and writes == []
     out2 = dm.run_once(s, live=False, api_factory=factory)
     assert writes == [] and any(line.startswith("DRY-RUN") for line in out2)
+
+
+def test_merge_lane_is_off_in_shadow_mode_and_planned_after_cutover(tmp_path, monkeypatch):
+    def factory(token):
+        def api(method, path, body=None):
+            if path.startswith("/app/"):
+                return {"token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z"}
+            assert method == "GET"
+            if "/actions/variables/AUTOPILOT_ENABLED" in path:
+                return {"value": "true"}
+            if "/actions/variables/" in path:
+                raise GitHubError(404, path, "")
+            if "contents/.autopilot/repo.yaml" in path:
+                return {"content": base64.b64encode(b"mode: standard\ntier: A\n").decode()}
+            if "/check-runs" in path:
+                return {
+                    "check_runs": [{"name": "guard / guard", "status": "completed"}, {"name": "build", "status": "completed"}]
+                }
+            if re.search(r"/pulls/\d+$", path):
+                return {"mergeable_state": "clean", "labels": []}
+            if "pulls?state=open" in path:
+                return [
+                    {
+                        "number": 1,
+                        "head": {"ref": "agent/5-1", "sha": "s" * 40, "repo": {"full_name": REPO}},
+                        "user": {"login": "RyanJHamby"},
+                    }
+                ]
+            return []
+
+        return api
+
+    monkeypatch.delenv("APX_LIVE", raising=False)
+    shadow = dm.run_once(dm.Settings.from_env(env(tmp_path)), api_factory=factory)
+    assert not any("automerge" in line for line in shadow)
+    cut = dm.run_once(dm.Settings.from_env(env(tmp_path, APX_SHADOW="0")), api_factory=factory)
+    assert any(line.startswith("DRY-RUN automerge") for line in cut)
+
+
+def test_select_automerge_is_none_in_shadow_mode(tmp_path):
+    shadow = dm.Settings.from_env(env(tmp_path))
+    cut = dm.Settings.from_env(env(tmp_path, APX_SHADOW="0"))
+    fn = lambda *a: (0, "")  # noqa: E731
+    assert dm.select_automerge(shadow, fn) is None and dm.select_automerge(cut, fn) is fn

@@ -147,3 +147,23 @@ def test_update_branch_action_puts_and_survives_failure():
         Failing(), Ledger(), deps(), [Action("update-branch", REPO, "7", "")], contexts=CTX, head_refs={}, dry_run=False
     )
     assert "failed" in log[0]
+
+
+def test_automerge_action_runs_lane_and_reports_and_is_inert_when_disabled():
+    api = Api()
+    d = deps()
+    d.automerge = lambda repo, n, sha: (0, "MERGE docs-only")
+    log = ex.execute(api, Ledger(), d, [Action("automerge", REPO, "9:abc", "")], contexts=CTX, head_refs={}, dry_run=False)
+    assert log == [f"automerge {REPO} #9 rc=0 MERGE docs-only"]
+    log = ex.execute(api, Ledger(), deps(), [Action("automerge", REPO, "9:abc", "")], contexts=CTX, head_refs={}, dry_run=False)
+    assert "not enabled" in log[0]
+
+    def boom(repo, n, sha):
+        raise RuntimeError("x")
+
+    d2 = deps()
+    d2.automerge = boom
+    assert (
+        "failed"
+        in ex.execute(api, Ledger(), d2, [Action("automerge", REPO, "9:abc", "")], contexts=CTX, head_refs={}, dry_run=False)[0]
+    )

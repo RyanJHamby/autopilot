@@ -31,6 +31,8 @@ class Deps:
     ci: Callable[[Path], tuple[bool, str]]
     # work_on_issue(repo, issue, run_id) -> Outcome-like with .ok, .summary, .violations, .branch, .commit_args or None
     work_on_issue: Callable[[str, int, int], "IssueResult"]
+    # automerge(repo, pr_number, head_sha) -> (rc, output); only present once a repo is cut over from Actions
+    automerge: Callable[[str, int, str], tuple[int, str]] | None = None
 
 
 @dataclass
@@ -127,6 +129,16 @@ def execute(
                 log.append(f"run-agent {a.repo} #{a.ref} {run_agent(api, ledger, deps, a)}")
             except Exception as e:  # noqa: BLE001 - one bad issue must not stop the loop
                 log.append(f"run-agent {a.repo} #{a.ref} crashed: {type(e).__name__}")
+        elif a.kind == "automerge":
+            if deps.automerge is None:
+                log.append(f"automerge {a.repo} {a.ref}: lane not enabled")
+                continue
+            num, sha = a.ref.split(":", 1)
+            try:
+                rc, out = deps.automerge(a.repo, int(num), sha)
+                log.append(f"automerge {a.repo} #{num} rc={rc} {out.splitlines()[-1] if out else ''}")
+            except Exception as e:  # noqa: BLE001
+                log.append(f"automerge {a.repo} #{num} failed: {type(e).__name__}")
         elif a.kind == "update-branch":
             try:
                 api("PUT", f"/repos/{a.repo}/pulls/{int(a.ref)}/update-branch", {})

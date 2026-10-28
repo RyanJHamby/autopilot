@@ -1,4 +1,5 @@
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -22,7 +23,7 @@ def settings(tmp_path):
     subprocess.run(["openssl", "genrsa", "-out", str(key), "2048"], check=True, capture_output=True)
     key.chmod(0o600)
     oauth = tmp_path / "oauth"
-    oauth.write_text("t")
+    oauth.write_text("sk-ant-oat01-" + "A1b2-" * 16 + "\n")
     oauth.chmod(0o600)
     return dm.Settings.from_env(
         {
@@ -123,3 +124,38 @@ def test_doctor_cli_exit_codes(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(dr, "run_doctor", lambda s: [dr.Check("x", False, "bad")])
     assert dm.main(["--doctor"]) == 1
     assert "FAIL" in capsys.readouterr().out
+
+
+def test_token_shape_accepts_a_plausible_token_and_rejects_junk(tmp_path):
+    good = tmp_path / "good"
+    good.write_text("sk-ant-oat01-" + "A1b2-" * 16 + "\n")
+    c = dr.token_shape(str(good))
+    assert c.ok and "chars" in c.detail
+    for name, text in {
+        "sentence": "this is the wrong thing from the clipboard that is long enough to pass length\n",
+        "short": "sk-ant-short\n",
+        "two lines": "sk-ant-" + "a" * 50 + "\nsecond\n",
+        "empty": "",
+        "quotes": '"' + "a" * 50 + '"',
+        "command": "umask 077; pbpaste > ~/.apx/claude-oauth; pbcopy < /dev/null",
+    }.items():
+        f = tmp_path / name.replace(" ", "_")
+        f.write_text(text)
+        assert not dr.token_shape(str(f)).ok, name
+    assert not dr.token_shape(str(tmp_path / "missing")).ok
+
+
+def test_token_shape_never_puts_the_token_in_its_output(tmp_path):
+    f = tmp_path / "t"
+    secret = "sk-ant-" + "Zq9" * 20
+    f.write_text(secret + " junk")
+    c = dr.token_shape(str(f))
+    assert not c.ok and secret not in c.detail and secret not in c.name
+
+
+def test_doctor_includes_the_token_shape_check(tmp_path):
+    s = settings(tmp_path)
+    assert run(s)["claude token shape"].ok
+    Path(s.oauth_file).write_text("not a token at all, just words from the clipboard that run long enough\n")
+    Path(s.oauth_file).chmod(0o600)
+    assert not run(s)["claude token shape"].ok

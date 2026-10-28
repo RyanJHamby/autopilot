@@ -7,6 +7,7 @@ mis-click in the GitHub UI cannot silently widen what a leaked key could do.
 
 from __future__ import annotations
 
+import re
 import shutil
 import stat
 import sys
@@ -54,6 +55,27 @@ def check_permissions(granted: dict) -> list[Check]:
     return out
 
 
+def token_shape(path: str) -> Check:
+    """Looks only at the SHAPE of the token file, never its value: one line of token-safe characters, long enough. Catches
+    the common mistake of saving the wrong clipboard contents (a sentence, a command, an error message)."""
+    try:
+        raw = Path(path).read_text()
+    except OSError as e:
+        return Check("claude token shape", False, f"cannot read ({type(e).__name__})")
+    body = raw.strip()
+    problems = []
+    if len(body) < 40:
+        problems.append(f"too short ({len(body)} chars)")
+    if any(ch.isspace() for ch in body):
+        problems.append("contains whitespace (not a token)")
+    elif not re.fullmatch(r"[A-Za-z0-9._~+/=-]+", body or "-"):
+        problems.append("contains characters a token never has")
+    detail = "; ".join(problems) if problems else f"{len(body)} chars, one line"
+    if not problems and not body.startswith("sk-ant-"):
+        detail += " (note: does not start with sk-ant-; unusual)"
+    return Check("claude token shape", not problems, detail)
+
+
 def _mode_ok(path: str) -> tuple[bool, str]:
     try:
         st = Path(path).stat()
@@ -83,6 +105,7 @@ def run_doctor(
     for label, path in (("app key", str(s.key_path)), ("claude oauth file", s.oauth_file)):
         ok, why = _mode_ok(path)
         out.append(Check(f"{label} file", ok, why))
+    out.append(token_shape(s.oauth_file))
     out.append(Check("installations within scope", set(s.installations) <= ALLOWED_REPOS, ", ".join(sorted(s.installations))))
     try:
         jwt_api = api_factory(make_jwt(s.app_id, s.key_path))

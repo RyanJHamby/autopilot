@@ -33,8 +33,8 @@ jobs:
       issues: read
       pull-requests: read
       actions: write
-    uses: RyanJHamby/autopilot-kit/.github/workflows/dispatch.yml@72a6b1c7928faaa7ff3d7d94afcb1a505442fe1a
+    uses: RyanJHamby/autopilot-kit/.github/workflows/dispatch.yml@8827b8df2220392baa16a67702bcbac750c15466
     with:
       issue: ${{ inputs.issue }}
       kit_repo: RyanJHamby/autopilot-kit
-      kit_ref: 72a6b1c7928faaa7ff3d7d94afcb1a505442fe1a
+      kit_ref: 8827b8df2220392baa16a67702bcbac750c15466

@@ -274,3 +274,30 @@ def test_make_report_needs_both_url_and_a_private_secret_file(tmp_path):
     sec.chmod(0o644)
     with pytest.raises(dm.ConfigError):
         dm.make_report(ok)
+
+
+def test_single_instance_lock_blocks_a_second_pass_and_releases_after(tmp_path):
+    with dm.single_instance(tmp_path) as first:
+        assert first is True
+        with dm.single_instance(tmp_path) as second:
+            assert second is False  # overlapping tick must not run
+    with dm.single_instance(tmp_path) as again:
+        assert again is True  # released when the first pass ended
+
+
+def test_run_once_skips_when_another_pass_holds_the_lock(tmp_path):
+    s = dm.Settings.from_env(env(tmp_path))
+    with dm.single_instance(s.work_dir):
+        out = dm.run_once(s, api_factory=lambda t: (_ for _ in ()).throw(AssertionError("must not touch GitHub")))
+    assert out == ["another apx pass is still running; skipping this tick"]
+
+
+def test_launchd_template_is_valid_and_not_auto_started():
+    import plistlib
+    from pathlib import Path
+
+    p = plistlib.loads((Path(__file__).resolve().parent.parent / "deploy/launchd/com.autopilot.apx.plist").read_bytes())
+    assert p["Label"] == "com.autopilot.apx" and p["StartInterval"] == 120 and p["RunAtLoad"] is False
+    cmd = p["ProgramArguments"][-1]
+    assert "--once --live" in cmd and "APX_LIVE=1" in cmd
+    assert "TOKEN" not in cmd.upper() and "SECRET" not in cmd.upper()  # settings are paths in ~/apx.env, never inline secrets

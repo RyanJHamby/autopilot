@@ -8,7 +8,9 @@ the owner cuts a repo over. Secrets are read from files with mode 600 (never arg
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+import fcntl
 import os
 import re
 import stat
@@ -235,10 +237,33 @@ def _git_show(co: Path, spec: str) -> str:
     return p.stdout if p.returncode == 0 else ""
 
 
+@contextlib.contextmanager
+def single_instance(work_dir: Path):
+    """Only one apx pass at a time per work dir: a timer tick that fires while a long agent run is still going must
+    not start the same issue twice. Yields True if this process holds the lock, False if another pass does."""
+    work_dir.mkdir(parents=True, exist_ok=True)
+    fh = open(work_dir / "apx.lock", "w")
+    try:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        yield True
+    finally:
+        fh.close()  # closing releases the flock, including after a crash
+
+
 def run_once(s: Settings, *, live: bool = False, api_factory=make_api) -> list[str]:
     """One pass: plan, then execute. Dry-run unless live=True AND APX_LIVE=1."""
+    with single_instance(s.work_dir) as got:
+        if not got:
+            return ["another apx pass is still running; skipping this tick"]
+        return _run_once_locked(s, live=live, api_factory=api_factory)
+
+
+def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     really_live = live and os.environ.get("APX_LIVE") == "1"
-    s.work_dir.mkdir(parents=True, exist_ok=True)
     cache = TokenCache(s.app_id, s.key_path, s.installations, api_factory=api_factory)
     api = routed_api(cache)
     ledger = Ledger(s.db_path)

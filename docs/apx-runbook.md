@@ -73,7 +73,9 @@ It prints what it WOULD do (`DRY-RUN check-pr ...`, `DRY-RUN run-agent ...`). Ch
 
 ## 6. Run it on a timer (only after the spike)
 
-A launchd agent for user `apx`, `StartInterval` 120 seconds, runs the `--once --live` command with `APX_LIVE=1`.
+Use the template `deploy/launchd/com.autopilot.apx.plist` (replace `REPO_DIR`; install steps and the stop command are in its
+header comment). It ticks every 120 seconds; a tick that finds a previous pass still running skips itself (single-instance
+lock), so a long agent run never starts the same issue twice. It does not start at load.
 Keep `APX_SHADOW` unset (shadow on) for a week and compare apx's checks with the Actions ones before any cutover.
 
 ## 7. Cutover (later, per repo, your decision)

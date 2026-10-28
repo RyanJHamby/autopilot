@@ -843,7 +843,7 @@ def cmd_report(ns: argparse.Namespace) -> int:
                 "--limit",
                 "100",
                 "--json",
-                "conclusion,createdAt,displayTitle",
+                "conclusion,createdAt,displayTitle,startedAt,updatedAt",
             ],
             capture_output=True,
             text=True,
@@ -856,6 +856,8 @@ def cmd_report(ns: argparse.Namespace) -> int:
             ]
             pts = report.points_per_merged(runs, prs, since=since)
             print(f"    est. run-points per merged PR: {'-' if pts is None else pts} (estimate: turn cap x model weight)")
+            mins = report.minutes_per_merged(runs, prs, since=since)
+            print(f"    est. Actions minutes per merged PR: {'-' if mins is None else mins} (agent-exec only; private repos cap at $10)")
         else:
             print("    est. run-points per merged PR: (cannot read runs)")
         for cls in report.promotion_candidates(c, [], min_clean=ns.min_clean):

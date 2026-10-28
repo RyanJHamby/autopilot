@@ -77,3 +77,26 @@ def test_points_per_merged_counts_only_agent_merges():
     since = NOW - dt.timedelta(days=7)
     assert report.points_per_merged(runs, prs, since=since) == 120.0
     assert report.points_per_merged(runs, [open_pr], since=since) is None
+
+
+def test_run_minutes_round_up_and_skip_free_runs():
+    def run(start, end, conclusion="success"):
+        return {"startedAt": f"2026-10-20T10:{start}Z", "updatedAt": f"2026-10-20T10:{end}Z", "conclusion": conclusion}
+
+    runs = [
+        run("00:00", "00:30"),  # 30s -> 1 min
+        run("00:00", "03:01"),  # 181s -> 4 min
+        run("00:00", "09:00", "cancelled"),
+        run("00:00", "09:00", "skipped"),
+        {"conclusion": "success"},  # no timestamps
+    ]
+    assert report.run_minutes(runs) == 5
+
+
+def test_minutes_per_merged_counts_only_agent_merges():
+    runs = [{"startedAt": "2026-10-20T10:00:00Z", "updatedAt": "2026-10-20T10:02:00Z", "conclusion": "success"}] * 3
+    open_pr = pr(4, state="OPEN", merged=False)
+    prs = [pr(1), pr(2), pr(3, head="feature/x"), open_pr]
+    since = NOW - dt.timedelta(days=7)
+    assert report.minutes_per_merged(runs, prs, since=since) == 3.0
+    assert report.minutes_per_merged(runs, [open_pr], since=since) is None

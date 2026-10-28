@@ -13,12 +13,14 @@ permissions: {}
 
 jobs:
   automerge:
+    # Skipped jobs are not billed: only agent/ and dependabot/ runs can have anything to merge (the cron sweep covers the rest).
+    if: github.event_name != 'workflow_run' || startsWith(github.event.workflow_run.head_branch, 'agent/') || startsWith(github.event.workflow_run.head_branch, 'dependabot/')
     permissions:
       contents: write
       pull-requests: write
       issues: write
       checks: read
-    uses: RyanJHamby/autopilot-kit/.github/workflows/automerge.yml@8827b8df2220392baa16a67702bcbac750c15466
+    uses: RyanJHamby/autopilot-kit/.github/workflows/automerge.yml@20364121a5f10e67e0c5e0b4d30994b90e7582ca
     with:
       kit_repo: RyanJHamby/autopilot-kit
-      kit_ref: 8827b8df2220392baa16a67702bcbac750c15466
+      kit_ref: 20364121a5f10e67e0c5e0b4d30994b90e7582ca

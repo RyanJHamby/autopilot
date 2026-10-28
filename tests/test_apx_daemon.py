@@ -253,3 +253,10 @@ def test_merge_lane_is_off_in_shadow_mode_and_planned_after_cutover(tmp_path, mo
     assert not any("automerge" in line for line in shadow)
     cut = dm.run_once(dm.Settings.from_env(env(tmp_path, APX_SHADOW="0")), api_factory=factory)
     assert any(line.startswith("DRY-RUN automerge") for line in cut)
+
+
+def test_select_automerge_is_none_in_shadow_mode(tmp_path):
+    shadow = dm.Settings.from_env(env(tmp_path))
+    cut = dm.Settings.from_env(env(tmp_path, APX_SHADOW="0"))
+    fn = lambda *a: (0, "")  # noqa: E731
+    assert dm.select_automerge(shadow, fn) is None and dm.select_automerge(cut, fn) is fn

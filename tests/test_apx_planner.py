@@ -243,9 +243,17 @@ def test_merge_candidates_only_when_enabled_and_all_checks_complete():
 
 
 def test_draft_and_fork_prs_are_not_merge_candidates():
+    class Done(Fake):
+        def __call__(self, method, path, body=None):
+            if "/check-runs" in path:
+                return {
+                    "check_runs": [{"name": "guard / guard", "status": "completed"}, {"name": "build", "status": "completed"}]
+                }
+            return super().__call__(method, path, body)
+
     d = pr(1, "agent/5-1", "s1")
     d["draft"] = True
-    f = Fake(
-        open=[d, pr(2, "agent/6-1", "s2", repo="attacker/stencil")], checks={"s1": ["guard / guard"], "s2": ["guard / guard"]}
-    )
-    assert merge_actions(run_with(f, merge=True)) == []
+    f = Done(open=[d, pr(2, "agent/6-1", "s2", repo="attacker/stencil"), pr(3, "agent/7-1", "s3")])
+    assert merge_actions(run_with(f, merge=True)) == [
+        "3:s3"
+    ]  # control: the ready same-repo PR is a candidate, the others are not

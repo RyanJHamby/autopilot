@@ -163,6 +163,11 @@ def work_on_issue(
     return IssueResult(True, out.summary, pr_number=res["pr_number"], turns=out.usage.turns, model=d["model"])
 
 
+def select_automerge(s: Settings, merge):
+    """The merge lane exists only after cutover; in shadow mode Actions still merges and apx must not."""
+    return None if s.shadow else merge
+
+
 def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Deps:
     kit = guardlane.fetch_kit(s.kit_repo, s.kit_ref, s.work_dir / "kit" / s.kit_ref)
 
@@ -209,7 +214,7 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Dep
             tmp=tmp,
         )
 
-    return Deps(checkout, guard, ci, work, None if s.shadow else merge)
+    return Deps(checkout, guard, ci, work, select_automerge(s, merge))
 
 
 def _git_show(co: Path, spec: str) -> str:

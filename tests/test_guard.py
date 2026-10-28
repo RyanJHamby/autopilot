@@ -124,3 +124,14 @@ def test_proposer_settings_may_name_publish_commands_to_deny_them():
     assert "comms" not in checks(analyze(ch, agent=False))
     other = [FileChange("src/x.json", added=['"Bash(npm publish*)"'])]
     assert "comms" in checks(analyze(other, agent=False))  # the exemption is for that one protected file only
+
+
+def test_append_only_paths_allow_add_but_not_modify_or_delete():
+    ao = ["scripts/eval/fixtures/**"]
+    p = "scripts/eval/fixtures/vision/a.json"
+    assert analyze([FileChange(p, status="A", added=["{}"])], agent=True, append_only=ao) == []
+    assert "append-only" in checks(analyze([FileChange(p, status="M", added=["{}"], removed=["{1}"])], agent=True, append_only=ao))
+    assert "append-only" in checks(analyze([FileChange(p, status="D", removed=["{}"])], agent=True, append_only=ao))
+    # humans and unlisted paths are unaffected
+    assert analyze([FileChange(p, status="D", removed=["{}"])], agent=False, append_only=ao) == []
+    assert analyze([FileChange("src/x.py", status="M", added=["a"])], agent=True, append_only=ao) == []

@@ -13,6 +13,16 @@ commands:
   - "python"
   - "npm"
 
+# What the off-Actions executor (apx) runs as this repo's CI, in order, stopping at the first failure. Mirrors
+# .github/workflows/ci.yml. Read from the default branch only. Distinct from `commands:` above (the agent's tool allowlist).
+ci:
+  - "uv sync --quiet"
+  - "uv run ruff check ."
+  - "uv run pytest -q"
+  - {run: "npm ci --ignore-scripts", dir: "apps/control-plane"}
+  - {run: "npm run typecheck", dir: "apps/control-plane"}
+  - {run: "npm test", dir: "apps/control-plane"}
+
 guard:
   max_diff_lines: 800
   extra_protected:           # the guard path: agents never edit the system that constrains them

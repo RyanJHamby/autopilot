@@ -64,3 +64,50 @@ def test_all_green_summary(tmp_path):
     cmds = [f"{PY} -c pass"]
     ok, md = cilane.summarize(cilane.run_commands(tmp_path, cmds, home=home), cmds)
     assert ok and md.startswith("- PASS")
+
+
+def test_ci_steps_come_from_ci_not_the_agent_allowlist():
+    cfg = {"commands": ["uv run", "pytest"], "ci": ["uv sync --quiet", {"run": "npm test", "dir": "apps/control-plane"}]}
+    assert cilane.parse_ci_steps(cfg) == [("uv sync --quiet", ""), ("npm test", "apps/control-plane")]
+    assert cilane.parse_ci_steps({"commands": ["uv run"]}) == []  # the allowlist is never treated as CI
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"run": "npm test", "dir": "../outside"},
+        {"run": "npm test", "dir": "/etc"},
+        {"run": "npm test", "dir": "a/../../b"},
+        {"run": "npm test", "dir": "a b"},
+        {"run": "pytest && echo chained"},
+        {"run": ""},
+        "pytest; id",
+    ],
+)
+def test_ci_steps_reject_unsafe_entries(bad):
+    with pytest.raises(ValueError):
+        cilane.parse_ci_steps({"ci": [bad]})
+
+
+def test_step_runs_in_its_subdirectory_and_reports_it(tmp_path):
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "where.py").write_text("import os,sys\nsys.exit(0 if os.getcwd().endswith('sub') else 1)\n")
+    home = tmp_path / "h"
+    home.mkdir()
+    steps = [(f"{PY} where.py", "sub")]
+    res = cilane.run_commands(tmp_path, steps, home=home)
+    assert res[0].ok and res[0].cmd.startswith("sub: ")
+    ok, md = cilane.summarize(res, steps)
+    assert ok and "sub:" in md
+
+
+def test_empty_plan_message_points_at_the_ci_key():
+    ok, md = cilane.summarize([], [])
+    assert not ok and "`ci:`" in md
+
+
+def test_skipped_steps_show_their_directory():
+    steps = [(f"{PY} -c import_nothing_xyz", ""), ("npm test", "apps/cp")]
+    res = [cilane.CmdResult("x", False, 0.1, "", "exit 1")]
+    ok, md = cilane.summarize(res, steps)
+    assert not ok and "SKIPPED `apps/cp: npm test`" in md

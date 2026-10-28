@@ -30,6 +30,23 @@ class CmdResult:
     note: str = ""
 
 
+def parse_ci_steps(cfg: dict) -> list[tuple[str, str]]:
+    """The repo's CI, from the `ci:` list in .autopilot/repo.yaml (BASE branch only). NOT `commands:`, which is the agent's
+    tool allowlist (prefixes like `uv run`), not runnable checks. Each entry is a command string, or {run, dir} to run in a
+    subdirectory. Returns [(command, relative_dir)]. Anything unsafe raises; an absent list means nothing is checked."""
+    steps: list[tuple[str, str]] = []
+    for item in cfg.get("ci") or []:
+        run, sub = (item, "") if isinstance(item, str) else (item.get("run", ""), item.get("dir", "") or "")
+        run = str(run).strip()
+        if not run or not SAFE_CMD.match(run):
+            raise ValueError(f"ci step {run!r} is empty or has characters that are not allowed")
+        parts = Path(sub).parts
+        if Path(sub).is_absolute() or ".." in parts or not re.fullmatch(r"[A-Za-z0-9._/-]*", sub):
+            raise ValueError(f"ci step dir {sub!r} must be a plain relative path inside the checkout")
+        steps.append((run, sub))
+    return steps
+
+
 def parse_commands(cfg: dict) -> list[str]:
     cmds = []
     for c in cfg.get("commands") or []:
@@ -48,16 +65,18 @@ def ci_env(home: Path, source: dict | None = None) -> dict:
 
 
 def run_commands(
-    checkout: Path, commands: list[str], *, home: Path, timeout_each: int = 900, source_env: dict | None = None
+    checkout: Path, commands: list, *, home: Path, timeout_each: int = 900, source_env: dict | None = None
 ) -> list[CmdResult]:
     """Run each command in order; stop at the first failure (later commands often depend on earlier ones)."""
     results: list[CmdResult] = []
-    for cmd in commands:
+    for item in commands:
+        cmd, sub = (item, "") if isinstance(item, str) else item
+        label = f"{sub}: {cmd}" if sub else cmd
         t0 = time.monotonic()
         try:
             p = subprocess.run(
                 shlex.split(cmd),
-                cwd=checkout,
+                cwd=(checkout / sub) if sub else checkout,
                 env=ci_env(home, source_env),
                 capture_output=True,
                 text=True,
@@ -65,12 +84,14 @@ def run_commands(
             )
             out = (p.stdout + p.stderr)[-TAIL:]
             results.append(
-                CmdResult(cmd, p.returncode == 0, time.monotonic() - t0, out, "" if p.returncode == 0 else f"exit {p.returncode}")
+                CmdResult(
+                    label, p.returncode == 0, time.monotonic() - t0, out, "" if p.returncode == 0 else f"exit {p.returncode}"
+                )
             )
         except subprocess.TimeoutExpired:
-            results.append(CmdResult(cmd, False, time.monotonic() - t0, "", f"timed out after {timeout_each}s"))
+            results.append(CmdResult(label, False, time.monotonic() - t0, "", f"timed out after {timeout_each}s"))
         except FileNotFoundError:
-            results.append(CmdResult(cmd, False, time.monotonic() - t0, "", "command not found"))
+            results.append(CmdResult(label, False, time.monotonic() - t0, "", "command not found"))
         if not results[-1].ok:
             break
     return results
@@ -79,12 +100,15 @@ def run_commands(
 def summarize(results: list[CmdResult], planned: list[str]) -> tuple[bool, str]:
     """(ok, markdown). An empty plan is NOT a pass: a lane that checked nothing must not look green."""
     if not planned:
-        return False, "no commands configured in .autopilot/repo.yaml; nothing was checked"
+        return False, "no `ci:` steps configured in .autopilot/repo.yaml; nothing was checked"
     lines = []
     for r in results:
         lines.append(f"- {'PASS' if r.ok else 'FAIL'} `{r.cmd}` ({r.seconds:.1f}s){' - ' + r.note if r.note else ''}")
     skipped = planned[len(results) :]
-    lines += [f"- SKIPPED `{c}` (an earlier command failed)" for c in skipped]
+    lines += [
+        f"- SKIPPED `{c if isinstance(c, str) else (c[1] + ': ' if c[1] else '') + c[0]}` (an earlier command failed)"
+        for c in skipped
+    ]
     ok = len(results) == len(planned) and all(r.ok for r in results)
     if not ok:
         bad = next((r for r in results if not r.ok), None)

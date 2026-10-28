@@ -197,7 +197,7 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Dep
         repo_cfg = (
             yaml.safe_load(_git_show(co, f"origin/{s.default_branch}:.autopilot/repo.yaml")) or {}
         )  # commands come from the BASE branch only
-        cmds = cilane.parse_commands(repo_cfg)
+        cmds = cilane.parse_ci_steps(repo_cfg)
         home = Path(tempfile.mkdtemp(dir=s.work_dir))
         return cilane.summarize(cilane.run_commands(co, cmds, home=home), cmds)
 

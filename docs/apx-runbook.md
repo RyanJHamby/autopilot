@@ -123,3 +123,22 @@ The timer ticks every 2 minutes as the `apx` account, autopilot only, in shadow 
 - **Stop it:** `sudo launchctl bootout system/com.autopilot.apx`. **Start it again:** the `bootstrap` line from the plist header.
 - **Code freshness:** `apx` runs the clone it made at install time; it does not update itself. Refresh it with
   `sudo -u apx -H git -C /Users/apx/autopilot pull --ff-only` after a change you want it to pick up.
+
+## Private repos without Actions minutes: authoritative mode (per repo)
+
+Stencil and drillpad-workspace can't run Actions while the private-minute limit is hit, so a shadow comparison there is
+impossible and their PRs wait on required checks only Actions posts. For a repo you list in `APX_AUTHORITATIVE`, apx posts
+the names its ruleset requires (`guard / guard` plus `test`, or `build` for stencil) instead of `apx / ...`. The ruleset
+accepts any app for those names, so apx's results satisfy the merge rules. Agent runs and the merge lane stay off until a
+full cutover (`APX_SHADOW=0`).
+
+Per repo, in order:
+1. The repo's `.autopilot/repo.yaml` on main must have a `ci:` list (drillpad-workspace #74, stencil #98). Without it the lane
+   fails closed ("no `ci:` steps configured"). Those two PRs are blocked by the same missing Actions checks, so merging them
+   needs the repo admin's bypass on the merge button; they only add a list of commands.
+2. In `/Users/apx/.apx/apx.env` (as `apx`): add the repo to `APX_INSTALLATIONS` (same installation id) and to
+   `APX_AUTHORITATIVE`.
+3. Refresh the clone so apx has this code: `sudo -u apx -H git -C /Users/apx/autopilot pull --ff-only`.
+
+Risk to know: apx runs the PR's code as the `apx` Mac account, which isolates files and credentials but cannot firewall the
+network. Stencil's CI runs `npm ci` with dependency install scripts; do stencil only after the Oracle host, or accept that.

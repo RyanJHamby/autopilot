@@ -68,13 +68,19 @@ def _trusted_pr(pr: dict, repo: str, owner: str) -> bool:
     return head.get("ref", "").startswith(TRUSTED_PREFIXES) or (pr.get("user") or {}).get("login") == owner
 
 
-def plan_checks(api: Api, repo: str, owner: str, contexts: list[str]) -> list[Action]:
+APX_APP_SLUG = "autopilot-apx"
+
+
+def plan_checks(api: Api, repo: str, owner: str, contexts: list[str], app_slug: str = APX_APP_SLUG) -> list[Action]:
     out = []
     for pr in api("GET", f"/repos/{repo}/pulls?state=open&per_page=100"):  # type: ignore[union-attr]
         if not _trusted_pr(pr, repo, owner):
             continue
         sha = pr["head"]["sha"]
-        have = {c["name"] for c in api("GET", f"/repos/{repo}/commits/{sha}/check-runs?per_page=100")["check_runs"]}  # type: ignore[index]
+        runs = api("GET", f"/repos/{repo}/commits/{sha}/check-runs?per_page=100")["check_runs"]  # type: ignore[index]
+        # only our OWN check runs count: when apx posts a required name (e.g. `guard / guard`), a failed Actions run of
+        # the same name must not make apx think the work is already done
+        have = {c["name"] for c in runs if (c.get("app") or {}).get("slug", app_slug) == app_slug}
         missing = [c for c in contexts if c not in have]
         if missing:
             out.append(Action("check-pr", repo, sha, f"PR #{pr['number']} missing {', '.join(missing)}"))

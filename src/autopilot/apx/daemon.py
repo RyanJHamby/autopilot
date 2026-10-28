@@ -36,6 +36,15 @@ class ConfigError(RuntimeError):
     pass
 
 
+# The check names each repo's ruleset REQUIRES (read from the live rulesets; integration_id is "any"). A repo listed in
+# APX_AUTHORITATIVE gets apx's checks under exactly these names, so apx can satisfy the merge rules instead of Actions.
+REQUIRED_CONTEXTS = {
+    "RyanJHamby/autopilot": ("guard / guard", "test"),
+    "RyanJHamby/stencil": ("guard / guard", "build"),
+    "RyanJHamby/drillpad-workspace": ("guard / guard", "test"),
+}
+
+
 def read_secret_file(path: str) -> str:
     p = Path(path)
     st = p.stat()
@@ -59,6 +68,7 @@ class Settings:
     default_branch: str = "main"
     control_url: str = ""
     webhook_secret_file: str = ""
+    authoritative: frozenset = frozenset()
 
     @classmethod
     def from_env(cls, env: dict | None = None) -> "Settings":
@@ -78,12 +88,16 @@ class Settings:
                 shadow=e.get("APX_SHADOW", "1") != "0",
                 control_url=e.get("APX_CONTROL_URL", ""),
                 webhook_secret_file=e.get("APX_WEBHOOK_SECRET_FILE", ""),
+                authoritative=frozenset(r for r in e.get("APX_AUTHORITATIVE", "").split(",") if r),
             )
         except KeyError as ex:
             raise ConfigError(f"missing setting {ex}") from None
         bad = set(s.installations) - ALLOWED_REPOS
         if bad:
             raise ConfigError(f"repos outside scope: {sorted(bad)}")
+        stray = set(s.authoritative) - set(s.installations)
+        if stray:
+            raise ConfigError(f"APX_AUTHORITATIVE names repos that are not installed: {sorted(stray)}")
         try:
             guardlane.validate_kit(s.kit_repo, s.kit_ref)
         except guardlane.KitError as ex:
@@ -91,7 +105,12 @@ class Settings:
         return s
 
     def contexts(self, repo: str) -> dict[str, str]:
-        return {"guard": "apx / guard", "ci": "apx / build"} if self.shadow else {"guard": "guard / guard", "ci": "build"}
+        """Shadow names are non-required (cannot satisfy or block a merge). A repo that is authoritative, or any repo once
+        shadow mode is off, posts the names its ruleset requires."""
+        if self.shadow and repo not in self.authoritative:
+            return {"guard": "apx / guard", "ci": "apx / build"}
+        guard, ci = REQUIRED_CONTEXTS[repo]
+        return {"guard": guard, "ci": ci}
 
 
 def routed_api(cache: TokenCache) -> Api:

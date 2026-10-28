@@ -274,3 +274,17 @@ def test_shadow_mode_reports_checks_only_and_never_runs_agents_or_updates_branch
     assert {a.kind for a in shadow["actions"]} == {"check-pr"} and shadow["note"] == "shadow: checks only"
     cut = go(Fake(**busy))
     assert {"run-agent", "update-branch"} <= {a.kind for a in cut["actions"]}  # control: cutover mode does plan them
+
+
+def test_a_failed_actions_run_with_the_same_name_does_not_count_as_apx_having_checked():
+    class F(Fake):
+        def __call__(self, method, path, body=None):
+            if "/commits/s1/check-runs" in path:
+                return {"check_runs": [{"name": "guard / guard", "app": {"slug": "github-actions"}, "status": "completed"}]}
+            if "/commits/s2/check-runs" in path:
+                return {"check_runs": [{"name": "guard / guard", "app": {"slug": "autopilot-apx"}, "status": "completed"}]}
+            return super().__call__(method, path, body)
+
+    f = F(open=[pr(1, "agent/5-1", "s1"), pr(2, "agent/6-1", "s2")])
+    r = planner.plan(f, Ledger(), {REPO: {"contexts": ["guard / guard"]}}, now=NOW)[REPO]
+    assert [a.ref for a in r["actions"] if a.kind == "check-pr"] == ["s1"]  # s1 only has a github-actions run; s2 has apx's

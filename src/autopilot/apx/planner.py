@@ -186,6 +186,11 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
                 result[repo] = {"actions": [], "note": why}
                 continue
             actions = plan_checks(api, repo, owner, meta.get("contexts", ["guard / guard"]))
+            if not meta.get("agents"):
+                # shadow mode: Actions is still the system of record, so apx only reports checks. Running agents or
+                # updating branches here would race the Actions jobs and open duplicate PRs.
+                result[repo] = {"actions": actions, "note": "shadow: checks only"}
+                continue
             rebases = plan_rebases(api, repo, owner, ledger, now)
             redo = [int(a.ref) for a in rebases if a.kind == "rebase-agent"]
             runs, note = plan_agent_runs(api, repo, owner, ledger, meta.get("default_branch", "main"), now, rebase_issues=redo)

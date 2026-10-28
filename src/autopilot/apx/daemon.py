@@ -276,7 +276,12 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     ledger = Ledger(s.db_path)
     ledger.abandon_stale(dt.timedelta(hours=2))
     repos = {
-        r: {"default_branch": s.default_branch, "contexts": list(s.contexts(r).values()), "merge": not s.shadow}
+        r: {
+            "default_branch": s.default_branch,
+            "contexts": list(s.contexts(r).values()),
+            "merge": not s.shadow,
+            "agents": not s.shadow,
+        }
         for r in s.installations
     }
     planned = plan(api, ledger, repos, s.owner)

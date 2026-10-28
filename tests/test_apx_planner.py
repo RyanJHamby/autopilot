@@ -68,7 +68,9 @@ def issue(n, user="RyanJHamby", labels=("agent-ready",)):
 
 
 def go(f, led=None, repos=None):
-    return planner.plan(f, led or Ledger(), repos or {REPO: {"contexts": ["guard / guard", "build"]}}, now=NOW)[REPO]
+    return planner.plan(f, led or Ledger(), repos or {REPO: {"contexts": ["guard / guard", "build"], "agents": True}}, now=NOW)[
+        REPO
+    ]
 
 
 def test_out_of_scope_repo_raises():
@@ -217,7 +219,9 @@ def test_unexpected_response_shape_fails_closed():
 
 
 def run_with(f, merge):
-    return planner.plan(f, Ledger(), {REPO: {"contexts": ["guard / guard", "build"], "merge": merge}}, now=NOW)[REPO]
+    return planner.plan(f, Ledger(), {REPO: {"contexts": ["guard / guard", "build"], "merge": merge, "agents": True}}, now=NOW)[
+        REPO
+    ]
 
 
 def merge_actions(r):
@@ -257,3 +261,16 @@ def test_draft_and_fork_prs_are_not_merge_candidates():
     assert merge_actions(run_with(f, merge=True)) == [
         "3:s3"
     ]  # control: the ready same-repo PR is a candidate, the others are not
+
+
+def test_shadow_mode_reports_checks_only_and_never_runs_agents_or_updates_branches():
+    busy = dict(
+        open=[pr(1, "agent/5-1", "s1"), pr(2, "agent/6-1", "s2")],
+        pulls={1: {"mergeable_state": "behind"}, 2: {"mergeable_state": "dirty"}},
+        issues=[issue(4)],
+        checks={"s1": ["guard / guard", "build"]},
+    )
+    shadow = planner.plan(Fake(**busy), Ledger(), {REPO: {"contexts": ["guard / guard", "build"]}}, now=NOW)[REPO]
+    assert {a.kind for a in shadow["actions"]} == {"check-pr"} and shadow["note"] == "shadow: checks only"
+    cut = go(Fake(**busy))
+    assert {"run-agent", "update-branch"} <= {a.kind for a in cut["actions"]}  # control: cutover mode does plan them

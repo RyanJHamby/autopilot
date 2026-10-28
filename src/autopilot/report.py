@@ -76,6 +76,25 @@ def points_per_merged(runs: list[dict], prs: list[dict], *, since: dt.datetime) 
     return round(run_points(runs) / merged, 1) if merged else None
 
 
+def run_minutes(runs: list[dict]) -> int:
+    """Billable-minute estimate for runs [{startedAt,updatedAt,conclusion}]: each run rounds up to a whole minute.
+
+    Skipped/cancelled runs and runs missing a timestamp cost nothing. GitHub bills per job, so this is a floor."""
+    total = 0
+    for r in runs:
+        if r.get("conclusion") in ("skipped", "cancelled") or not (r.get("startedAt") and r.get("updatedAt")):
+            continue
+        secs = (_ts(r["updatedAt"]) - _ts(r["startedAt"])).total_seconds()
+        total += max(1, -(-int(secs) // 60)) if secs > 0 else 0
+    return total
+
+
+def minutes_per_merged(runs: list[dict], prs: list[dict], *, since: dt.datetime) -> float | None:
+    """Estimated Actions minutes per merged agent PR in the window; None when nothing merged."""
+    merged = sum(1 for p in prs if is_agent(p) and p.get("mergedAt") and _ts(p["createdAt"]) >= since)
+    return round(run_minutes(runs) / merged, 1) if merged else None
+
+
 def promotion_candidates(card: dict, enabled: list[str], *, min_clean: int = 10) -> list[str]:
     """Classes with enough clean merges to be worth proposing to the owner (a loosening: the owner decides)."""
     return [

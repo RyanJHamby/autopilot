@@ -139,7 +139,7 @@ def work_on_issue(
     )
     head = api("GET", f"/repos/{repo}/git/ref/heads/{s.default_branch}")["object"]["sha"]  # type: ignore[index]
     wt = s.work_dir / f"{repo.replace('/', '_')}-{issue}-{run_id}"
-    gitops.checkout_pr(repo, head, s.default_branch, wt, token_for(repo), url=url)
+    gitops.checkout_pr(repo, head, s.default_branch, wt, token_for(repo), url=url, root=s.work_dir)
     home = s.work_dir / f"home-{run_id}"
     home.mkdir(parents=True, exist_ok=True)
     r = claude_runner.ClaudeRunner(
@@ -186,7 +186,12 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Dep
 
     def checkout(repo: str, sha: str) -> Path:
         return gitops.checkout_pr(
-            repo, sha, s.default_branch, s.work_dir / f"pr-{repo.replace('/', '_')}-{sha[:12]}", token_for(repo)
+            repo,
+            sha,
+            s.default_branch,
+            s.work_dir / f"pr-{repo.replace('/', '_')}-{sha[:12]}",
+            token_for(repo),
+            root=s.work_dir,
         )
 
     def guard(co: Path, head_ref: str):
@@ -212,6 +217,7 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Dep
             s.default_branch,  # type: ignore[index]
             s.work_dir / f"main-{repo.replace('/', '_')}-{pr}",
             token_for(repo),
+            root=s.work_dir,
         )
         tmp = Path(tempfile.mkdtemp(dir=s.work_dir))
         return mergelane.run_automerge(
@@ -263,6 +269,7 @@ def run_once(s: Settings, *, live: bool = False, api_factory=make_api) -> list[s
 
 
 def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
+    gitops.prune_work(s.work_dir)
     really_live = live and os.environ.get("APX_LIVE") == "1"
     cache = TokenCache(s.app_id, s.key_path, s.installations, api_factory=api_factory)
     api = routed_api(cache)

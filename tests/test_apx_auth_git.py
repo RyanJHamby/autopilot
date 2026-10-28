@@ -140,3 +140,49 @@ def test_token_travels_in_env_not_argv_or_config(tmp_path, monkeypatch):
 def test_checkout_rejects_bad_inputs(tmp_path, repo, sha, branch):
     with pytest.raises(ValueError):
         gitops.checkout_pr(repo, sha, branch, tmp_path / "x", None)
+
+
+def test_checkout_is_repeatable_into_the_same_directory(tmp_path):
+    remote, base, head = make_remote(tmp_path)
+    root = tmp_path / "work"
+    dest = root / "pr-x"
+    gitops.checkout_pr("o/r", head, "main", dest, None, url=str(remote), root=root)
+    (dest / "leftover.txt").write_text("from the previous pass")
+    gitops.checkout_pr("o/r", head, "main", dest, None, url=str(remote), root=root)  # used to fail: remote origin already exists
+    assert not (dest / "leftover.txt").exists() and plumbing(dest, "rev-parse", "HEAD") == head
+
+
+def test_checkout_refuses_to_clear_outside_root_or_non_checkouts(tmp_path):
+    remote, base, head = make_remote(tmp_path)
+    root = tmp_path / "work"
+    root.mkdir()
+    outside = tmp_path / "elsewhere"
+    (outside / ".git").mkdir(parents=True)
+    with pytest.raises(ValueError):
+        gitops.checkout_pr("o/r", head, "main", outside, None, url=str(remote), root=root)
+    plain = root / "not-a-checkout"
+    plain.mkdir()
+    (plain / "precious.txt").write_text("keep")
+    with pytest.raises(ValueError):
+        gitops.checkout_pr("o/r", head, "main", plain, None, url=str(remote), root=root)
+    assert (plain / "precious.txt").exists() and (outside / ".git").exists()
+    with pytest.raises(ValueError):
+        gitops.checkout_pr("o/r", head, "main", root, None, url=str(remote), root=root)  # never the root itself
+    with pytest.raises(ValueError):
+        gitops.checkout_pr("o/r", head, "main", outside, None, url=str(remote))  # existing dir, no root given
+
+
+def test_prune_removes_only_old_scratch_and_keeps_kit_and_lock(tmp_path):
+    import os
+    import time
+
+    for name in ["pr-a", "main-b", "home-1", "tmpabc", "kit", "other"]:
+        (tmp_path / name).mkdir()
+    (tmp_path / "apx.lock").write_text("")
+    old = time.time() - 3 * 24 * 3600
+    for name in ["pr-a", "tmpabc", "kit", "other"]:
+        os.utime(tmp_path / name, (old, old))
+    removed = gitops.prune_work(tmp_path, max_age_seconds=24 * 3600)
+    assert sorted(removed) == ["pr-a", "tmpabc"]  # old scratch only
+    assert (tmp_path / "kit").exists() and (tmp_path / "other").exists() and (tmp_path / "apx.lock").exists()
+    assert (tmp_path / "main-b").exists() and (tmp_path / "home-1").exists()  # fresh scratch stays

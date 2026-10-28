@@ -301,3 +301,28 @@ def test_launchd_template_is_valid_and_not_auto_started():
     cmd = p["ProgramArguments"][-1]
     assert "--once --live" in cmd and "APX_LIVE=1" in cmd
     assert "TOKEN" not in cmd.upper() and "SECRET" not in cmd.upper()  # settings are paths in ~/apx.env, never inline secrets
+
+
+def test_each_pass_prunes_stale_scratch_from_the_work_dir(tmp_path, monkeypatch):
+    import os
+    import time
+
+    s = dm.Settings.from_env(env(tmp_path))
+    s.work_dir.mkdir(parents=True)
+    stale, fresh = s.work_dir / "pr-old", s.work_dir / "pr-new"
+    stale.mkdir()
+    fresh.mkdir()
+    old = time.time() - 3 * 24 * 3600
+    os.utime(stale, (old, old))
+
+    def factory(token):
+        def api(method, path, body=None):
+            if path.startswith("/app/"):
+                return {"token": "t", "expires_at": "2099-01-01T00:00:00Z"}
+            raise GitHubError(404, path, "")  # not enabled: the pass ends quickly
+
+        return api
+
+    monkeypatch.delenv("APX_LIVE", raising=False)
+    dm.run_once(s, api_factory=factory)
+    assert not stale.exists() and fresh.exists()

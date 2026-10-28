@@ -71,7 +71,18 @@ def _trusted_pr(pr: dict, repo: str, owner: str) -> bool:
 APX_APP_SLUG = "autopilot-apx"
 
 
-def plan_checks(api: Api, repo: str, owner: str, contexts: list[str], app_slug: str = APX_APP_SLUG) -> list[Action]:
+def base_commit_time(api: Api, repo: str, default_branch: str) -> str | None:
+    """When the default branch last moved (ISO). A failed apx check older than this may have failed on config that has
+    since changed, so it is worth one more look."""
+    try:
+        return api("GET", f"/repos/{repo}/commits/{default_branch}")["commit"]["committer"]["date"]  # type: ignore[index]
+    except (GitHubError, KeyError, TypeError):
+        return None  # only disables the retry-after-base-moves optimisation; checks still run
+
+
+def plan_checks(
+    api: Api, repo: str, owner: str, contexts: list[str], app_slug: str = APX_APP_SLUG, base_time: str | None = None
+) -> list[Action]:
     out = []
     for pr in api("GET", f"/repos/{repo}/pulls?state=open&per_page=100"):  # type: ignore[union-attr]
         if not _trusted_pr(pr, repo, owner):
@@ -80,7 +91,11 @@ def plan_checks(api: Api, repo: str, owner: str, contexts: list[str], app_slug: 
         runs = api("GET", f"/repos/{repo}/commits/{sha}/check-runs?per_page=100")["check_runs"]  # type: ignore[index]
         # only our OWN check runs count: when apx posts a required name (e.g. `guard / guard`), a failed Actions run of
         # the same name must not make apx think the work is already done
-        have = {c["name"] for c in runs if (c.get("app") or {}).get("slug", app_slug) == app_slug}
+        ours = [c for c in runs if (c.get("app") or {}).get("slug", app_slug) == app_slug]
+        # a FAILED result from before the base branch last moved is stale (e.g. it failed because repo.yaml had no ci:
+        # list yet): do not count it, so the check is retried once per base movement. Successes are never retried.
+        stale = lambda c: bool(base_time) and c.get("conclusion") == "failure" and (c.get("completed_at") or "9") < base_time  # noqa: E731
+        have = {c["name"] for c in ours if not stale(c)}
         missing = [c for c in contexts if c not in have]
         if missing:
             out.append(Action("check-pr", repo, sha, f"PR #{pr['number']} missing {', '.join(missing)}"))
@@ -191,7 +206,13 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
             if not ok:
                 result[repo] = {"actions": [], "note": why}
                 continue
-            actions = plan_checks(api, repo, owner, meta.get("contexts", ["guard / guard"]))
+            actions = plan_checks(
+                api,
+                repo,
+                owner,
+                meta.get("contexts", ["guard / guard"]),
+                base_time=base_commit_time(api, repo, meta.get("default_branch", "main")),
+            )
             if not meta.get("agents"):
                 # shadow mode: Actions is still the system of record, so apx only reports checks. Running agents or
                 # updating branches here would race the Actions jobs and open duplicate PRs.

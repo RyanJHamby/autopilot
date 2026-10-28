@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { toRunRow, verifySignature } from "./ledger";
+import { toApxRunRow, toRunRow, verifySignature } from "./ledger";
 
 const sign = (s: string, b: string) => "sha256=" + createHmac("sha256", s).update(b).digest("hex");
 const ev = (over: object = {}, name = "agent-exec") => ({
@@ -38,5 +38,33 @@ describe("toRunRow", () => {
   });
   it("failures are recorded as failure", () => {
     expect(toRunRow("workflow_run", ev({ conclusion: "timed_out" }))?.outcome).toBe("failure");
+  });
+});
+
+describe("toApxRunRow", () => {
+  const good = { repo: "me/stencil", issue: 7, model: "sonnet", turns: 12, outcome: "success", started_at: "2026-10-28T10:00:00Z" };
+  it("maps a valid apx run with exact points", () => {
+    expect(toApxRunRow(good)).toMatchObject({ repo: "me/stencil", issue: 7, runner: "apx", model: "sonnet", run_points: 36, outcome: "success" });
+  });
+  it("skipped and cancelled cost nothing; unknown turns count as zero", () => {
+    expect(toApxRunRow({ ...good, outcome: "cancelled" })?.run_points).toBe(0);
+    expect(toApxRunRow({ ...good, turns: null })?.run_points).toBe(0);
+  });
+  it("drops malformed input instead of coercing it", () => {
+    for (const bad of [
+      { ...good, repo: "not a repo" },
+      { ...good, repo: "a/b/c" },
+      { ...good, model: "gpt-5" },
+      { ...good, outcome: "weird" },
+      { ...good, turns: -1 },
+      { ...good, turns: 1.5 },
+      { ...good, turns: 9999 },
+      { ...good, issue: 0 },
+      { ...good, started_at: "yesterday-ish" },
+      null,
+      "x",
+    ]) {
+      expect(toApxRunRow(bad as any)).toBeNull();
+    }
   });
 });

@@ -167,3 +167,29 @@ def test_automerge_action_runs_lane_and_reports_and_is_inert_when_disabled():
         "failed"
         in ex.execute(api, Ledger(), d2, [Action("automerge", REPO, "9:abc", "")], contexts=CTX, head_refs={}, dry_run=False)[0]
     )
+
+
+def test_finished_runs_are_reported_and_reporter_failure_cannot_change_the_outcome():
+    sent = []
+    d = deps()
+    d.report = lambda *a: sent.append(a) or True
+    led = Ledger()
+    ex.execute(Api(), led, d, [Action("run-agent", REPO, "4", "")], contexts=CTX, head_refs={}, dry_run=False)
+    assert len(sent) == 1 and sent[0][:5] == (REPO, 4, "sonnet", 7, "success")
+
+    def boom(*a):
+        raise RuntimeError("down")
+
+    d2 = deps()
+    d2.report = boom
+    led2 = Ledger()
+    log = ex.execute(Api(), led2, d2, [Action("run-agent", REPO, "4", "")], contexts=CTX, head_refs={}, dry_run=False)
+    assert log == [f"run-agent {REPO} #4 success"] and led2.runs(REPO)[0]["conclusion"] == "success"
+
+
+def test_crashed_runs_are_still_reported_as_failures():
+    sent = []
+    d = deps(work_err=1)
+    d.report = lambda *a: sent.append(a) or True
+    ex.execute(Api(), Ledger(), d, [Action("run-agent", REPO, "4", "")], contexts=CTX, head_refs={}, dry_run=False)
+    assert sent and sent[0][4] == "failure"

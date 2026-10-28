@@ -350,4 +350,4 @@ def test_install_script_refuses_admin_keeps_scope_narrow_and_deletes_nothing():
     assert "must NOT be an admin" in s and "DRY_RUN" in s
     assert "rm -r" not in s and "rm -f $" not in s.replace('rm -f "$TMP"', "")  # only its own temp file is ever removed
     for secret in ("app.pem", "claude-oauth"):
-        assert f"install -m 600" in s and secret in s
+        assert "install -m 600" in s and secret in s

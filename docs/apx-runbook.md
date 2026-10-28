@@ -111,3 +111,15 @@ spike.
 - It does nothing live unless you pass `--live` AND set `APX_LIVE=1`; otherwise every pass is a dry run.
 - It only works on the three configured repos (`autopilot`, `drillpad-workspace`, `stencil`); the doctor checks the App is installed on exactly those.
 - It never gives the model GitHub credentials: only the trusted committer and check reporter use the App's token.
+
+## Shadow week: what to look at
+
+The timer ticks every 2 minutes as the `apx` account, autopilot only, in shadow mode (non-required `apx / ...` check names).
+- **Is it alive?** Open any autopilot PR: `apx / guard` and `apx / build` should appear within a couple of minutes of a push,
+  posted by the `autopilot-apx` App. No checks from the App on a fresh PR after ~5 minutes means the timer is not running.
+- **Does it agree with Actions?** For every PR compare `apx / guard` with `guard / guard`, and `apx / build` with `test`.
+  They run the same guard and the same CI steps, so any disagreement is a bug to investigate, not noise.
+- **Logs** (need sudo, they belong to `apx`): `sudo tail -n 50 /Users/apx/Library/Logs/apx.log` and `apx.err.log` next to it.
+- **Stop it:** `sudo launchctl bootout system/com.autopilot.apx`. **Start it again:** the `bootstrap` line from the plist header.
+- **Code freshness:** `apx` runs the clone it made at install time; it does not update itself. Refresh it with
+  `sudo -u apx -H git -C /Users/apx/autopilot pull --ff-only` after a change you want it to pick up.

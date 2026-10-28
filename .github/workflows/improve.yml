@@ -16,9 +16,9 @@ jobs:
       issues: read
       actions: read
       id-token: write
-    uses: RyanJHamby/autopilot-kit/.github/workflows/improve.yml@72a6b1c7928faaa7ff3d7d94afcb1a505442fe1a
+    uses: RyanJHamby/autopilot-kit/.github/workflows/improve.yml@2d0c2ef585ee7bd8c90e24da524ee826b84358a4
     with:
       kit_repo: RyanJHamby/autopilot-kit
-      kit_ref: 72a6b1c7928faaa7ff3d7d94afcb1a505442fe1a
+      kit_ref: 2d0c2ef585ee7bd8c90e24da524ee826b84358a4
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

@@ -191,3 +191,15 @@ def test_non_agent_and_fork_prs_never_get_rebase_actions():
         checks={"s1": ["guard / guard", "build"], "s2": ["guard / guard", "build"]},
     )
     assert kinds(go(f)) == []
+
+
+def test_rebase_reruns_cannot_exceed_remaining_daily_slots():
+    f = Fake(
+        open=[pr(1, "agent/5-1", "s1"), pr(2, "agent/6-1", "s2")],
+        pulls={1: {"mergeable_state": "dirty"}, 2: {"mergeable_state": "dirty"}},
+        checks={"s1": ["guard / guard", "build"], "s2": ["guard / guard", "build"]},
+    )
+    led = Ledger()
+    rid = led.start(REPO, 90, now=NOW - dt.timedelta(hours=2))  # one of tier A's two daily runs used
+    led.finish(rid, "success", now=NOW - dt.timedelta(hours=2))
+    assert len(kinds(go(f, led))) == 1

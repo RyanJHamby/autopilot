@@ -22,7 +22,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import runner as kit_runner  # noqa: E402
 
-from . import cilane, claude_runner, committer, gitops, guardlane  # noqa: E402
+from . import cilane, claude_runner, committer, gitops, guardlane, mergelane  # noqa: E402
 from .app_auth import TokenCache  # noqa: E402
 from .executor import Deps, IssueResult, execute  # noqa: E402
 from .github import Api, make_api  # noqa: E402
@@ -186,7 +186,30 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Dep
     def work(repo: str, issue: int, run_id: int) -> IssueResult:
         return work_on_issue(s, api, token_for, repo, issue, run_id, details.get(f"{repo}#{issue}", ""))
 
-    return Deps(checkout, guard, ci, work)
+    def merge(repo: str, pr: int, sha: str) -> tuple[int, str]:
+        # default-branch checkout, so the merge policy is what the owner merged, never the PR's copy
+        co = gitops.checkout_pr(
+            repo,
+            api("GET", f"/repos/{repo}/git/ref/heads/{s.default_branch}")["object"]["sha"],
+            s.default_branch,  # type: ignore[index]
+            s.work_dir / f"main-{repo.replace('/', '_')}-{pr}",
+            token_for(repo),
+        )
+        tmp = Path(tempfile.mkdtemp(dir=s.work_dir))
+        return mergelane.run_automerge(
+            co,
+            kit,
+            repo=repo,
+            pr=pr,
+            head_sha=sha,
+            token=token_for(repo),
+            owner=s.owner,
+            kit_repo=s.kit_repo,
+            base=f"origin/{s.default_branch}",
+            tmp=tmp,
+        )
+
+    return Deps(checkout, guard, ci, work, None if s.shadow else merge)
 
 
 def _git_show(co: Path, spec: str) -> str:
@@ -204,7 +227,10 @@ def run_once(s: Settings, *, live: bool = False, api_factory=make_api) -> list[s
     api = routed_api(cache)
     ledger = Ledger(s.db_path)
     ledger.abandon_stale(dt.timedelta(hours=2))
-    repos = {r: {"default_branch": s.default_branch, "contexts": list(s.contexts(r).values())} for r in s.installations}
+    repos = {
+        r: {"default_branch": s.default_branch, "contexts": list(s.contexts(r).values()), "merge": not s.shadow}
+        for r in s.installations
+    }
     planned = plan(api, ledger, repos, s.owner)
     actions: list[Action] = [a for r in planned.values() for a in r["actions"]]
     log = [f"{repo}: {len(r['actions'])} action(s) - {r['note']}" for repo, r in planned.items()]

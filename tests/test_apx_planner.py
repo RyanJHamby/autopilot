@@ -214,3 +214,38 @@ def test_unexpected_response_shape_fails_closed():
 
     r = go(Weird(open=[pr(1, "agent/5-1", "s1")], checks={"s1": ["guard / guard", "build"]}))
     assert r["actions"] == [] and "fail closed" in r["note"]
+
+
+def run_with(f, merge):
+    return planner.plan(f, Ledger(), {REPO: {"contexts": ["guard / guard", "build"], "merge": merge}}, now=NOW)[REPO]
+
+
+def merge_actions(r):
+    return [a.ref for a in r["actions"] if a.kind == "automerge"]
+
+
+def test_merge_candidates_only_when_enabled_and_all_checks_complete():
+    class F(Fake):
+        def __call__(self, method, path, body=None):
+            if "/commits/s1/check-runs" in path:
+                return {
+                    "check_runs": [{"name": "guard / guard", "status": "completed"}, {"name": "build", "status": "in_progress"}]
+                }
+            if "/commits/s2/check-runs" in path:
+                return {
+                    "check_runs": [{"name": "guard / guard", "status": "completed"}, {"name": "build", "status": "completed"}]
+                }
+            return super().__call__(method, path, body)
+
+    f = F(open=[pr(1, "agent/5-1", "s1"), pr(2, "agent/6-1", "s2"), pr(3, "feature/x", "s3", user="stranger")])
+    assert merge_actions(run_with(f, merge=True)) == [f"2:{'s2'}"]
+    assert merge_actions(run_with(f, merge=False)) == []  # shadow mode: Actions still merges
+
+
+def test_draft_and_fork_prs_are_not_merge_candidates():
+    d = pr(1, "agent/5-1", "s1")
+    d["draft"] = True
+    f = Fake(
+        open=[d, pr(2, "agent/6-1", "s2", repo="attacker/stencil")], checks={"s1": ["guard / guard"], "s2": ["guard / guard"]}
+    )
+    assert merge_actions(run_with(f, merge=True)) == []

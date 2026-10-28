@@ -118,6 +118,20 @@ def plan_agent_runs(
     return acts, "ok"
 
 
+def plan_merges(api: Api, repo: str, owner: str) -> list[Action]:
+    """Candidates for the kit's automerge: trusted open PRs whose head has check runs and none still running.
+    The kit decides whether each one actually merges; this only avoids calling it on PRs that are plainly not ready."""
+    out = []
+    for pr in api("GET", f"/repos/{repo}/pulls?state=open&per_page=100"):  # type: ignore[union-attr]
+        if not _trusted_pr(pr, repo, owner) or pr.get("draft"):
+            continue
+        sha = pr["head"]["sha"]
+        runs = api("GET", f"/repos/{repo}/commits/{sha}/check-runs?per_page=100")["check_runs"]  # type: ignore[index]
+        if runs and all(r.get("status") == "completed" for r in runs):
+            out.append(Action("automerge", repo, f"{pr['number']}:{sha}", f"PR #{pr['number']}"))
+    return out
+
+
 def plan_rebases(api: Api, repo: str, owner: str, ledger: Ledger, now: dt.datetime | None = None) -> list[Action]:
     """Behind agent PRs get GitHub's signed update-branch; conflicted ones are re-run from a fresh base (once a day).
     Reuses the kit's rebase.decide so Actions and apx can never disagree about what to do."""
@@ -176,7 +190,8 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
             redo = [int(a.ref) for a in rebases if a.kind == "rebase-agent"]
             runs, note = plan_agent_runs(api, repo, owner, ledger, meta.get("default_branch", "main"), now, rebase_issues=redo)
             updates = [a for a in rebases if a.kind == "update-branch"]
-            result[repo] = {"actions": actions + runs + updates, "note": note}
+            merges = plan_merges(api, repo, owner) if meta.get("merge") else []  # off in shadow mode: Actions still merges
+            result[repo] = {"actions": actions + runs + updates + merges, "note": note}
         except (GitHubError, KeyError, ValueError, TypeError, AttributeError, yaml.YAMLError) as e:
             result[repo] = {"actions": [], "note": f"planner error (fail closed): {type(e).__name__}"}
     return result

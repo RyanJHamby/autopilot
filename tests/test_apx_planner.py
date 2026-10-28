@@ -68,9 +68,12 @@ def test_out_of_scope_repo_raises():
 
 
 def test_fail_closed_when_not_enabled_or_paused():
-    assert go(Fake(vars={}))["actions"] == []
-    r = go(Fake(vars={"AUTOPILOT_ENABLED": "true", "AUTOPILOT_PAUSED": "true"}))
+    busy = dict(open=[pr(1, "agent/5-1", "s1")], issues=[issue(4)])  # work exists, so only the switch can stop it
+    assert go(Fake(vars={}, **busy))["actions"] == []
+    assert go(Fake(vars={"AUTOPILOT_ENABLED": "false"}, **busy))["actions"] == []
+    r = go(Fake(vars={"AUTOPILOT_ENABLED": "true", "AUTOPILOT_PAUSED": "true"}, **busy))
     assert r["actions"] == [] and r["note"] == "AUTOPILOT_PAUSED"
+    assert go(Fake(**busy))["actions"] != []  # control: enabled and not paused does plan work
 
 
 def test_check_pr_planned_only_for_missing_contexts_and_trusted_heads():

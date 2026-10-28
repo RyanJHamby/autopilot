@@ -360,7 +360,9 @@ def test_pre_push_hook_runs_the_same_checks_as_ci():
     root = Path(__file__).resolve().parent.parent
     hook = root / ".githooks/pre-push"
     s = hook.read_text()
-    assert os.access(hook, os.X_OK) and "ruff check ." in s and "pytest -q" in s and "set -e" in s
+    cmds = [ln.strip() for ln in s.splitlines() if ln.strip().startswith("$RUN ")]  # the commands, not the echo messages
+    assert os.access(hook, os.X_OK) and "set -e" in s
+    assert "$RUN ruff check ." in cmds and "$RUN pytest -q" in cmds
     ci = (root / ".github/workflows/ci.yml").read_text()
     assert "ruff check ." in ci and "pytest -q" in ci  # the hook and CI must keep running the same commands
     assert os.access(root / "scripts/install-hooks", os.X_OK)

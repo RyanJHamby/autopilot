@@ -462,3 +462,61 @@ def test_authoritative_repo_checks_run_under_the_required_names_end_to_end(tmp_p
     }
     assert "missing guard / guard, build" in line["RyanJHamby/stencil"]
     assert "missing apx / guard, apx / build" in line["RyanJHamby/autopilot"]
+
+
+TWO = "RyanJHamby/stencil=11,RyanJHamby/drillpad-workspace=11"
+
+
+def test_cutover_turns_on_the_full_loop_for_named_repos_only(tmp_path):
+    s = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=TWO, APX_CUTOVER="RyanJHamby/drillpad-workspace"))
+    assert s.full_loop("RyanJHamby/drillpad-workspace") and not s.full_loop("RyanJHamby/stencil")
+    assert s.contexts("RyanJHamby/drillpad-workspace") == {"guard": "guard / guard", "ci": "test"}  # real names
+    assert s.contexts("RyanJHamby/stencil") == {"guard": "apx / guard", "ci": "apx / build"}  # still shadow
+    all_cut = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=TWO, APX_SHADOW="0"))
+    assert all_cut.full_loop("RyanJHamby/stencil") and all_cut.full_loop("RyanJHamby/drillpad-workspace")
+    assert not dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=TWO)).full_loop("RyanJHamby/stencil")
+
+
+def test_cutover_must_name_installed_repos_only(tmp_path):
+    with pytest.raises(dm.ConfigError):
+        dm.Settings.from_env(env(tmp_path, APX_CUTOVER="RyanJHamby/drillpad-workspace"))  # only stencil is installed in env()
+
+
+def test_merge_lane_exists_only_when_something_is_cut_over(tmp_path):
+    fn = lambda *a: (0, "")  # noqa: E731
+    shadow = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=TWO))
+    some = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=TWO, APX_CUTOVER="RyanJHamby/stencil"))
+    assert dm.select_automerge(shadow, fn) is None and dm.select_automerge(some, fn) is fn
+
+
+def test_run_once_plans_agent_runs_and_merges_only_for_the_cutover_repo(tmp_path, monkeypatch):
+    s = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=TWO, APX_CUTOVER="RyanJHamby/drillpad-workspace"))
+
+    def factory(token):
+        def api(method, path, body=None):
+            if path.startswith("/app/"):
+                return {"token": "t", "expires_at": "2099-01-01T00:00:00Z"}
+            assert method == "GET"
+            if "/actions/variables/AUTOPILOT_ENABLED" in path:
+                return {"value": "true"}
+            if "/actions/variables/" in path:
+                raise GitHubError(404, path, "")
+            if "contents/.autopilot/repo.yaml" in path:
+                return {"content": base64.b64encode(b"mode: standard\ntier: A\n").decode()}
+            if "/issues?" in path:
+                return [
+                    {
+                        "number": 9,
+                        "created_at": "2026-10-20T00:00:00Z",
+                        "user": {"login": "RyanJHamby"},
+                        "labels": [{"name": "agent-ready"}],
+                    }
+                ]
+            return []
+
+        return api
+
+    monkeypatch.delenv("APX_LIVE", raising=False)
+    out = dm.run_once(s, api_factory=factory)
+    assert any(x.startswith("DRY-RUN run-agent RyanJHamby/drillpad-workspace 9") for x in out)
+    assert not any("run-agent RyanJHamby/stencil" in x for x in out)  # same issue shape on stencil, but it is still shadow

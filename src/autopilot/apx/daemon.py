@@ -69,6 +69,7 @@ class Settings:
     control_url: str = ""
     webhook_secret_file: str = ""
     authoritative: frozenset = frozenset()
+    cutover: frozenset = frozenset()
 
     @classmethod
     def from_env(cls, env: dict | None = None) -> "Settings":
@@ -89,25 +90,30 @@ class Settings:
                 control_url=e.get("APX_CONTROL_URL", ""),
                 webhook_secret_file=e.get("APX_WEBHOOK_SECRET_FILE", ""),
                 authoritative=frozenset(r for r in e.get("APX_AUTHORITATIVE", "").split(",") if r),
+                cutover=frozenset(r for r in e.get("APX_CUTOVER", "").split(",") if r),
             )
         except KeyError as ex:
             raise ConfigError(f"missing setting {ex}") from None
         bad = set(s.installations) - ALLOWED_REPOS
         if bad:
             raise ConfigError(f"repos outside scope: {sorted(bad)}")
-        stray = set(s.authoritative) - set(s.installations)
+        stray = (set(s.authoritative) | set(s.cutover)) - set(s.installations)
         if stray:
-            raise ConfigError(f"APX_AUTHORITATIVE names repos that are not installed: {sorted(stray)}")
+            raise ConfigError(f"APX_AUTHORITATIVE / APX_CUTOVER name repos that are not installed: {sorted(stray)}")
         try:
             guardlane.validate_kit(s.kit_repo, s.kit_ref)
         except guardlane.KitError as ex:
             raise ConfigError(str(ex)) from None
         return s
 
+    def full_loop(self, repo: str) -> bool:
+        """True when apx, not Actions, runs this repo end to end: agent runs, rebases and the merge lane as well as checks."""
+        return (not self.shadow) or repo in self.cutover
+
     def contexts(self, repo: str) -> dict[str, str]:
         """Shadow names are non-required (cannot satisfy or block a merge). A repo that is authoritative, or any repo once
         shadow mode is off, posts the names its ruleset requires."""
-        if self.shadow and repo not in self.authoritative:
+        if self.shadow and repo not in self.authoritative and repo not in self.cutover:
             return {"guard": "apx / guard", "ci": "apx / build"}
         guard, ci = REQUIRED_CONTEXTS[repo]
         return {"guard": guard, "ci": ci}
@@ -196,8 +202,9 @@ def make_report(s: Settings):
 
 
 def select_automerge(s: Settings, merge):
-    """The merge lane exists only after cutover; in shadow mode Actions still merges and apx must not."""
-    return None if s.shadow else merge
+    """The merge lane exists only once some repo is cut over (the planner then offers it only for those repos); with
+    everything in shadow mode Actions still merges and apx must not."""
+    return merge if (not s.shadow or s.cutover) else None
 
 
 def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Deps:
@@ -298,8 +305,8 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
         r: {
             "default_branch": s.default_branch,
             "contexts": list(s.contexts(r).values()),
-            "merge": not s.shadow,
-            "agents": not s.shadow,
+            "merge": s.full_loop(r),
+            "agents": s.full_loop(r),
         }
         for r in s.installations
     }

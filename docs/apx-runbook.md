@@ -13,6 +13,15 @@ apx runs model output and PR code. Do not run it as your normal login.
 3. macOS has no network egress firewall per user. Until the Oracle host exists this is a **spike machine**: keep it to
    throwaway PRs on `autopilot` (see step 5), not your other repos.
 
+## Fast path: the setup helper (replaces steps 2 and 3 below)
+
+```
+python -m autopilot.apx.setup
+```
+It opens GitHub with a least-privilege manifest (click **Create GitHub App** once), writes the private key straight into
+`~/.apx/app.pem` (mode 600, never printed), waits while you install the App on the three repos (second click), writes
+`~/.apx/apx.env` (paths and ids only), and asks for the Claude token with a hidden prompt. Then run the doctor.
+
 ## 1. Tools (as `apx`)
 
 `git`, `python3` (3.11+), `openssl`, `claude` (Claude Code CLI), `pip install pyyaml`. Clone the autopilot repo read-only

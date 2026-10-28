@@ -264,6 +264,8 @@ def test_select_automerge_is_none_in_shadow_mode(tmp_path):
 
 def test_make_report_needs_both_url_and_a_private_secret_file(tmp_path):
     assert dm.make_report(dm.Settings.from_env(env(tmp_path))) is None
+    url_only = dm.Settings.from_env(env(tmp_path, APX_CONTROL_URL="https://cp.example/hook"))
+    assert dm.make_report(url_only) is None  # a URL without a signing secret must not report unsigned
     sec = tmp_path / "wh"
     sec.write_text("s\n")
     sec.chmod(0o600)

@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { readSession } from "./lib/auth";
 
-// Default deny. The webhook authenticates itself with an HMAC; login/callback must be reachable to sign in.
-const PUBLIC = [/^\/login$/, /^\/api\/auth\/(login|callback)$/, /^\/api\/github\/webhook$/, /^\/manifest\.webmanifest$/];
+// Default deny. The webhook authenticates itself with an HMAC and the cron route returns no data; login/callback must be reachable to sign in.
+const PUBLIC = [/^\/login$/, /^\/api\/auth\/(login|callback)$/, /^\/api\/github\/webhook$/, /^\/api\/cron\/keepalive$/, /^\/manifest\.webmanifest$/];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

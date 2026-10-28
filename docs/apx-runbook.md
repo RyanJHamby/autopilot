@@ -42,7 +42,18 @@ APX_KIT_REF=<an APPROVED kit sha, 40 hex>
 ```
 Start with `autopilot` only. Add `drillpad-workspace` and `stencil` after the spike passes.
 
-## 4. Dry run (changes nothing)
+## 4a. Doctor (read-only, run this first)
+
+```
+set -a; . ~/apx.env; set +a
+python -m autopilot.apx.daemon --doctor
+```
+Checks tools, key and token file permissions, that the App id matches, that the App has **only** the permissions in
+`docs/apx-app.md` (it FAILS on administration, workflows, secrets, environments or any extra permission), that it is
+installed on exactly your three repos and nothing else, and that the kit sha is on the APPROVED list. Fix every FAIL
+before going on; paste me the output if one is unclear.
+
+## 4b. Dry run (changes nothing)
 
 ```
 set -a; . ~/apx.env; set +a

@@ -266,7 +266,40 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="apx: owner-run executor (dry-run unless --live and APX_LIVE=1)")
     ap.add_argument("--once", action="store_true", help="one planning/execution pass, then exit")
     ap.add_argument("--live", action="store_true")
+    ap.add_argument("--doctor", action="store_true", help="check the whole setup (read-only) and exit")
+    ap.add_argument(
+        "--spike-check", metavar="OWNER/REPO#PR", help="after the spike, verify what it was meant to prove (read-only)"
+    )
+    ap.add_argument("--app-slug", default="autopilot-apx")
     ns = ap.parse_args(argv)
+    if ns.doctor:
+        from .doctor import render, run_doctor
+
+        try:
+            text, ok = render(run_doctor(Settings.from_env()))
+        except ConfigError as e:
+            print(f"apx config error: {e}", file=sys.stderr)
+            return 2
+        print(text)
+        return 0 if ok else 1
+    if ns.spike_check:
+        from .spike import check_spike
+        from .spike import render as render_spike
+
+        try:
+            st = Settings.from_env()
+            repo, pr = ns.spike_check.rsplit("#", 1)
+            cache = TokenCache(st.app_id, st.key_path, st.installations)
+            text, ok = render_spike(
+                check_spike(
+                    cache.api_for(repo), repo, int(pr), app_slug=ns.app_slug, expect_contexts=list(st.contexts(repo).values())
+                )
+            )
+        except (ConfigError, ValueError, KeyError) as e:
+            print(f"apx spike-check error: {type(e).__name__}: {e}", file=sys.stderr)
+            return 2
+        print(text)
+        return 0 if ok else 1
     if not ns.once:
         print("only --once is implemented; run it from a systemd timer", file=sys.stderr)
         return 2

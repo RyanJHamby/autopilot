@@ -13,6 +13,8 @@ permissions: {}
 
 jobs:
   automerge:
+    # Skipped jobs are not billed: only agent/ and dependabot/ runs can have anything to merge (the cron sweep covers the rest).
+    if: github.event_name != 'workflow_run' || startsWith(github.event.workflow_run.head_branch, 'agent/') || startsWith(github.event.workflow_run.head_branch, 'dependabot/')
     permissions:
       contents: write
       pull-requests: write

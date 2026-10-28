@@ -25,6 +25,7 @@ class Fake:
         self.issues = kw.get("issues", [])
         self.checks = kw.get("checks", {})
         self.cfg = kw.get("cfg", CFG)
+        self.base_time = kw.get("base_time", "2026-10-01T00:00:00Z")  # old by default: nothing counts as stale
         self.pulls = kw.get("pulls", {})  # number -> {"mergeable_state": ..., "labels": [...]}
         self.files = kw.get("files", {})  # number -> [filenames]
         self.writes = []
@@ -40,6 +41,8 @@ class Fake:
             return {"value": self.vars[name]}
         if "/contents/.autopilot/repo.yaml" in path:
             return {"content": base64.b64encode(self.cfg.encode()).decode()}
+        if re.match(r".*/commits/main$", path):
+            return {"commit": {"committer": {"date": self.base_time}}}
         m = re.match(r".*/pulls/(\d+)/files", path)
         if m:
             return [{"filename": f} for f in self.files.get(int(m.group(1)), [])]
@@ -288,3 +291,38 @@ def test_a_failed_actions_run_with_the_same_name_does_not_count_as_apx_having_ch
     f = F(open=[pr(1, "agent/5-1", "s1"), pr(2, "agent/6-1", "s2")])
     r = planner.plan(f, Ledger(), {REPO: {"contexts": ["guard / guard"]}}, now=NOW)[REPO]
     assert [a.ref for a in r["actions"] if a.kind == "check-pr"] == ["s1"]  # s1 only has a github-actions run; s2 has apx's
+
+
+def apx_run(name, conclusion, at):
+    return {"name": name, "app": {"slug": "autopilot-apx"}, "status": "completed", "conclusion": conclusion, "completed_at": at}
+
+
+def recheck_refs(base_time, runs, base_fails=False):
+    class F(Fake):
+        def __call__(self, method, path, body=None):
+            if base_fails and re.match(r".*/commits/main$", path):
+                raise GitHubError(500, path, "x")
+            if "/commits/s1/check-runs" in path:
+                return {"check_runs": runs}
+            return super().__call__(method, path, body)
+
+    f = F(open=[pr(1, "agent/5-1", "s1")], base_time=base_time)
+    r = planner.plan(f, Ledger(), {REPO: {"contexts": ["guard / guard", "test"]}}, now=NOW)[REPO]
+    return [a.ref for a in r["actions"] if a.kind == "check-pr"]
+
+
+def test_failed_apx_check_from_before_the_base_moved_is_retried_once():
+    stale_fail = [apx_run("guard / guard", "success", "2026-10-28T17:00:00Z"), apx_run("test", "failure", "2026-10-28T17:00:00Z")]
+    assert recheck_refs("2026-10-28T18:00:00Z", stale_fail) == ["s1"]  # main moved after the failure: look again
+    assert recheck_refs("2026-10-28T16:00:00Z", stale_fail) == []  # failure is newer than the last base move: leave it
+
+
+def test_successful_apx_checks_are_never_retried_when_the_base_moves():
+    ok = [apx_run("guard / guard", "success", "2026-10-28T17:00:00Z"), apx_run("test", "success", "2026-10-28T17:00:00Z")]
+    assert recheck_refs("2026-10-30T00:00:00Z", ok) == []
+
+
+def test_unreadable_base_time_only_disables_the_retry_not_the_checks():
+    stale_fail = [apx_run("guard / guard", "success", "2026-10-28T17:00:00Z"), apx_run("test", "failure", "2026-10-28T17:00:00Z")]
+    assert recheck_refs("x", stale_fail, base_fails=True) == []  # no retry without a base time
+    assert recheck_refs("x", [], base_fails=True) == ["s1"]  # but a PR with no apx checks is still checked

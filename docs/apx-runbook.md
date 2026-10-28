@@ -91,3 +91,12 @@ Keep `APX_SHADOW` unset (shadow on) for a week and compare apx's checks with the
 
 Cutover changes the required checks and disables the Actions callers: protected-path PRs that you merge. Not part of the
 spike.
+
+## What apx never does
+
+- It never merges while in shadow mode (`APX_SHADOW` on, the default): the merge lane only exists after a repo is cut over.
+- It only ever pushes `agent/*` branches; the committer refuses any other branch name.
+- It never holds Administration, Workflows, Secrets or Environments permissions; the doctor FAILS if the App has them.
+- It does nothing live unless you pass `--live` AND set `APX_LIVE=1`; otherwise every pass is a dry run.
+- It only works on the three configured repos (`autopilot`, `drillpad-workspace`, `stencil`); the doctor checks the App is installed on exactly those.
+- It never gives the model GitHub credentials: only the trusted committer and check reporter use the App's token.

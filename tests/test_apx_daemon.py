@@ -398,3 +398,67 @@ def test_run_once_in_shadow_mode_never_plans_an_agent_run(tmp_path, monkeypatch)
     assert not any("run-agent" in line for line in shadow)
     cut = dm.run_once(dm.Settings.from_env(env(tmp_path, APX_SHADOW="0")), api_factory=factory)
     assert any(line.startswith("DRY-RUN run-agent") for line in cut)
+
+
+def test_contexts_are_shadow_by_default_and_real_only_for_authoritative_repos(tmp_path):
+    two = "RyanJHamby/stencil=11,RyanJHamby/drillpad-workspace=11,RyanJHamby/autopilot=11"
+    s = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=two))
+    for repo in ("RyanJHamby/stencil", "RyanJHamby/drillpad-workspace", "RyanJHamby/autopilot"):
+        assert s.contexts(repo) == {"guard": "apx / guard", "ci": "apx / build"}
+    a = dm.Settings.from_env(
+        env(tmp_path, APX_INSTALLATIONS=two, APX_AUTHORITATIVE="RyanJHamby/stencil,RyanJHamby/drillpad-workspace")
+    )
+    assert a.contexts("RyanJHamby/stencil") == {"guard": "guard / guard", "ci": "build"}
+    assert a.contexts("RyanJHamby/drillpad-workspace") == {"guard": "guard / guard", "ci": "test"}
+    assert a.contexts("RyanJHamby/autopilot") == {"guard": "apx / guard", "ci": "apx / build"}  # not listed: still shadow
+    cut = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=two, APX_SHADOW="0"))
+    assert cut.contexts("RyanJHamby/stencil")["ci"] == "build" and cut.contexts("RyanJHamby/autopilot")["ci"] == "test"
+
+
+def test_authoritative_must_name_installed_repos_only(tmp_path):
+    with pytest.raises(dm.ConfigError):
+        dm.Settings.from_env(
+            env(tmp_path, APX_AUTHORITATIVE="RyanJHamby/drillpad-workspace")
+        )  # only stencil is installed in env()
+
+
+def test_authoritative_repo_checks_run_under_the_required_names_end_to_end(tmp_path, monkeypatch):
+    two = "RyanJHamby/stencil=11,RyanJHamby/autopilot=11"
+    s = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=two, APX_AUTHORITATIVE="RyanJHamby/stencil"))
+
+    def factory(token):
+        def api(method, path, body=None):
+            if path.startswith("/app/"):
+                return {"token": "t", "expires_at": "2099-01-01T00:00:00Z"}
+            assert method == "GET"
+            if "/actions/variables/AUTOPILOT_ENABLED" in path:
+                return {"value": "true"}
+            if "/actions/variables/" in path:
+                raise GitHubError(404, path, "")
+            if "contents/.autopilot/repo.yaml" in path:
+                return {"content": base64.b64encode(b"mode: standard\ntier: A\n").decode()}
+            if "/check-runs" in path:
+                return {"check_runs": []}
+            if "pulls?state=open" in path:
+                return [
+                    {
+                        "number": 3,
+                        "head": {
+                            "ref": "feature/x",
+                            "sha": "s" * 40,
+                            "repo": {"full_name": path.split("/")[2] + "/" + path.split("/")[3]},
+                        },
+                        "user": {"login": "RyanJHamby"},
+                    }
+                ]
+            return []
+
+        return api
+
+    monkeypatch.delenv("APX_LIVE", raising=False)
+    out = dm.run_once(s, api_factory=factory)
+    line = {
+        r: next(x for x in out if x.startswith(f"DRY-RUN check-pr {r}")) for r in ("RyanJHamby/stencil", "RyanJHamby/autopilot")
+    }
+    assert "missing guard / guard, build" in line["RyanJHamby/stencil"]
+    assert "missing apx / guard, apx / build" in line["RyanJHamby/autopilot"]

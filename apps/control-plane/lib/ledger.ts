@@ -50,3 +50,33 @@ export function toRunRow(event: string, payload: any): RunRow | null {
     started_at: r.run_started_at ?? r.created_at,
   };
 }
+
+/**
+ * Runs reported by the owner-run executor (apx), not by GitHub. Signed with a SEPARATE secret (APX_WEBHOOK_SECRET) so a
+ * leaked GitHub webhook secret cannot forge apx rows and vice versa. Unlike Actions rows, `turns` is the real count the
+ * executor saw, so run_points is exact rather than an upper bound. Anything malformed is dropped (null), never coerced.
+ */
+export function toApxRunRow(payload: any): RunRow | null {
+  const repo = payload?.repo;
+  const model = payload?.model;
+  const outcome = payload?.outcome;
+  const turns = payload?.turns;
+  if (typeof repo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return null;
+  if (!(model in WEIGHT)) return null;
+  if (!["success", "failure", "skipped", "cancelled"].includes(outcome)) return null;
+  if (turns !== null && turns !== undefined && !(Number.isInteger(turns) && turns >= 0 && turns <= 200)) return null;
+  const issue = payload.issue;
+  if (issue !== null && issue !== undefined && !(Number.isInteger(issue) && issue > 0)) return null;
+  const started = Date.parse(payload.started_at);
+  if (Number.isNaN(started)) return null;
+  const t = turns ?? 0;
+  return {
+    repo,
+    issue: issue ?? null,
+    runner: "apx",
+    model,
+    run_points: outcome === "skipped" || outcome === "cancelled" ? 0 : t * WEIGHT[model],
+    outcome,
+    started_at: new Date(started).toISOString(),
+  };
+}

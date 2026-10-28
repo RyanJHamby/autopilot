@@ -11,6 +11,7 @@ with fakes. Rules it enforces:
 
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -33,6 +34,8 @@ class Deps:
     work_on_issue: Callable[[str, int, int], "IssueResult"]
     # automerge(repo, pr_number, head_sha) -> (rc, output); only present once a repo is cut over from Actions
     automerge: Callable[[str, int, str], tuple[int, str]] | None = None
+    # report(repo, issue, model, turns, outcome, started_at) -> bool; best effort, failures are ignored
+    report: Callable[..., bool] | None = None
 
 
 @dataclass
@@ -87,6 +90,7 @@ def _flag_needs_human(api: Api, repo: str, issue: int) -> None:
 def run_agent(api: Api, ledger: Ledger, deps: Deps, action: Action, *, hard: bool = False) -> str:
     """Returns 'success' or 'failure'. The ledger row is closed on every path, including a crash (which re-raises)."""
     repo, issue = action.repo, int(action.ref)
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
     run_id = ledger.start(repo, issue, hard=hard)
     conclusion, model, turns = "failure", None, None
     try:
@@ -101,6 +105,11 @@ def run_agent(api: Api, ledger: Ledger, deps: Deps, action: Action, *, hard: boo
         raise
     finally:
         ledger.finish(run_id, conclusion, model=model, turns=turns)
+        if deps.report is not None:
+            try:
+                deps.report(repo, issue, model, turns, conclusion, started)
+            except Exception:  # noqa: BLE001 - reporting must never mask the run's own outcome
+                pass
     return conclusion
 
 

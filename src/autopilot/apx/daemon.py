@@ -22,7 +22,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import runner as kit_runner  # noqa: E402
 
-from . import cilane, claude_runner, committer, gitops, guardlane, mergelane  # noqa: E402
+from . import cilane, claude_runner, committer, gitops, guardlane, mergelane, report  # noqa: E402
 from .app_auth import TokenCache  # noqa: E402
 from .executor import Deps, IssueResult, execute  # noqa: E402
 from .github import Api, make_api  # noqa: E402
@@ -55,6 +55,8 @@ class Settings:
     work_dir: Path = field(default_factory=lambda: Path(tempfile.gettempdir()) / "apx-work")
     shadow: bool = True
     default_branch: str = "main"
+    control_url: str = ""
+    webhook_secret_file: str = ""
 
     @classmethod
     def from_env(cls, env: dict | None = None) -> "Settings":
@@ -72,6 +74,8 @@ class Settings:
                 db_path=e.get("APX_DB", "apx.sqlite"),
                 work_dir=Path(e.get("APX_WORK", str(Path(tempfile.gettempdir()) / "apx-work"))),
                 shadow=e.get("APX_SHADOW", "1") != "0",
+                control_url=e.get("APX_CONTROL_URL", ""),
+                webhook_secret_file=e.get("APX_WEBHOOK_SECRET_FILE", ""),
             )
         except KeyError as ex:
             raise ConfigError(f"missing setting {ex}") from None
@@ -163,6 +167,13 @@ def work_on_issue(
     return IssueResult(True, out.summary, pr_number=res["pr_number"], turns=out.usage.turns, model=d["model"])
 
 
+def make_report(s: Settings):
+    """Ledger reporting is optional: both the URL and the secret file must be configured."""
+    if not (s.control_url and s.webhook_secret_file):
+        return None
+    return report.make_reporter(s.control_url, read_secret_file(s.webhook_secret_file))
+
+
 def select_automerge(s: Settings, merge):
     """The merge lane exists only after cutover; in shadow mode Actions still merges and apx must not."""
     return None if s.shadow else merge
@@ -214,7 +225,7 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Dep
             tmp=tmp,
         )
 
-    return Deps(checkout, guard, ci, work, select_automerge(s, merge))
+    return Deps(checkout, guard, ci, work, select_automerge(s, merge), make_report(s))
 
 
 def _git_show(co: Path, spec: str) -> str:

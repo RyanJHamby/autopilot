@@ -297,7 +297,7 @@ def apx_run(name, conclusion, at):
     return {"name": name, "app": {"slug": "autopilot-apx"}, "status": "completed", "conclusion": conclusion, "completed_at": at}
 
 
-def recheck_refs(base_time, runs, base_fails=False):
+def recheck_refs(base_time, runs, base_fails=False, want_note=False):
     class F(Fake):
         def __call__(self, method, path, body=None):
             if base_fails and re.match(r".*/commits/main$", path):
@@ -308,7 +308,8 @@ def recheck_refs(base_time, runs, base_fails=False):
 
     f = F(open=[pr(1, "agent/5-1", "s1")], base_time=base_time)
     r = planner.plan(f, Ledger(), {REPO: {"contexts": ["guard / guard", "test"]}}, now=NOW)[REPO]
-    return [a.ref for a in r["actions"] if a.kind == "check-pr"]
+    refs = [a.ref for a in r["actions"] if a.kind == "check-pr"]
+    return (refs, r["note"]) if want_note else refs
 
 
 def test_failed_apx_check_from_before_the_base_moved_is_retried_once():
@@ -324,5 +325,6 @@ def test_successful_apx_checks_are_never_retried_when_the_base_moves():
 
 def test_unreadable_base_time_only_disables_the_retry_not_the_checks():
     stale_fail = [apx_run("guard / guard", "success", "2026-10-28T17:00:00Z"), apx_run("test", "failure", "2026-10-28T17:00:00Z")]
-    assert recheck_refs("x", stale_fail, base_fails=True) == []  # no retry without a base time
+    refs, note = recheck_refs("x", stale_fail, base_fails=True, want_note=True)
+    assert refs == [] and "error" not in note  # skipped deliberately, not because the planner crashed and failed closed
     assert recheck_refs("x", [], base_fails=True) == ["s1"]  # but a PR with no apx checks is still checked

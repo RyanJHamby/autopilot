@@ -328,3 +328,16 @@ def test_unreadable_base_time_only_disables_the_retry_not_the_checks():
     refs, note = recheck_refs("x", stale_fail, base_fails=True, want_note=True)
     assert refs == [] and "error" not in note  # skipped deliberately, not because the planner crashed and failed closed
     assert recheck_refs("x", [], base_fails=True) == ["s1"]  # but a PR with no apx checks is still checked
+
+
+def test_a_network_error_for_one_repo_fails_that_repo_closed_without_crashing_the_pass():
+    import urllib.error
+
+    class Offline(Fake):
+        def __call__(self, method, path, body=None):
+            if "pulls?state=open" in path:
+                raise urllib.error.URLError("nodename nor servname provided, or not known")
+            return super().__call__(method, path, body)
+
+    r = go(Offline())
+    assert r["actions"] == [] and "fail closed" in r["note"] and "URLError" in r["note"]

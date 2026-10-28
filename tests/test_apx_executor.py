@@ -193,3 +193,26 @@ def test_crashed_runs_are_still_reported_as_failures():
     d.report = lambda *a: sent.append(a) or True
     ex.execute(Api(), Ledger(), d, [Action("run-agent", REPO, "4", "")], contexts=CTX, head_refs={}, dry_run=False)
     assert sent and sent[0][4] == "failure"
+
+
+def test_a_network_error_while_posting_one_pr_check_does_not_lose_the_rest_of_the_pass():
+    import urllib.error
+
+    class Flaky(Api):
+        def __call__(self, method, path, body=None):
+            if "/check-runs" in path and "abc1234" in str(body):
+                raise urllib.error.URLError("dns")
+            return super().__call__(method, path, body)
+
+    api = Flaky()
+    other = Action("check-pr", REPO, "def5678", "PR #2")
+    log = ex.execute(
+        api,
+        Ledger(),
+        deps(),
+        [pr_action(), other],
+        contexts=CTX,
+        head_refs={(REPO, "abc1234"): "agent/5-1", (REPO, "def5678"): "agent/6-1"},
+        dry_run=False,
+    )
+    assert "failed: URLError" in log[0] and "def5678"[:7] in log[1] and "failed" not in log[1]  # the second PR still got checked

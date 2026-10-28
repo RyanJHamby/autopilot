@@ -142,3 +142,17 @@ Per repo, in order:
 
 Risk to know: apx runs the PR's code as the `apx` Mac account, which isolates files and credentials but cannot firewall the
 network. Stencil's CI runs `npm ci` with dependency install scripts; do stencil only after the Oracle host, or accept that.
+
+## Full cutover of one repo (apx replaces Actions for it)
+
+`APX_CUTOVER=<repo>[,<repo>]` in `/Users/apx/.apx/apx.env` turns on the whole loop for those repos only: required-name checks
+(like authoritative mode), plus agent runs for `agent-ready` issues, rebases (`update-branch` for behind PRs, a once-a-day
+re-run for conflicted ones), and the merge lane (the kit's `automerge.py`, same tier-0 rules). Other repos stay in shadow.
+
+Do it in this order so two systems never act on the same repo:
+1. `APX_CUTOVER` set for the repo, clone refreshed (`sudo -u apx -H git -C /Users/apx/autopilot pull --ff-only`), doctor green.
+2. Watch one agent run and one merge go through apx.
+3. Only then disable Actions for that repo (Settings > Actions > General > Disable actions, or leave the callers failing:
+   they can only fail on the spending limit). Until step 3, the kit's Actions dispatcher can still race apx on `agent-ready`
+   issues if the spending limit is ever lifted, so step 3 should follow step 2 closely.
+Rollback: remove the repo from `APX_CUTOVER`, re-enable Actions.

@@ -63,3 +63,12 @@ def test_abandon_stale_unblocks_crashed_runs():
     assert L.abandon_stale(dt.timedelta(hours=1), now=NOW) == 1
     assert L.inflight_issues("o/a") == {2}
     assert L.runs("o/a")[-1]["conclusion"] == "timed_out"
+
+
+def test_attempted_since_window_and_issue_match():
+    L = Ledger()
+    L.start("o/a", 5, now=ago(3))
+    assert L.attempted_since("o/a", 5, ago(24))
+    assert not L.attempted_since("o/a", 5, ago(1))  # started before the window
+    assert not L.attempted_since("o/a", 6, ago(24))  # other issue
+    assert not L.attempted_since("o/b", 5, ago(24))  # other repo

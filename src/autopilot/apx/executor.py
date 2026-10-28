@@ -127,6 +127,12 @@ def execute(
                 log.append(f"run-agent {a.repo} #{a.ref} {run_agent(api, ledger, deps, a)}")
             except Exception as e:  # noqa: BLE001 - one bad issue must not stop the loop
                 log.append(f"run-agent {a.repo} #{a.ref} crashed: {type(e).__name__}")
+        elif a.kind == "update-branch":
+            try:
+                api("PUT", f"/repos/{a.repo}/pulls/{int(a.ref)}/update-branch", {})
+                log.append(f"update-branch {a.repo} #{a.ref} ok")
+            except Exception as e:  # noqa: BLE001 - a PR that cannot be updated must not stop the loop
+                log.append(f"update-branch {a.repo} #{a.ref} failed: {type(e).__name__}")
         else:
             raise ValueError(f"unknown action {a.kind}")
     return log

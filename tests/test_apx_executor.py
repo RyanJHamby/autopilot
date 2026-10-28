@@ -130,3 +130,20 @@ def test_agent_crash_is_contained_flagged_and_ledger_closed():
 def test_unknown_action_kind_raises():
     with pytest.raises(ValueError):
         ex.execute(Api(), Ledger(), deps(), [Action("merge", REPO, "1")], contexts=CTX, head_refs={}, dry_run=False)
+
+
+def test_update_branch_action_puts_and_survives_failure():
+    api = Api()
+    log = ex.execute(
+        api, Ledger(), deps(), [Action("update-branch", REPO, "7", "behind")], contexts=CTX, head_refs={}, dry_run=False
+    )
+    assert api.calls == [("PUT", f"/repos/{REPO}/pulls/7/update-branch", {})] and log == [f"update-branch {REPO} #7 ok"]
+
+    class Failing(Api):
+        def __call__(self, method, path, body=None):
+            raise RuntimeError("422")
+
+    log = ex.execute(
+        Failing(), Ledger(), deps(), [Action("update-branch", REPO, "7", "")], contexts=CTX, head_refs={}, dry_run=False
+    )
+    assert "failed" in log[0]

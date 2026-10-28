@@ -1,4 +1,5 @@
 import base64
+import re
 import subprocess
 import sys
 import textwrap
@@ -192,6 +193,8 @@ def test_run_once_is_dry_run_unless_both_flags(tmp_path, monkeypatch):
                 return {"content": base64.b64encode(b"mode: standard\ntier: A\n").decode()}
             if "/check-runs" in path:
                 return {"check_runs": []}
+            if re.search(r"/pulls/\d+$", path):
+                return {"mergeable_state": "clean", "labels": []}
             if "pulls?" in path:
                 return (
                     [

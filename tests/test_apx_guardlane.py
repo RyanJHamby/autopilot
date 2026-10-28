@@ -32,6 +32,8 @@ def mkrepo(tmp_path, base_cfg="", head_files=None):
     r = tmp_path / "r"
     r.mkdir()
     git(r, "init", "-q")
+    git(r, "config", "user.email", "t@example.com")  # CI runners have no global identity
+    git(r, "config", "user.name", "t")
     base = commit(r, {"README.md": "x\n", ".autopilot/repo.yaml": base_cfg}, ref="refs/remotes/origin/main")
     git(r, "update-ref", "HEAD", base)
     head = commit(r, head_files or {}, parent=base, ref="refs/heads/work")

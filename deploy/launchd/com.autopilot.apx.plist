@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- apx timer for the dedicated `apx` Mac user. Install ONLY after the spike passes:
+       cp deploy/launchd/com.autopilot.apx.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.autopilot.apx.plist
+     Stop immediately:  launchctl bootout gui/$(id -u)/com.autopilot.apx
+     Replace REPO_DIR with the clone path. Settings come from ~/apx.env (no secrets inside, only file paths).
+     It runs the apx daemon in one-shot live mode with APX_LIVE=1, shadow mode on unless APX_SHADOW=0 is set in ~/apx.env. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.autopilot.apx</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>set -a; . "$HOME/apx.env"; set +a; export APX_LIVE=1; cd REPO_DIR &amp;&amp; exec python3 -m autopilot.apx.daemon --once --live</string>
+  </array>
+  <key>StartInterval</key><integer>120</integer>
+  <key>RunAtLoad</key><false/>
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
+  <key>Nice</key><integer>10</integer>
+  <key>StandardOutPath</key><string>/Users/apx/Library/Logs/apx.log</string>
+  <key>StandardErrorPath</key><string>/Users/apx/Library/Logs/apx.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PYTHONPATH</key><string>REPO_DIR/src</string></dict>
+</dict>
+</plist>

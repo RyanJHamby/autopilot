@@ -411,6 +411,7 @@ def test_kit_export_tree_and_leak_check(tmp_path):
         ".github/workflows/guard.yml",
         ".github/workflows/handshake.yml",
         ".github/workflows/improve.yml",
+        ".github/workflows/rebase.yml",
         "README.md",
         "runtime/automerge.py",
         "runtime/charter.py",
@@ -420,6 +421,7 @@ def test_kit_export_tree_and_leak_check(tmp_path):
         "runtime/guard.py",
         "runtime/handshake.py",
         "runtime/patchcheck.py",
+        "runtime/rebase.py",
         "runtime/retro.py",
         "runtime/runner.py",
         "runtime/tier.py",
@@ -641,7 +643,7 @@ def test_exec_flags_runs_with_no_pr_and_no_blocker():
 
 NEW_SHA = "b" * 40
 KIT_SLUG = "acme/autopilot-kit"
-CALLERS = ("agent-exec", "agent-dispatch", "guard", "handshake", "automerge", "improve", "audit")
+CALLERS = ("agent-exec", "agent-dispatch", "guard", "handshake", "automerge", "improve", "audit", "rebase")
 
 
 def _git(repo, *a):

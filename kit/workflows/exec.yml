@@ -39,7 +39,7 @@ jobs:
       EFFORT: ${{ inputs.effort }}
       MAX_TURNS: ${{ inputs.max_turns }}
     steps:
-      - name: egress audit (start; observe only, never blocks)
+      - name: egress audit (start, observe only, never blocks)
         continue-on-error: true
         run: sudo resolvectl log-level debug || true
 
@@ -174,7 +174,7 @@ jobs:
           ahead=$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${AGENT_BRANCH}" --jq .ahead_by 2>/dev/null || echo "")
           [ "$ahead" = 0 ] && gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${AGENT_BRANCH}" || true
 
-      - name: egress audit (report: hosts this run resolved)
+      - name: egress audit (report, hosts this run resolved)
         if: always()
         continue-on-error: true
         run: |

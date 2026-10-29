@@ -389,3 +389,107 @@ def test_an_unreadable_label_history_fails_closed():
 
 def test_owner_authored_issues_still_run_without_any_label_history():
     assert runs_for(Fake(issues=[issue(4)])) == ["4"]
+
+
+def ci_run(name, conclusion="failure", status="completed"):
+    return {"name": name, "status": status, "conclusion": conclusion, "app": {"slug": "autopilot-apx"}}
+
+
+class CiFake(Fake):
+    def __init__(self, runs, **kw):
+        super().__init__(**kw)
+        self.runs = runs  # sha -> check runs
+
+    def __call__(self, method, path, body=None):
+        if "/check-runs" in path:
+            return {"check_runs": self.runs.get(path.split("/commits/")[1].split("/")[0], [])}
+        return super().__call__(method, path, body)
+
+
+def fixes(f, led=None, limit=5):
+    return planner.plan_ci_fixes(f, REPO, "RyanJHamby", led or Ledger(), ["build"], limit=limit)
+
+
+RED = [ci_run("guard / guard", "success"), ci_run("build")]
+
+
+def test_a_red_ci_check_on_an_agent_pr_gets_one_fix_attempt():
+    f = CiFake({"s1": RED}, open=[pr(7, "agent/66-1", "s1")])
+    acts = fixes(f)
+    assert [(a.kind, a.ref) for a in acts] == [("fix-ci", "7:s1")] and "attempt 1" in acts[0].detail
+
+
+def test_only_a_finished_apx_ci_failure_counts():
+    f = CiFake(
+        {
+            "run": [ci_run("guard / guard", "success"), ci_run("build", None, "in_progress")],
+            "green": [ci_run("guard / guard", "success"), ci_run("build", "success")],
+            "none": [],
+            "other": [{"name": "build", "status": "completed", "conclusion": "failure", "app": {"slug": "github-actions"}}],
+        },
+        open=[pr(1, "agent/1-1", "run"), pr(2, "agent/2-1", "green"), pr(3, "agent/3-1", "none"), pr(4, "agent/4-1", "other")],
+    )
+    assert fixes(f) == []  # running, green, nothing posted, and a failure from another app: none is a verdict
+
+
+def test_a_failed_ci_check_is_not_a_verdict_while_another_apx_check_is_still_running():
+    f = CiFake({"s1": [ci_run("guard / guard", None, "in_progress"), ci_run("build")]}, open=[pr(7, "agent/66-1", "s1")])
+    assert fixes(f) == []
+
+
+def test_a_check_with_no_app_attached_is_not_ours():
+    f = CiFake({"s1": [{"name": "build", "status": "completed", "conclusion": "failure"}]}, open=[pr(7, "agent/66-1", "s1")])
+    assert fixes(f) == []
+
+
+def test_a_guard_failure_is_never_retried():
+    f = CiFake({"s1": [ci_run("guard / guard"), ci_run("build")]}, open=[pr(7, "agent/66-1", "s1")])
+    assert fixes(f) == []  # the patch broke a rule; trying again would only break it again
+
+
+def test_retries_are_capped_per_issue_and_once_per_head():
+    f = CiFake({"s1": RED}, open=[pr(7, "agent/66-1", "s1")])
+    led = Ledger()
+    led.finish(led.start(REPO, 66, kind="fix", ref="s0"), "failure")
+    assert [a.detail.endswith("attempt 2") for a in fixes(f, led)] == [True]
+    led.finish(led.start(REPO, 66, kind="fix", ref="s-older"), "failure")
+    assert fixes(f, led) == []  # two attempts made on other heads: the cap alone stops a third
+    led2 = Ledger()
+    led2.finish(led2.start(REPO, 66, kind="fix", ref="s1"), "failure")
+    assert fixes(f, led2) == []  # this exact head was already retried
+
+
+def test_fix_skips_inflight_needs_human_draft_forks_and_non_agent_prs():
+    flagged = {**pr(2, "agent/2-1", "s1"), "labels": [{"name": "needs-human"}]}
+    draft = {**pr(3, "agent/3-1", "s1"), "draft": True}
+    fork = pr(4, "agent/4-1", "s1", repo="x/y")
+    other = pr(5, "feature/x", "s1")
+    dep = pr(6, "dependabot/npm/y", "s1")
+    f = CiFake({"s1": RED}, open=[flagged, draft, fork, other, dep, pr(7, "agent/7-1", "s1")])
+    led = Ledger()
+    led.start(REPO, 7)  # in flight
+    assert fixes(f, led) == []
+
+
+def test_fix_attempts_respect_the_remaining_daily_slots():
+    f = CiFake(
+        {"s1": RED, "s2": RED, "s3": RED}, open=[pr(1, "agent/1-1", "s1"), pr(2, "agent/2-1", "s2"), pr(3, "agent/3-1", "s3")]
+    )
+    assert len(fixes(f, limit=2)) == 2 and fixes(f, limit=0) == []
+
+
+def test_an_old_ledger_file_is_upgraded_in_place(tmp_path):
+    import sqlite3
+
+    path = str(tmp_path / "l.db")
+    db = sqlite3.connect(path)
+    db.execute(
+        "create table runs (id integer primary key autoincrement, repo text not null, issue integer not null, hard integer not null default 0, created_at text not null, finished_at text, status text not null default 'in_progress', conclusion text, model text, turns integer)"
+    )
+    db.execute("insert into runs (repo, issue, created_at) values ('r', 1, '2026-01-01T00:00:00+00:00')")
+    db.commit()
+    db.close()
+    led = Ledger(path)
+    assert led.fix_attempts("r", 1) == 0
+    led.finish(led.start("r", 1, kind="fix", ref="x"), "failure")
+    assert led.fix_attempts("r", 1) == 1

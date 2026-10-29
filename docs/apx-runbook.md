@@ -217,3 +217,17 @@ Do this only after the sandbox account (above) is done. Order:
 4. Refresh both clones (`/Users/apx/autopilot` and `/Users/Shared/apx/autopilot`), then run the doctor. It now also checks the agent account from its own side.
 
 Agent runs still only start for a repo that is cut over (`APX_CUTOVER` or `APX_SHADOW=0`). Nothing starts until you choose that.
+
+## Knowing when apx has stopped (owner-only, local)
+
+apx writes `/Users/Shared/apx/status.json` after every pass (world-readable, no secrets). Check it any time, no sudo:
+
+    PYTHONPATH=/Users/Shared/apx/autopilot/src /usr/bin/python3 -m autopilot.apx.status --print
+
+To get a local macOS notification when apx stops (no pass for 15 minutes) or a pass reports a problem, install the owner's watcher once
+(it runs as you, every 5 minutes, and only shows a notification on your own screen; nothing leaves the Mac):
+
+    cp deploy/launchd/com.autopilot.apx.watch.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.autopilot.apx.watch.plist
+
+You are told once per distinct problem and once when it clears. Phone push needs the control-plane webhook secret (backlog O3).

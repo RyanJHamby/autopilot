@@ -33,7 +33,7 @@ def test_check_run_payload_and_truncation():
     assert b["name"] == "guard / guard" and b["conclusion"] == "failure" and b["status"] == "completed"
     assert len(b["output"]["summary"]) < 65535 and b["details_url"] == "http://u"
     checks.post_check(a, "o/r", "abc", "build", True, "")
-    assert a.calls[1][2]["conclusion"] == "success" and a.calls[1][2]["output"]["summary"] == "build"
+    assert a.calls[1][2]["conclusion"] == "success" and a.calls[1][2]["output"]["summary"].startswith("build")
     checks.post_pending(a, "o/r", "abc", "guard / guard")
     assert a.calls[2][2]["status"] == "in_progress" and "conclusion" not in a.calls[2][2]
 
@@ -110,3 +110,26 @@ def test_changes_from_worktree_refuses_symlink(tmp_path):
     (tmp_path / "ln").symlink_to("keep.txt")
     with pytest.raises(ValueError):
         committer.changes_from_worktree(tmp_path, "HEAD")
+
+
+def test_every_check_summary_names_the_apx_version_that_produced_it():
+    a = FakeApi()
+    checks.post_check(a, "o/r", "abc", "guard / guard", True, "autopilot guard: clean")
+    summary = a.calls[0][2]["output"]["summary"]
+    assert summary.startswith("autopilot guard: clean") and summary.rstrip().endswith("_")
+    assert f"_apx {checks.code_version()}_" in summary
+    assert checks.code_version() != "" and len(checks.code_version()) <= 40
+
+
+def test_a_missing_git_checkout_gives_unknown_not_a_crash(monkeypatch):
+    monkeypatch.setattr(checks, "_version", None)
+
+    def boom(*a, **k):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(checks.subprocess, "run", boom)
+    assert checks.code_version() == "unknown"
+    a = FakeApi()
+    checks.post_check(a, "o/r", "abc", "build", True, "ok")  # the check still posts
+    assert a.calls[0][2]["conclusion"] == "success"
+    monkeypatch.setattr(checks, "_version", None)

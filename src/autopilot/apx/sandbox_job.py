@@ -12,6 +12,7 @@ result:   {guard: [ok, text], ci: [ok, markdown] | null}      (ci is null when t
 
 from __future__ import annotations
 
+import getpass
 import json
 import os
 import sys
@@ -31,13 +32,14 @@ def run_job(req: dict, token: str | None) -> dict:
     g_ok, g_out = guardlane.run_guard(
         co, Path(req["kit_dir"]), base=f"origin/{req['base_branch']}", head="HEAD", head_ref=req["head_ref"], tmp=tmp
     )
+    who = getpass.getuser()  # reported so the orchestrator can verify this really ran as the sandbox account
     if not g_ok:
-        return {"guard": [False, g_out], "ci": None}  # a rejected PR's code is never executed
+        return {"guard": [False, g_out], "ci": None, "user": who}  # a rejected PR's code is never executed
     steps = [(c, d) for c, d in req["steps"]]
     home = Path(tempfile.mkdtemp(dir=root))
     res = cilane.run_commands(co, steps, home=home, toolchain_links=list(req.get("toolchain_links", [])), real_home=Path.home())
     ok, md = cilane.summarize(res, steps)
-    return {"guard": [True, g_out], "ci": [ok, md]}
+    return {"guard": [True, g_out], "ci": [ok, md], "user": who}
 
 
 def main() -> int:

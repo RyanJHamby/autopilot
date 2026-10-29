@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 from .github import Api
+from .redact import redact
 
 MAX_TEXT = 60000  # the Checks API caps summary/text at 65535 chars
 _version: str | None = None
@@ -37,7 +38,7 @@ def code_version() -> str:
 
 
 def _clip(s: str) -> str:
-    body = s if len(s) <= MAX_TEXT else s[:MAX_TEXT] + "\n...[truncated]"
+    body = redact(s if len(s) <= MAX_TEXT else s[:MAX_TEXT] + "\n...[truncated]")
     return f"{body}\n\n_apx {code_version()}_"
 
 

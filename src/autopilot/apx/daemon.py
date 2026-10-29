@@ -30,6 +30,7 @@ from .executor import Deps, IssueResult, execute  # noqa: E402
 from .github import Api, make_api  # noqa: E402
 from .ledger import Ledger  # noqa: E402
 from .planner import ALLOWED_REPOS, Action, load_cfg, plan  # noqa: E402
+from .redact import register  # noqa: E402
 
 
 class ConfigError(RuntimeError):
@@ -301,7 +302,29 @@ def run_once(s: Settings, *, live: bool = False, api_factory=make_api) -> list[s
         return _run_once_locked(s, live=live, api_factory=api_factory)
 
 
+def private_repos(api: Api, repos) -> frozenset:
+    """Repos confirmed private by the API. Anything we cannot confirm is treated as public, so its output is withheld."""
+    out = set()
+    for r in repos:
+        try:
+            if api("GET", f"/repos/{r}").get("private") is True:  # type: ignore[union-attr]
+                out.add(r)
+        except Exception:  # noqa: BLE001
+            pass
+    return frozenset(out)
+
+
+def _register_known_secrets(s: Settings) -> None:
+    for path in (s.oauth_file, s.webhook_secret_file):
+        try:
+            if path:
+                register(read_secret_file(path))
+        except Exception:  # noqa: BLE001 - redaction setup must never stop a pass
+            pass
+
+
 def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
+    _register_known_secrets(s)
     gitops.prune_work(s.work_dir)
     really_live = live and os.environ.get("APX_LIVE") == "1"
     cache = TokenCache(s.app_id, s.key_path, s.installations, api_factory=api_factory)
@@ -329,7 +352,16 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
             heads[(repo, pr["head"]["sha"])] = pr["head"]["ref"]
     deps = build_deps(s, api, cache.token_for, details)
     ctx = {r: s.contexts(r) for r in s.installations}
-    return log + execute(api, ledger, deps, actions, contexts=ctx, head_refs=heads, dry_run=False)
+    return log + execute(
+        api,
+        ledger,
+        deps,
+        actions,
+        contexts=ctx,
+        head_refs=heads,
+        dry_run=False,
+        private_repos=private_repos(api, s.installations),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

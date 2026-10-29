@@ -53,6 +53,18 @@ def test_timeout_and_missing_command(tmp_path):
     assert r[0].note == "command not found"
 
 
+def test_a_command_that_fails_with_permission_denied_is_a_failed_step_not_a_crash(tmp_path, monkeypatch):
+    # on the apx-ci account a missing command raised PermissionError (an unreadable PATH entry), which crashed the lane
+    def boom(*a, **k):
+        raise PermissionError(13, "Permission denied", "x")
+
+    monkeypatch.setattr(cilane.subprocess, "run", boom)
+    home = tmp_path / "h"
+    home.mkdir()
+    r = cilane.run_commands(tmp_path, ["whatever"], home=home)
+    assert not r[0].ok and r[0].note == "command not found"
+
+
 def test_empty_plan_is_not_a_pass():
     ok, md = cilane.summarize([], [])
     assert not ok and "nothing was checked" in md

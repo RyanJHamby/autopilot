@@ -117,7 +117,7 @@ def run_commands(
             )
         except subprocess.TimeoutExpired:
             results.append(CmdResult(label, False, time.monotonic() - t0, "", f"timed out after {timeout_each}s"))
-        except FileNotFoundError:
+        except (FileNotFoundError, PermissionError):  # EACCES: execvp reports an unreadable PATH entry this way
             results.append(CmdResult(label, False, time.monotonic() - t0, "", "command not found"))
         if not results[-1].ok:
             break

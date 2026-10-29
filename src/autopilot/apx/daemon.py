@@ -157,7 +157,7 @@ def routed_api(cache: TokenCache) -> Api:
     """One callable that picks the right installation token from the /repos/{owner}/{name}/ prefix of each path."""
 
     def api(method: str, path: str, body: dict | None = None):
-        m = re.match(r"^/repos/([^/]+/[^/]+)/", path)
+        m = re.match(r"^/repos/([^/]+/[^/]+)(?:/|$)", path)
         if not m:
             raise ValueError(f"unroutable path {path}")
         return cache.api_for(m.group(1))(method, path, body)

@@ -144,3 +144,20 @@ def test_public_or_unknown_repos_get_no_raw_output_but_confirmed_private_repos_d
     assert "RAW_TAIL_OUTPUT" not in _posted_ci_summary(frozenset({"other/repo"}))
     assert "- FAIL `pytest` (1s)" in _posted_ci_summary(None)  # the step line survives
     assert "RAW_TAIL_OUTPUT" in _posted_ci_summary(frozenset({"o/r"}))
+
+
+def test_output_containing_its_own_backtick_fences_cannot_leak_past_the_withheld_note():
+    # real case: a failing lint run echoed source lines that themselves contain triple backticks
+    raw = 'x = re.findall(r"^```mermaid\\n(.*?)^```", TEXT)\nSECRET_TAIL_AFTER_INNER_FENCE'
+    md = "- FAIL `ruff` (1s) - exit 1\n\n```\n" + raw + "\n```"
+    out = redact.strip_output_blocks(md)
+    assert "SECRET_TAIL_AFTER_INNER_FENCE" not in out and "mermaid" not in out and "x = re" not in out
+    assert out.startswith("- FAIL `ruff` (1s) - exit 1") and out.endswith(
+        redact.WITHHELD
+    )  # step line kept, nothing after the note
+
+
+def test_summaries_without_a_fence_are_untouched():
+    plain = "- PASS `uv sync` (1s)\n- PASS `pytest` (2s)"
+    assert redact.strip_output_blocks(plain) == plain
+    assert redact.strip_output_blocks("autopilot guard: clean") == "autopilot guard: clean"

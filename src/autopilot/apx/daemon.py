@@ -32,7 +32,7 @@ from .ledger import Ledger  # noqa: E402
 from .planner import ALLOWED_REPOS, Action, load_cfg, plan  # noqa: E402
 from .redact import register  # noqa: E402
 from .runas import Launcher  # noqa: E402
-from .sandbox import SandboxLanes  # noqa: E402
+from .sandbox import SandboxLanes, run_agent_in_sandbox  # noqa: E402
 
 
 class ConfigError(RuntimeError):
@@ -80,6 +80,8 @@ class Settings:
     ci_work: str = "/Users/apx-ci/work"
     shared_dir: str = "/Users/Shared/apx"
     agent_user: str = ""
+    agent_work: str = ""  # default /Users/<agent_user>/work
+    agent_binary: str = ""  # default /Users/<agent_user>/.local/bin/claude
 
     @classmethod
     def from_env(cls, env: dict | None = None) -> "Settings":
@@ -91,7 +93,9 @@ class Settings:
                 app_id=e["APX_APP_ID"],
                 key_path=Path(e["APX_KEY_PATH"]),
                 installations={k: int(v) for k, v in inst.items()},
-                oauth_file=e["APX_OAUTH_FILE"],
+                # with a dedicated agent account the token lives in ITS home and the orchestrator never reads it
+                oauth_file=e.get("APX_OAUTH_FILE")
+                or (f"/Users/{e['APX_AGENT_USER']}/.apx/claude-oauth" if e.get("APX_AGENT_USER") else e["APX_OAUTH_FILE"]),
                 kit_repo=e["APX_KIT_REPO"],
                 kit_ref=e["APX_KIT_REF"],
                 db_path=e.get("APX_DB", "apx.sqlite"),
@@ -106,6 +110,8 @@ class Settings:
                 ci_work=e.get("APX_CI_WORK", "/Users/apx-ci/work"),
                 shared_dir=e.get("APX_SHARED", "/Users/Shared/apx"),
                 agent_user=e.get("APX_AGENT_USER", ""),
+                agent_work=e.get("APX_AGENT_WORK", ""),
+                agent_binary=e.get("APX_AGENT_BINARY", ""),
             )
         except KeyError as ex:
             raise ConfigError(f"missing setting {ex}") from None
@@ -176,8 +182,12 @@ def work_on_issue(
     *,
     binary: str = "claude",
     url: str | None = None,
+    read_token_for=None,
+    run_agent=None,
 ) -> IssueResult:
-    """Issue -> worktree -> untrusted model -> trusted patch check -> trusted signed commit and PR. Never merges."""
+    """Issue -> worktree -> untrusted model -> trusted patch check -> trusted signed commit and PR. Never merges.
+    With a dedicated agent account the model runs there (holding only the Claude token and a read-only repo token) and its changes
+    come back as data; this account then makes the commit."""
     d = parse_detail(detail)
     iss = api("GET", f"/repos/{repo}/issues/{issue}")
     comments = api("GET", f"/repos/{repo}/issues/{issue}/comments?per_page=100")
@@ -191,24 +201,57 @@ def work_on_issue(
         claude_runner.owner_comments(comments, s.owner),  # type: ignore[index,arg-type]
     )
     head = api("GET", f"/repos/{repo}/git/ref/heads/{s.default_branch}")["object"]["sha"]  # type: ignore[index]
-    wt = s.work_dir / f"{repo.replace('/', '_')}-{issue}-{run_id}"
-    gitops.checkout_pr(repo, head, s.default_branch, wt, token_for(repo), url=url, root=s.work_dir)
-    home = s.work_dir / f"home-{run_id}"
-    home.mkdir(parents=True, exist_ok=True)
-    r = claude_runner.ClaudeRunner(
-        read_secret_file(s.oauth_file), home=home, commands=commands, prompt=prompt, effort=d["effort"], binary=binary
-    )
-    out = kit_runner.process(r, kit_runner.Task(issue=issue, prompt="", model=d["model"], max_turns=d["turns"]), wt)
-    if not out.ok:
-        return IssueResult(False, out.summary, "; ".join(out.violations), turns=out.usage.turns, model=d["model"])
-    changes = committer.changes_from_worktree(wt, head)
+    if s.agent_user:
+        if read_token_for is None:
+            raise ConfigError("an agent account is configured but no read-only token source was provided")
+        req = {
+            "repo": repo,
+            "base_sha": head,
+            "base_branch": s.default_branch,
+            "issue": issue,
+            "prompt": prompt,
+            "model": d["model"],
+            "effort": d["effort"],
+            "max_turns": d["turns"],
+            "commands": commands,
+            "work_root": s.agent_work or f"/Users/{s.agent_user}/work",
+            "binary": s.agent_binary or f"/Users/{s.agent_user}/.local/bin/claude",
+        }
+        run = run_agent or (
+            lambda r, tok: run_agent_in_sandbox(
+                Launcher(s.agent_user),
+                r,
+                tok,
+                python=f"{s.shared_dir}/venv/bin/python",
+                code_dir=f"{s.shared_dir}/autopilot",
+                home=f"/Users/{s.agent_user}",
+            )
+        )
+        res, changes = run(req, read_token_for(repo))
+        if not res.get("ok"):
+            why = "; ".join(res.get("violations") or []) or res.get("error", "agent run failed")
+            return IssueResult(False, res.get("summary", ""), why, turns=res.get("turns"), model=d["model"])
+        summary, turns = res.get("summary", ""), res.get("turns")
+    else:
+        wt = s.work_dir / f"{repo.replace('/', '_')}-{issue}-{run_id}"
+        gitops.checkout_pr(repo, head, s.default_branch, wt, token_for(repo), url=url, root=s.work_dir)
+        home = s.work_dir / f"home-{run_id}"
+        home.mkdir(parents=True, exist_ok=True)
+        r = claude_runner.ClaudeRunner(
+            read_secret_file(s.oauth_file), home=home, commands=commands, prompt=prompt, effort=d["effort"], binary=binary
+        )
+        out = kit_runner.process(r, kit_runner.Task(issue=issue, prompt="", model=d["model"], max_turns=d["turns"]), wt)
+        if not out.ok:
+            return IssueResult(False, out.summary, "; ".join(out.violations), turns=out.usage.turns, model=d["model"])
+        changes = committer.changes_from_worktree(wt, head)
+        summary, turns = out.summary, out.usage.turns
     branch = f"agent/{issue}-{run_id}"
     body = (
-        f"Refs #{issue}\n\n{out.summary[-3000:]}\n\n"
+        f"Refs #{issue}\n\n{summary[-3000:]}\n\n"
         "Opened by apx (the owner-run executor); patch passed the kit guard before commit.\n\n"
         "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
     )
-    res = committer.commit_and_pr(
+    pr = committer.commit_and_pr(
         api,
         repo,
         head,
@@ -219,7 +262,7 @@ def work_on_issue(
         body=body,
         base_branch=s.default_branch,
     )
-    return IssueResult(True, out.summary, pr_number=res["pr_number"], turns=out.usage.turns, model=d["model"])
+    return IssueResult(True, summary, pr_number=pr["pr_number"], turns=turns, model=d["model"])
 
 
 def make_report(s: Settings):
@@ -245,7 +288,7 @@ def select_automerge(s: Settings, merge):
     return merge if (not s.shadow or s.cutover) else None
 
 
-def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Deps:
+def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_token_for=None) -> Deps:
     # with a sandbox account the kit lives where that account can read it; otherwise next to the rest of the work
     kit_root = Path(s.shared_dir) / "kit" if s.ci_user else s.work_dir / "kit"
     kit = guardlane.fetch_kit(s.kit_repo, s.kit_ref, kit_root / s.kit_ref)
@@ -284,7 +327,9 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Dep
         return ci_lane(s, co)
 
     def work(repo: str, issue: int, run_id: int) -> IssueResult:
-        return work_on_issue(s, api, token_for, repo, issue, run_id, details.get(f"{repo}#{issue}", ""))
+        return work_on_issue(
+            s, api, token_for, repo, issue, run_id, details.get(f"{repo}#{issue}", ""), read_token_for=read_token_for
+        )
 
     def merge(repo: str, pr: int, sha: str) -> tuple[int, str]:
         # default-branch checkout, so the merge policy is what the owner merged, never the PR's copy
@@ -358,7 +403,8 @@ def private_repos(api: Api, repos) -> frozenset:
 
 
 def _register_known_secrets(s: Settings) -> None:
-    for path in (s.oauth_file, s.webhook_secret_file):
+    # with an agent account the orchestrator cannot (and must not) read the Claude token
+    for path in (s.webhook_secret_file,) if s.agent_user else (s.oauth_file, s.webhook_secret_file):
         try:
             if path:
                 register(read_secret_file(path))
@@ -394,7 +440,7 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     for repo in s.installations:
         for pr in api("GET", f"/repos/{repo}/pulls?state=open&per_page=100"):  # type: ignore[union-attr]
             heads[(repo, pr["head"]["sha"])] = pr["head"]["ref"]
-    deps = build_deps(s, api, cache.token_for, details)
+    deps = build_deps(s, api, cache.token_for, details, read_token_for=cache.read_token_for)
     ctx = {r: s.contexts(r) for r in s.installations}
     return log + execute(
         api,

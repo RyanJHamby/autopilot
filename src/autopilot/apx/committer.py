@@ -78,3 +78,31 @@ def commit_and_pr(
     api("POST", f"/repos/{repo}/git/refs", {"ref": f"refs/heads/{branch}", "sha": commit["sha"]})
     pr = api("POST", f"/repos/{repo}/pulls", {"title": title, "head": branch, "base": base_branch, "body": body})
     return {"commit": commit["sha"], "pr_number": pr["number"]}
+
+
+class StaleHeadError(RuntimeError):
+    """The branch moved (or is not the head we were asked to fix) so the fix is discarded rather than applied on top of it."""
+
+
+def commit_to_branch(api: Api, repo: str, branch: str, expected_head: str, changes: list[FileChange], *, message: str) -> str:
+    """Add one commit on top of `expected_head` to an EXISTING agent/* branch. Compare-and-set: refuses if the branch is no longer
+    at expected_head, and the ref update is a plain fast-forward (never force). Returns the new commit sha."""
+    if not branch.startswith("agent/"):
+        raise ValueError("apx only pushes agent/* branches")
+    if not changes:
+        raise ValueError("nothing to commit")
+    current = api("GET", f"/repos/{repo}/git/ref/heads/{branch}")["object"]["sha"]
+    if current != expected_head:
+        raise StaleHeadError(f"{branch} is at {current[:7]}, expected {expected_head[:7]}")
+    base_commit = api("GET", f"/repos/{repo}/git/commits/{expected_head}")
+    entries = []
+    for c in changes:
+        if c.content is None:
+            entries.append({"path": c.path, "mode": c.mode, "type": "blob", "sha": None})
+            continue
+        blob = api("POST", f"/repos/{repo}/git/blobs", {"content": base64.b64encode(c.content).decode(), "encoding": "base64"})
+        entries.append({"path": c.path, "mode": c.mode, "type": "blob", "sha": blob["sha"]})
+    tree = api("POST", f"/repos/{repo}/git/trees", {"base_tree": base_commit["tree"]["sha"], "tree": entries})
+    commit = api("POST", f"/repos/{repo}/git/commits", {"message": message, "tree": tree["sha"], "parents": [expected_head]})
+    api("PATCH", f"/repos/{repo}/git/refs/heads/{branch}", {"sha": commit["sha"], "force": False})
+    return commit["sha"]

@@ -493,3 +493,18 @@ def test_an_old_ledger_file_is_upgraded_in_place(tmp_path):
     assert led.fix_attempts("r", 1) == 0
     led.finish(led.start("r", 1, kind="fix", ref="x"), "failure")
     assert led.fix_attempts("r", 1) == 1
+
+
+def test_plan_puts_red_ci_fixes_before_new_issues_and_they_share_the_daily_cap():
+    f = CiFake({"s1": RED}, open=[pr(7, "agent/66-1", "s1")], issues=[issue(10), issue(11)])
+    meta = {REPO: {"contexts": ["guard / guard", "build"], "agents": True, "loop": True, "ci_contexts": ["build"]}}
+    acts = planner.plan(f, Ledger(), meta, now=NOW)[REPO]["actions"]
+    kinds_ = [(a.kind, a.ref) for a in acts if a.kind in ("fix-ci", "run-agent")]
+    assert kinds_[0] == ("fix-ci", "7:s1")  # finishing an open PR comes before starting new work
+    fix = acts[[a.kind for a in acts].index("fix-ci")]
+    assert "model=" in fix.detail and "turns=" in fix.detail  # the executor needs the gate's model settings
+    total = [a for a in acts if a.kind in ("fix-ci", "run-agent")]
+    cap = planner.gate.decide(planner.yaml.safe_load(CFG), [], 1, role="implementer", now=NOW).remaining
+    assert len(total) <= cap  # fixes plus new runs never exceed what the daily cap leaves
+    without = planner.plan(f, Ledger(), {REPO: {**meta[REPO], "ci_contexts": None}}, now=NOW)[REPO]["actions"]
+    assert not [a for a in without if a.kind == "fix-ci"]  # no CI context configured: no fixes

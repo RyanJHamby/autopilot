@@ -30,7 +30,7 @@ from .executor import Deps, IssueResult, execute  # noqa: E402
 from .github import Api, make_api  # noqa: E402
 from .ledger import Ledger  # noqa: E402
 from .planner import ALLOWED_REPOS, Action, load_cfg, plan  # noqa: E402
-from .redact import register  # noqa: E402
+from .redact import redact, register  # noqa: E402
 from .runas import Launcher  # noqa: E402
 from .sandbox import SandboxLanes, run_agent_in_sandbox  # noqa: E402
 
@@ -265,6 +265,94 @@ def work_on_issue(
     return IssueResult(True, summary, pr_number=pr["pr_number"], turns=turns, model=d["model"])
 
 
+def failing_ci_text(api: Api, repo: str, sha: str, ci_contexts: list[str], limit: int = 4000) -> str:
+    """What apx itself reported for the failing CI check on this head (only checks posted by the apx App). On a public repo that is
+    step names and timings; on a private one it includes the redacted tail of the failing command."""
+    runs = api("GET", f"/repos/{repo}/commits/{sha}/check-runs?per_page=100")["check_runs"]  # type: ignore[index]
+    out = [
+        f"{c['name']}: {c.get('conclusion')}\n{(c.get('output') or {}).get('summary') or ''}"
+        for c in runs
+        if (c.get("app") or {}).get("slug") == "autopilot-apx" and c["name"] in ci_contexts and c.get("conclusion") == "failure"
+    ]
+    return redact("\n\n".join(out))[:limit] or "(no failure text was available)"
+
+
+def fix_pr(
+    s: Settings,
+    api: Api,
+    repo: str,
+    issue: int,
+    pr_number: int,
+    head_sha: str,
+    detail: str,
+    ci_contexts: list[str],
+    *,
+    read_token_for,
+    run_agent=None,
+) -> IssueResult:
+    """Red CI on an agent PR -> the model (as the agent account) edits a checkout of the PR head -> apx adds one commit to that same branch.
+    Needs the dedicated agent account: a fix never runs the model in the orchestrator's account."""
+    if not s.agent_user:
+        raise ConfigError("fixing a PR needs a dedicated agent account")
+    if read_token_for is None:
+        raise ConfigError("an agent account is configured but no read-only token source was provided")
+    d = parse_detail(detail)
+    pr = api("GET", f"/repos/{repo}/pulls/{pr_number}")
+    branch = pr["head"]["ref"]  # type: ignore[index]
+    iss = api("GET", f"/repos/{repo}/issues/{issue}")
+    comments = api("GET", f"/repos/{repo}/issues/{issue}/comments?per_page=100")
+    commands = cilane.parse_commands(load_cfg(api, repo, s.default_branch))
+    prompt = claude_runner.build_fix_prompt(
+        repo,
+        issue,
+        iss["title"],  # type: ignore[index]
+        iss.get("body") or "",  # type: ignore[union-attr]
+        claude_runner.owner_comments(comments, s.owner),  # type: ignore[arg-type]
+        failing_ci_text(api, repo, head_sha, ci_contexts),
+    )
+    req = {
+        "repo": repo,
+        "base_sha": head_sha,
+        "base_branch": s.default_branch,
+        "issue": issue,
+        "prompt": prompt,
+        "model": d["model"],
+        "effort": d["effort"],
+        "max_turns": d["turns"],
+        "commands": commands,
+        "work_root": s.agent_work or f"/Users/{s.agent_user}/work",
+        "binary": s.agent_binary or f"/Users/{s.agent_user}/.local/bin/claude",
+    }
+    run = run_agent or (
+        lambda r, tok: run_agent_in_sandbox(
+            Launcher(s.agent_user),
+            r,
+            tok,
+            python=f"{s.shared_dir}/venv/bin/python",
+            code_dir=f"{s.shared_dir}/autopilot",
+            home=f"/Users/{s.agent_user}",
+        )
+    )
+    res, changes = run(req, read_token_for(repo))
+    if not res.get("ok"):
+        why = "; ".join(res.get("violations") or []) or res.get("error", "agent run failed")
+        return IssueResult(False, res.get("summary", ""), why, turns=res.get("turns"), model=d["model"])
+    if not changes:
+        return IssueResult(False, res.get("summary", ""), "the model made no change", turns=res.get("turns"), model=d["model"])
+    try:
+        committer.commit_to_branch(
+            api,
+            repo,
+            branch,
+            head_sha,
+            changes,
+            message=f"Fix CI for #{issue} (attempt by apx)\n\nRefs #{issue}\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+        )
+    except committer.StaleHeadError as e:
+        return IssueResult(False, res.get("summary", ""), str(e), turns=res.get("turns"), model=d["model"])
+    return IssueResult(True, res.get("summary", ""), pr_number=pr_number, turns=res.get("turns"), model=d["model"])
+
+
 def make_report(s: Settings):
     """Ledger reporting is optional: both the URL and the secret file must be configured."""
     if not (s.control_url and s.webhook_secret_file):
@@ -355,7 +443,12 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_t
             tmp=tmp,
         )
 
-    return Deps(sb_checkout or checkout, sb_guard or guard, sb_ci or ci, work, select_automerge(s, merge), make_report(s))
+    def fix(repo: str, issue: int, run_id: int, pr: int, sha: str, detail: str) -> IssueResult:
+        return fix_pr(s, api, repo, issue, pr, sha, detail, [s.contexts(repo)["ci"]], read_token_for=read_token_for)
+
+    return Deps(
+        sb_checkout or checkout, sb_guard or guard, sb_ci or ci, work, select_automerge(s, merge), make_report(s), fix_ci=fix
+    )
 
 
 def _git_show(co: Path, spec: str) -> str:
@@ -427,6 +520,7 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
             "loop": s.full_loop(r),
             "merge": s.full_loop(r),
             "agents": s.agents_allowed(r),
+            "ci_contexts": [s.contexts(r)["ci"]],
         }
         for r in s.installations
     }

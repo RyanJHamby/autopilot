@@ -23,6 +23,7 @@ def run_in_sandbox(
     code_dir: str,
     home: str,
     timeout: int = 3600,
+    module: str = "autopilot.apx.sandbox_job",
 ) -> dict:
     env = {
         "PYTHONPATH": f"{code_dir}/src",
@@ -35,7 +36,7 @@ def run_in_sandbox(
     secret = {"APX_GIT_TOKEN": token} if token else {}
     try:
         p = launcher.run(
-            [python, "-m", "autopilot.apx.sandbox_job"],
+            [python, "-m", module],
             cwd=req["work_root"],
             env=env,
             secret_env=secret,
@@ -120,3 +121,34 @@ class SandboxLanes:
         if not ci:
             return False, "not run: guard failed"
         return bool(ci[0]), f"{ci[1]}\n\n_ran as {res['user']}_"
+
+
+def run_agent_in_sandbox(
+    launcher: Launcher,
+    req: dict,
+    read_token: str | None,
+    *,
+    python: str,
+    code_dir: str,
+    home: str,
+    expected_user: str | None = None,
+    timeout: int = 3600,
+) -> tuple[dict, list]:
+    """Run the model as the agent account and return (result, changes as committer.FileChange). A result from the wrong account is
+    refused: the model must only ever run with the agent account's privileges."""
+    import base64
+
+    from .committer import FileChange
+
+    res = run_in_sandbox(
+        launcher, req, read_token, python=python, code_dir=code_dir, home=home, timeout=timeout, module="autopilot.apx.agent_job"
+    )
+    want = expected_user or launcher.user
+    if "error" not in res and res.get("user") != want:
+        return {"ok": False, "error": f"agent ran as {res.get('user')!r}, expected {want!r}; result refused"}, []
+    if "error" in res:
+        return {"ok": False, **res}, []
+    changes = [
+        FileChange(c["path"], c["mode"], None if c["b64"] is None else base64.b64decode(c["b64"])) for c in res.get("changes", [])
+    ]
+    return res, changes

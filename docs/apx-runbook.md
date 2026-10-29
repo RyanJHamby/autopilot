@@ -195,3 +195,25 @@ It uses your own `gh` login (the edit needs admin). It changes only `integration
 bypass actors and conditions are sent back unchanged. It **refuses** unless apx has posted those checks successfully on the repo's recent PRs,
 because pinning a repo whose checks still come from Actions would stop every merge. Do drillpad-workspace first; autopilot and stencil only
 after apx is authoritative there. If apx stops, pinned PRs cannot merge until you undo the pin or use your admin bypass: that is the point.
+
+## The model's own account: agent runs (backlog S1b)
+
+The model runs as a third account, `apx-agent`, that holds **only the Claude token**. It gets a short-lived, read-only, single-repository token for each
+checkout and never sees the App key, so even a fully prompt-injected agent cannot write to GitHub; its edits come back as data and `apx` makes the
+commit. The account that runs a PR's code (`apx-ci`) cannot read the model's token, and `apx` itself stops holding the Claude token.
+
+Do this only after the sandbox account (above) is done. Order:
+1. Merge the PR that adds this section (so the shared code copy contains the agent job).
+2. Preview, then run, in **Terminal.app** (the real run prompts for a password for the new account):
+   ```
+   DRY_RUN=1 bash deploy/apx-agent-account.sh
+   sudo bash deploy/apx-agent-account.sh
+   ```
+   It creates `apx-agent`, installs the `claude` CLI into its home, **moves** your Claude token into its home (mode 0600), installs one
+   syntax-checked sudoers rule, and proves the separation from every side: `apx-agent` cannot read the App key or the apx home, `apx-ci` cannot read the
+   model's token, `apx-agent` can read its own token and run `claude`. Only after those pass does it delete `apx`'s old copy of the token
+   (set `KEEP_OLD_TOKEN=1` to skip that).
+3. As `apx`, add `APX_AGENT_USER=apx-agent` to `/Users/apx/.apx/apx.env` and delete any `APX_OAUTH_FILE` line.
+4. Refresh both clones (`/Users/apx/autopilot` and `/Users/Shared/apx/autopilot`), then run the doctor. It now also checks the agent account from its own side.
+
+Agent runs still only start for a repo that is cut over (`APX_CUTOVER` or `APX_SHADOW=0`). Nothing starts until you choose that.

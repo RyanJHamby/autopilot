@@ -47,6 +47,23 @@ class TokenCache:
         self.app_id, self.key_path, self.installations = app_id, key_path, installations
         self.clock, self.api_factory = clock, api_factory
         self._tokens: dict[str, Token] = {}
+        self._read_tokens: dict[str, Token] = {}
+
+    def read_token_for(self, repo: str) -> str:
+        """A token for the account that runs the MODEL: read-only (contents + metadata) and limited to this one repository. Even if the
+        model leaks it, it can read one repo for an hour and can write nothing. GitHub lets an App request a token with fewer
+        permissions than the installation has."""
+        t = self._read_tokens.get(repo)
+        if t and t.expires_at - self.clock() > REFRESH_MARGIN:
+            return t.value
+        if repo not in self.installations:
+            raise KeyError(f"no installation id configured for {repo}")
+        jwt_api: Api = self.api_factory(make_jwt(self.app_id, self.key_path, now=int(self.clock())))
+        body = {"repositories": [repo.split("/", 1)[1]], "permissions": {"contents": "read", "metadata": "read"}}
+        r = jwt_api("POST", f"/app/installations/{self.installations[repo]}/access_tokens", body)
+        self._read_tokens[repo] = Token(r["token"], _parse_iso(r["expires_at"]))  # type: ignore[index]
+        register(r["token"])  # type: ignore[index]
+        return r["token"]  # type: ignore[index]
 
     def token_for(self, repo: str) -> str:
         t = self._tokens.get(repo)

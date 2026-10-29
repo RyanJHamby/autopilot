@@ -674,3 +674,146 @@ def test_build_deps_uses_the_sandbox_lanes_only_when_a_ci_account_is_configured(
     assert isinstance(boxed.guard.__self__, SandboxLanes) and isinstance(boxed.checkout.__self__, SandboxLanes)
     assert boxed.guard.__self__.launcher.user == "apx-ci"
     assert "/Users/Shared/apx/kit" in boxed.guard.__self__.kit_dir  # the kit lives where the sandbox account can read it
+
+
+class _IssueApi:
+    """Just enough of GitHub for work_on_issue plus the commit path; records every write."""
+
+    def __init__(self):
+        self.writes = []
+
+    def __call__(self, method, path, body=None):
+        if method != "GET":
+            self.writes.append((method, path, body))
+        if path.endswith("/issues/4"):
+            return {"title": "Add feature", "body": "please"}
+        if path.endswith("/comments?per_page=100"):
+            return []
+        if "contents/.autopilot/repo.yaml" in path:
+            return {"content": base64.b64encode(b"commands:\n  - pytest -q\n").decode()}
+        if path.endswith("/git/ref/heads/main"):
+            return {"object": {"sha": "b" * 40}}
+        if "/git/commits/" in path:
+            return {"tree": {"sha": "T0"}}
+        if path.endswith("/git/blobs"):
+            return {"sha": "B1"}
+        if path.endswith("/git/trees"):
+            return {"sha": "T1"}
+        if path.endswith("/git/commits"):
+            return {"sha": "C1"}
+        if path.endswith("/pulls"):
+            return {"number": 21}
+        return {}
+
+
+def _agent_settings(tmp_path):
+    return dm.Settings.from_env(env(tmp_path, APX_AGENT_USER="apx-agent", APX_OAUTH_FILE=""))
+
+
+def test_with_an_agent_account_the_model_gets_a_read_only_token_and_this_account_makes_the_commit(tmp_path):
+    from autopilot.apx.committer import FileChange
+
+    s = _agent_settings(tmp_path)
+    api, seen = _IssueApi(), {}
+
+    def run_agent(req, token):
+        seen["req"], seen["token"] = req, token
+        return {"ok": True, "summary": "did it", "turns": 6}, [FileChange("f.py", "100644", b"x = 1\n")]
+
+    r = dm.work_on_issue(
+        s, api, lambda repo: "WRITE-TOKEN", REPO, 4, 77, "model=sonnet effort=low turns=12",
+        read_token_for=lambda repo: "READ-ONLY-TOKEN", run_agent=run_agent,
+    )  # fmt: skip
+    assert r.ok and r.pr_number == 21 and r.turns == 6
+    assert seen["token"] == "READ-ONLY-TOKEN" and seen["token"] != "WRITE-TOKEN"  # the model never gets the write token
+    req = seen["req"]
+    assert req["base_sha"] == "b" * 40 and req["max_turns"] == 12 and req["commands"] == ["pytest -q"]
+    assert req["work_root"] == "/Users/apx-agent/work" and req["binary"] == "/Users/apx-agent/.local/bin/claude"
+    refs = [w for w in api.writes if w[1].endswith("/git/refs")]
+    assert refs and refs[0][2]["ref"] == "refs/heads/agent/4-77"  # and this account is the one that wrote to GitHub
+
+
+def test_a_rejected_or_failed_agent_run_makes_no_commit_and_says_why(tmp_path):
+    s = _agent_settings(tmp_path)
+    for result, expect in (
+        ({"ok": False, "summary": "s", "violations": ["[protected-path] .github/x.yml"], "turns": 2}, "protected-path"),
+        ({"ok": False, "error": "agent ran as 'x', expected 'apx-agent'; result refused"}, "result refused"),
+    ):
+        api = _IssueApi()
+        r = dm.work_on_issue(
+            s, api, lambda repo: "w", REPO, 4, 1, "", read_token_for=lambda repo: "ro", run_agent=lambda req, tok: (result, [])
+        )
+        assert not r.ok and expect in r.problems
+        assert api.writes == []  # nothing was blobbed, committed, pushed or opened
+
+
+def test_an_agent_account_without_a_read_only_token_source_is_a_config_error(tmp_path):
+    with pytest.raises(dm.ConfigError):
+        dm.work_on_issue(_agent_settings(tmp_path), _IssueApi(), lambda r: "w", REPO, 4, 1, "")
+
+
+def test_with_an_agent_account_the_orchestrator_never_reads_the_claude_token(tmp_path):
+    from autopilot.apx import redact
+
+    redact.forget_all()
+    s = _agent_settings(tmp_path)
+    assert s.oauth_file == "/Users/apx-agent/.apx/claude-oauth"  # lives in the agent's home, not ours
+    dm._register_known_secrets(s)  # must not even try to read it (the path is not readable here)
+    legacy = dm.Settings.from_env(env(tmp_path))
+    open(legacy.oauth_file, "w").write("legacy-claude-token-" + "Zx3Qv" * 6 + "\n")
+    dm._register_known_secrets(legacy)
+    assert "legacy-claude-token" not in redact.redact(
+        "x legacy-claude-token-" + "Zx3Qv" * 6
+    )  # the legacy path still registers it
+    redact.forget_all()
+
+
+def test_the_orchestrator_skips_a_readable_claude_token_when_an_agent_account_owns_it(tmp_path):
+    from autopilot.apx import redact
+
+    redact.forget_all()
+    token = "agent-owned-claude-token-" + "Qm8Rt" * 6
+    f = tmp_path / "readable-token"
+    f.write_text(token + "\n")
+    f.chmod(0o600)
+    s = dm.Settings.from_env(env(tmp_path, APX_AGENT_USER="apx-agent", APX_OAUTH_FILE=str(f)))
+    dm._register_known_secrets(s)
+    assert token in redact.redact(f"x {token}")  # not registered: this account never handles the agent's token
+    dm._register_known_secrets(
+        dm.Settings.from_env(env(tmp_path, APX_OAUTH_FILE=str(f)))
+    )  # control: the legacy layout registers it
+    assert token not in redact.redact(f"x {token}")
+    redact.forget_all()
+
+
+def test_a_live_pass_hands_the_read_only_token_source_to_build_deps(tmp_path, monkeypatch):
+    from autopilot.apx import executor as ex
+
+    s = dm.Settings.from_env(env(tmp_path, APX_AGENT_USER="apx-agent", APX_SHADOW="0"))
+    seen = {}
+
+    def fake_build_deps(settings, api, token_for, details, read_token_for=None):
+        seen["read"] = read_token_for
+        return ex.Deps(lambda r, sha: None, lambda co, ref: (True, ""), lambda co: (True, ""), lambda *a: None)
+
+    monkeypatch.setattr(dm, "build_deps", fake_build_deps)
+    monkeypatch.setenv("APX_LIVE", "1")
+
+    def factory(token):
+        def api(method, path, body=None):
+            if path.startswith("/app/"):
+                return {"token": "t", "expires_at": "2099-01-01T00:00:00Z"}
+            if "/actions/variables/AUTOPILOT_ENABLED" in path:
+                return {"value": "true"}
+            if "/actions/variables/" in path:
+                raise GitHubError(404, path, "")
+            if "contents/.autopilot/repo.yaml" in path:
+                return {"content": base64.b64encode(b"mode: standard\ntier: A\n").decode()}
+            if re.search(r"/repos/[^/]+/[^/]+$", path):
+                return {"private": True}
+            return []
+
+        return api
+
+    dm.run_once(s, live=True, api_factory=factory)
+    assert callable(seen["read"])  # without it the agent path would raise a config error on the first issue

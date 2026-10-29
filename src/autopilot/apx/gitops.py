@@ -60,7 +60,7 @@ def prune_work(work_dir: Path, max_age_seconds: int = 24 * 3600, now: float | No
     now = time.time() if now is None else now
     removed = []
     for p in work_dir.iterdir() if work_dir.exists() else []:
-        if not p.is_dir() or not (p.name.startswith(("pr-", "main-", "home-", "tmp")) and p.name != "kit"):
+        if not p.is_dir() or not (p.name.startswith(("pr-", "main-", "home-", "agent-", "tmp")) and p.name != "kit"):
             continue
         if now - p.stat().st_mtime > max_age_seconds:
             shutil.rmtree(p, ignore_errors=True)

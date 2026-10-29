@@ -1,7 +1,7 @@
 import datetime as dt
 import json
+import plistlib
 import stat
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -98,8 +98,8 @@ def test_the_launch_agent_runs_the_watcher_as_the_owner_with_no_secrets_and_lint
     text = PLIST.read_text()
     assert "autopilot.apx.status" in text and "<key>UserName</key>" not in text  # a LaunchAgent: runs as the logged-in owner
     assert "TOKEN" not in text and "KEY" not in text.replace("<key>", "").replace("</key>", "")
-    r = subprocess.run(["plutil", "-lint", str(PLIST)], capture_output=True, text=True)
-    assert r.returncode == 0, r.stdout
+    plist = plistlib.loads(PLIST.read_bytes())  # parses on any OS (plutil exists only on macOS)
+    assert plist["Label"] == "com.autopilot.apx.watch" and plist["StartInterval"] == 300 and "RunAtLoad" in plist
 
 
 def test_main_writes_status_after_a_pass_and_records_a_crash(tmp_path, monkeypatch):

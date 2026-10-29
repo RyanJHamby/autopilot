@@ -85,12 +85,68 @@ def _mode_ok(path: str) -> tuple[bool, str]:
     return open_bits == 0, "mode 600/700 ok" if open_bits == 0 else "permissions too open; chmod 600"
 
 
+def sandbox_checks(s, launcher) -> list[Check]:
+    """Prove the split holds on THIS machine, from the sandbox account's point of view. The decisive checks are the negative
+    ones: the account that runs a PR's code must NOT be able to read the App key, the Claude token or the orchestrator's home."""
+
+    def run(argv):
+        try:
+            return launcher.run(argv, cwd="/", env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True, timeout=60)
+        except Exception as e:  # noqa: BLE001
+            return type("R", (), {"returncode": 255, "stdout": "", "stderr": type(e).__name__})()
+
+    out: list[Check] = []
+    who = run(["/usr/bin/id", "-un"])
+    out.append(
+        Check(
+            "sandbox account is usable via sudo",
+            who.returncode == 0 and who.stdout.strip() == s.ci_user,
+            who.stderr.strip()[:80] or s.ci_user,
+        )
+    )
+    admin = run(["/usr/sbin/dseditgroup", "-o", "checkmember", "-m", s.ci_user, "admin"])
+    out.append(
+        Check(
+            "sandbox account is not an admin",
+            "is a member" not in (admin.stdout + admin.stderr) or "NOT" in admin.stdout,
+            "standard user",
+        )
+    )
+    for label, path in (
+        ("App key", str(s.key_path)),
+        ("Claude token", s.oauth_file),
+        ("orchestrator home", str(Path(s.key_path).parent)),
+    ):
+        r = run(["/bin/ls", path] if label == "orchestrator home" else ["/bin/cat", path])
+        leaked = r.returncode == 0
+        out.append(
+            Check(
+                f"sandbox account CANNOT read the {label}",
+                not leaked,
+                "readable: the split is not in place" if leaked else "denied",
+            )
+        )
+    work = run(["/bin/sh", "-c", f'test -d "{s.ci_work}" && test -w "{s.ci_work}"'])
+    out.append(Check("sandbox work directory exists and is writable", work.returncode == 0, s.ci_work))
+    py = run([f"{s.shared_dir}/venv/bin/python", "-c", "import yaml"])
+    # without PyYAML the kit guard silently loses its config, which would weaken it: treat as a failure
+    out.append(
+        Check(
+            "sandbox python has PyYAML (guard config would silently vanish without it)",
+            py.returncode == 0,
+            f"{s.shared_dir}/venv",
+        )
+    )
+    return out
+
+
 def run_doctor(
     s,
     *,
     api_factory: Callable = make_api,
     which: Callable = shutil.which,
     approved: Callable[[str], list[str]] = kit_automerge.fetch_approved,
+    launcher=None,
 ) -> list[Check]:
     out: list[Check] = []
     for tool, required in (("git", True), ("openssl", True), ("claude", True), ("gh", False)):
@@ -106,6 +162,14 @@ def run_doctor(
         ok, why = _mode_ok(path)
         out.append(Check(f"{label} file", ok, why))
     out.append(token_shape(s.oauth_file))
+    if s.ci_user:
+        from .runas import Launcher
+
+        out.extend(sandbox_checks(s, launcher or Launcher(s.ci_user)))
+    else:
+        out.append(
+            Check("sandbox account configured (APX_CI_USER)", False, "PR code still runs as the account that holds the secrets")
+        )
     out.append(Check("installations within scope", set(s.installations) <= ALLOWED_REPOS, ", ".join(sorted(s.installations))))
     try:
         jwt_api = api_factory(make_jwt(s.app_id, s.key_path))

@@ -31,6 +31,8 @@ from .github import Api, make_api  # noqa: E402
 from .ledger import Ledger  # noqa: E402
 from .planner import ALLOWED_REPOS, Action, load_cfg, plan  # noqa: E402
 from .redact import register  # noqa: E402
+from .runas import Launcher  # noqa: E402
+from .sandbox import SandboxLanes  # noqa: E402
 
 
 class ConfigError(RuntimeError):
@@ -72,6 +74,12 @@ class Settings:
     authoritative: frozenset = frozenset()
     cutover: frozenset = frozenset()
     ci_toolchain_links: tuple = (".cargo",)
+    # Sandbox accounts (backlog S1/S1b). ci_user runs a PR's code with no access to the App key or Claude token; agent_user runs
+    # the model with only the Claude token. Unset = today's behaviour for checks, and agent runs stay OFF.
+    ci_user: str = ""
+    ci_work: str = "/Users/apx-ci/work"
+    shared_dir: str = "/Users/Shared/apx"
+    agent_user: str = ""
 
     @classmethod
     def from_env(cls, env: dict | None = None) -> "Settings":
@@ -94,12 +102,24 @@ class Settings:
                 authoritative=frozenset(r for r in e.get("APX_AUTHORITATIVE", "").split(",") if r),
                 cutover=frozenset(r for r in e.get("APX_CUTOVER", "").split(",") if r),
                 ci_toolchain_links=tuple(n for n in e.get("APX_CI_TOOLCHAIN_LINKS", ".cargo").split(",") if n),
+                ci_user=e.get("APX_CI_USER", ""),
+                ci_work=e.get("APX_CI_WORK", "/Users/apx-ci/work"),
+                shared_dir=e.get("APX_SHARED", "/Users/Shared/apx"),
+                agent_user=e.get("APX_AGENT_USER", ""),
             )
         except KeyError as ex:
             raise ConfigError(f"missing setting {ex}") from None
         bad = set(s.installations) - ALLOWED_REPOS
         if bad:
             raise ConfigError(f"repos outside scope: {sorted(bad)}")
+        try:
+            for u in (s.ci_user, s.agent_user):
+                if u:
+                    Launcher(u).wrap(["true"], "/", {}, [])  # same validation the launcher applies: no root, no apx, plain names
+        except ValueError as ex:
+            raise ConfigError(str(ex)) from None
+        if s.ci_user and s.ci_user == s.agent_user:
+            raise ConfigError("APX_CI_USER and APX_AGENT_USER must be different accounts")
         stray = (set(s.authoritative) | set(s.cutover)) - set(s.installations)
         if stray:
             raise ConfigError(f"APX_AUTHORITATIVE / APX_CUTOVER name repos that are not installed: {sorted(stray)}")
@@ -112,6 +132,11 @@ class Settings:
     def full_loop(self, repo: str) -> bool:
         """True when apx, not Actions, runs this repo end to end: agent runs, rebases and the merge lane as well as checks."""
         return (not self.shadow) or repo in self.cutover
+
+    def agents_allowed(self, repo: str) -> bool:
+        """Agent runs need the full loop AND a dedicated agent account. Without one the model would run as the account that
+        holds the App key, so they stay off even if the repo is cut over (backlog gate S1b)."""
+        return self.full_loop(repo) and bool(self.agent_user)
 
     def contexts(self, repo: str) -> dict[str, str]:
         """Shadow names are non-required (cannot satisfy or block a merge). A repo that is authoritative, or any repo once
@@ -221,7 +246,25 @@ def select_automerge(s: Settings, merge):
 
 
 def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Deps:
-    kit = guardlane.fetch_kit(s.kit_repo, s.kit_ref, s.work_dir / "kit" / s.kit_ref)
+    # with a sandbox account the kit lives where that account can read it; otherwise next to the rest of the work
+    kit_root = Path(s.shared_dir) / "kit" if s.ci_user else s.work_dir / "kit"
+    kit = guardlane.fetch_kit(s.kit_repo, s.kit_ref, kit_root / s.kit_ref)
+    if s.ci_user:
+        lanes = SandboxLanes(
+            Launcher(s.ci_user),
+            base_branch=s.default_branch,
+            kit_dir=str(kit),
+            work_root=s.ci_work,
+            python=f"{s.shared_dir}/venv/bin/python",
+            code_dir=f"{s.shared_dir}/autopilot",
+            home=f"/Users/{s.ci_user}",
+            token_for=token_for,
+            steps_for=lambda repo: [list(x) for x in cilane.parse_ci_steps(load_cfg(api, repo, s.default_branch))],
+            toolchain_links=list(s.ci_toolchain_links),
+        )
+        sb_checkout, sb_guard, sb_ci = lanes.checkout, lanes.guard, lanes.ci
+    else:
+        sb_checkout = sb_guard = sb_ci = None
 
     def checkout(repo: str, sha: str) -> Path:
         return gitops.checkout_pr(
@@ -267,7 +310,7 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Dep
             tmp=tmp,
         )
 
-    return Deps(checkout, guard, ci, work, select_automerge(s, merge), make_report(s))
+    return Deps(sb_checkout or checkout, sb_guard or guard, sb_ci or ci, work, select_automerge(s, merge), make_report(s))
 
 
 def _git_show(co: Path, spec: str) -> str:
@@ -335,8 +378,9 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
         r: {
             "default_branch": s.default_branch,
             "contexts": list(s.contexts(r).values()),
+            "loop": s.full_loop(r),
             "merge": s.full_loop(r),
-            "agents": s.full_loop(r),
+            "agents": s.agents_allowed(r),
         }
         for r in s.installations
     }

@@ -18,7 +18,7 @@ GOOD_PERMS = {
 }
 
 
-def settings(tmp_path):
+def settings(tmp_path, ci_user=""):
     key = tmp_path / "k.pem"
     subprocess.run(["openssl", "genrsa", "-out", str(key), "2048"], check=True, capture_output=True)
     key.chmod(0o600)
@@ -33,6 +33,7 @@ def settings(tmp_path):
             "APX_OAUTH_FILE": str(oauth),
             "APX_KIT_REPO": "o/kit",
             "APX_KIT_REF": "a" * 40,
+            **({"APX_CI_USER": ci_user} if ci_user else {}),
         }
     )
 
@@ -58,15 +59,50 @@ def factory(perms=None, repos=None, app_id=1, fail_app=False):
     return make
 
 
+class Stub:
+    """Stands in for the sandbox account: a well-configured one can run, is not admin, and is denied the secrets."""
+
+    def __init__(self, leak=(), admin=False, no_yaml=False, dead=False, wrong_user=False, no_workdir=False):
+        self.leak, self.admin, self.no_yaml, self.dead, self.wrong_user, self.no_workdir = (
+            leak,
+            admin,
+            no_yaml,
+            dead,
+            wrong_user,
+            no_workdir,
+        )
+
+    def run(self, argv, **kw):
+        if self.dead:
+            raise RuntimeError("sudo failed")
+        R = lambda rc, out="": type("R", (), {"returncode": rc, "stdout": out, "stderr": ""})()  # noqa: E731
+        cmd, rest = argv[0], argv[1:]
+        if cmd == "/usr/bin/id":
+            return R(0, "someone-else\n" if self.wrong_user else "apx-ci\n")
+        if cmd == "/usr/sbin/dseditgroup":
+            return R(
+                0 if self.admin else 67, "yes apx-ci is a member of admin" if self.admin else "no apx-ci is NOT a member of admin"
+            )
+        if cmd in ("/bin/cat", "/bin/ls"):
+            name = "orchestrator home" if cmd == "/bin/ls" else ("Claude token" if "oauth" in rest[0] else "App key")
+            return R(0 if name in self.leak else 1)
+        if cmd == "/bin/sh":
+            return R(1 if self.no_workdir else 0)
+        if rest[:1] == ["-c"]:
+            return R(1 if self.no_yaml else 0)
+        return R(0)
+
+
 def run(s, **kw):
     kw.setdefault("which", lambda t: f"/usr/bin/{t}")
     kw.setdefault("approved", lambda repo: ["a" * 40])
     kw.setdefault("api_factory", factory())
+    kw.setdefault("launcher", Stub())
     return {c.name: c for c in dr.run_doctor(s, **kw)}
 
 
 def test_clean_setup_passes_everything(tmp_path):
-    out = run(settings(tmp_path))
+    out = run(settings(tmp_path, ci_user="apx-ci"))  # "clean" now includes the account split
     assert all(c.ok for c in out.values()), {n: c.detail for n, c in out.items() if not c.ok}
     text, ok = dr.render(list(out.values()))
     assert ok and "all checks passed" in text
@@ -159,3 +195,35 @@ def test_doctor_includes_the_token_shape_check(tmp_path):
     Path(s.oauth_file).write_text("not a token at all, just words from the clipboard that run long enough\n")
     Path(s.oauth_file).chmod(0o600)
     assert not run(s)["claude token shape"].ok
+
+
+def test_a_properly_split_setup_passes_every_sandbox_check(tmp_path):
+    out = run(settings(tmp_path, ci_user="apx-ci"))
+    sandbox = {n: c for n, c in out.items() if "sandbox" in n}
+    assert len(sandbox) == 7 and all(c.ok for c in sandbox.values()), {n: c.detail for n, c in sandbox.items() if not c.ok}
+
+
+def test_no_sandbox_account_is_reported_as_a_failure_not_ignored(tmp_path):
+    out = run(settings(tmp_path))
+    c = out["sandbox account configured (APX_CI_USER)"]
+    assert not c.ok and "holds the secrets" in c.detail
+
+
+def test_every_way_the_sandbox_can_read_a_secret_fails_the_doctor(tmp_path):
+    s = settings(tmp_path, ci_user="apx-ci")
+    for what in ("App key", "Claude token", "orchestrator home"):
+        out = run(s, launcher=Stub(leak=(what,)))
+        c = out[f"sandbox account CANNOT read the {what}"]
+        assert not c.ok and "split is not in place" in c.detail, what
+        others = [n for n in out if n.startswith("sandbox account CANNOT") and n != f"sandbox account CANNOT read the {what}"]
+        assert all(out[n].ok for n in others)  # only the leaking one fails
+
+
+def test_other_sandbox_misconfigurations_each_fail_their_own_check(tmp_path):
+    s = settings(tmp_path, ci_user="apx-ci")
+    assert not run(s, launcher=Stub(admin=True))["sandbox account is not an admin"].ok
+    assert not run(s, launcher=Stub(no_yaml=True))["sandbox python has PyYAML (guard config would silently vanish without it)"].ok
+    assert not run(s, launcher=Stub(no_workdir=True))["sandbox work directory exists and is writable"].ok
+    assert not run(s, launcher=Stub(wrong_user=True))["sandbox account is usable via sudo"].ok
+    dead = run(s, launcher=Stub(dead=True))  # sudo not working at all must fail checks, never crash the doctor
+    assert not dead["sandbox account is usable via sudo"].ok

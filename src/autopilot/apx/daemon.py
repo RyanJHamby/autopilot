@@ -24,7 +24,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import runner as kit_runner  # noqa: E402
 
-from . import cilane, claude_runner, committer, gitops, guardlane, mergelane, report  # noqa: E402
+from . import cilane, claude_runner, committer, gitops, guardlane, mergelane, report, status  # noqa: E402
 from .app_auth import TokenCache  # noqa: E402
 from .executor import Deps, IssueResult, execute  # noqa: E402
 from .github import Api, make_api  # noqa: E402
@@ -589,12 +589,21 @@ def main(argv: list[str] | None = None) -> int:
     if not ns.once:
         print("only --once is implemented; run it from a systemd timer", file=sys.stderr)
         return 2
+    status_path = os.environ.get("APX_STATUS", status.DEFAULT_STATUS)
     try:
-        for line in run_once(Settings.from_env(), live=ns.live):
-            print(line)
+        st = Settings.from_env()
     except ConfigError as e:
         print(f"apx config error: {e}", file=sys.stderr)
         return 2
+    version = status.code_version(f"{st.shared_dir}/autopilot")
+    try:
+        lines = run_once(st, live=ns.live)
+    except Exception as e:  # noqa: BLE001 - record that the pass died so the owner's watcher can say so, then fail loudly
+        status.write_status(status_path, [f"pass crashed: {type(e).__name__}"], live=ns.live, version=version)
+        raise
+    for line in lines:
+        print(line)
+    status.write_status(status_path, lines, live=ns.live, version=version)
     return 0
 
 

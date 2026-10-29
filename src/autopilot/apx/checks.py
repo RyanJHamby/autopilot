@@ -5,13 +5,40 @@ automerge.py reads check-runs (not commit statuses), and PATs cannot create chec
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 from .github import Api
 
 MAX_TEXT = 60000  # the Checks API caps summary/text at 65535 chars
+_version: str | None = None
+
+
+def code_version() -> str:
+    """Short commit of the apx code that is running, so a check run says which version produced it (a stale clone on the
+    host is otherwise invisible from GitHub). Cached; 'unknown' if git or the checkout is unavailable."""
+    global _version
+    if _version is None:
+        try:
+            root = Path(__file__).resolve().parents[3]
+            _version = (
+                subprocess.run(
+                    ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=True,
+                ).stdout.strip()
+                or "unknown"
+            )
+        except Exception:  # noqa: BLE001 - a footer must never break a check
+            _version = "unknown"
+    return _version
 
 
 def _clip(s: str) -> str:
-    return s if len(s) <= MAX_TEXT else s[:MAX_TEXT] + "\n...[truncated]"
+    body = s if len(s) <= MAX_TEXT else s[:MAX_TEXT] + "\n...[truncated]"
+    return f"{body}\n\n_apx {code_version()}_"
 
 
 def post_check(api: Api, repo: str, sha: str, name: str, ok: bool, summary: str, *, details_url: str | None = None):

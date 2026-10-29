@@ -224,3 +224,16 @@ def test_the_agent_token_is_read_only_single_repo_and_cached_separately(keys):
     from autopilot.apx import redact
 
     assert ro not in redact.redact(f"leak {ro}")  # registered for redaction like every token we mint
+
+
+def test_prune_also_clears_old_agent_checkouts(tmp_path):
+    import os
+    import time
+
+    (tmp_path / "agent-o_r-abc").mkdir()
+    (tmp_path / "keepme").mkdir()
+    t = time.time() - 3 * 24 * 3600
+    for n in ("agent-o_r-abc", "keepme"):
+        os.utime(tmp_path / n, (t, t))
+    assert gitops.prune_work(tmp_path, max_age_seconds=24 * 3600) == ["agent-o_r-abc"]
+    assert (tmp_path / "keepme").exists()

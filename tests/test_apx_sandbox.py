@@ -228,3 +228,19 @@ def test_a_job_that_ran_as_the_wrong_account_is_refused_and_its_pr_gets_no_credi
     g_ok, g_out, (c_ok, c_md) = run_lane(L, head)
     assert not g_ok and "ran as" in g_out and "result refused" in g_out
     assert not c_ok and "not run" in c_md  # a clean guard/CI result from the wrong account is never accepted
+
+
+def test_the_expected_account_defaults_to_the_launcher_account_not_anyone(tmp_path):
+    L = sandbox.SandboxLanes(
+        Launcher("apx-ci"),
+        base_branch="main",
+        kit_dir="/k",
+        work_root="/w",
+        python="/p",
+        code_dir="/c",
+        home="/h",
+        token_for=lambda r: "t",
+        steps_for=lambda r: [],
+        toolchain_links=[],
+    )
+    assert L.expected_user == "apx-ci"

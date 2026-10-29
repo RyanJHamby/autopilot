@@ -520,3 +520,13 @@ def test_run_once_plans_agent_runs_and_merges_only_for_the_cutover_repo(tmp_path
     out = dm.run_once(s, api_factory=factory)
     assert any(x.startswith("DRY-RUN run-agent RyanJHamby/drillpad-workspace 9") for x in out)
     assert not any("run-agent RyanJHamby/stencil" in x for x in out)  # same issue shape on stencil, but it is still shadow
+
+
+def test_timer_is_not_a_background_job_which_macos_throttles_to_efficiency_cores():
+    import plistlib
+    from pathlib import Path
+
+    for name in ("com.autopilot.apx.daemon.plist", "com.autopilot.apx.plist"):
+        p = plistlib.loads((Path(__file__).resolve().parent.parent / "deploy/launchd" / name).read_bytes())
+        assert p["ProcessType"] in ("Interactive", "Standard"), name  # Background made the CI lane ~4x slower on Apple Silicon
+        assert "LowPriorityIO" not in p and "Nice" not in p, name

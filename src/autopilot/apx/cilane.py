@@ -65,7 +65,7 @@ def ci_env(home: Path, source: dict | None = None) -> dict:
 
 
 def run_commands(
-    checkout: Path, commands: list, *, home: Path, timeout_each: int = 900, source_env: dict | None = None
+    checkout: Path, commands: list, *, home: Path, timeout_each: int = 1800, source_env: dict | None = None
 ) -> list[CmdResult]:
     """Run each command in order; stop at the first failure (later commands often depend on earlier ones)."""
     results: list[CmdResult] = []

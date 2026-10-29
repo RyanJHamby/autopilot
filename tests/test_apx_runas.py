@@ -74,6 +74,7 @@ def test_sandbox_run_enters_the_directory_and_uses_a_clean_environment(fake_sudo
     out = r.stdout.splitlines()
     assert r.returncode == 0 and os.path.realpath(out[0]) == os.path.realpath(str(work))
     assert "ORCHESTRATOR_ONLY" not in out[1] and "HOME" in out[1] and "CI" in out[1]
+    assert "PATH" not in out[1]  # built from scratch: not even sudo's own PATH is inherited, only what the caller passed
     sent = argvs(log)[0]
     assert sent[:3] == ["-n", "-u", "apx-ci"]
 

@@ -213,15 +213,20 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
                 meta.get("contexts", ["guard / guard"]),
                 base_time=base_commit_time(api, repo, meta.get("default_branch", "main")),
             )
-            if not meta.get("agents"):
-                # shadow mode: Actions is still the system of record, so apx only reports checks. Running agents or
-                # updating branches here would race the Actions jobs and open duplicate PRs.
+            if not meta.get("loop", meta.get("agents")):
+                # shadow mode: Actions is still the system of record, so apx only reports checks. Updating branches or
+                # running agents here would race the Actions jobs and open duplicate PRs.
                 result[repo] = {"actions": actions, "note": "shadow: checks only"}
                 continue
             rebases = plan_rebases(api, repo, owner, ledger, now)
-            redo = [int(a.ref) for a in rebases if a.kind == "rebase-agent"]
-            runs, note = plan_agent_runs(api, repo, owner, ledger, meta.get("default_branch", "main"), now, rebase_issues=redo)
             updates = [a for a in rebases if a.kind == "update-branch"]
+            if meta.get("agents"):
+                redo = [int(a.ref) for a in rebases if a.kind == "rebase-agent"]
+                runs, note = plan_agent_runs(
+                    api, repo, owner, ledger, meta.get("default_branch", "main"), now, rebase_issues=redo
+                )
+            else:
+                runs, note = [], "agent runs blocked: no dedicated agent account (backlog S1b)"
             merges = plan_merges(api, repo, owner) if meta.get("merge") else []  # off in shadow mode: Actions still merges
             result[repo] = {"actions": actions + runs + updates + merges, "note": note}
         except (

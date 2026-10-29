@@ -396,7 +396,7 @@ def test_run_once_in_shadow_mode_never_plans_an_agent_run(tmp_path, monkeypatch)
     monkeypatch.delenv("APX_LIVE", raising=False)
     shadow = dm.run_once(dm.Settings.from_env(env(tmp_path)), api_factory=factory)
     assert not any("run-agent" in line for line in shadow)
-    cut = dm.run_once(dm.Settings.from_env(env(tmp_path, APX_SHADOW="0")), api_factory=factory)
+    cut = dm.run_once(dm.Settings.from_env(env(tmp_path, APX_SHADOW="0", APX_AGENT_USER="apx-agent")), api_factory=factory)
     assert any(line.startswith("DRY-RUN run-agent") for line in cut)
 
 
@@ -490,7 +490,9 @@ def test_merge_lane_exists_only_when_something_is_cut_over(tmp_path):
 
 
 def test_run_once_plans_agent_runs_and_merges_only_for_the_cutover_repo(tmp_path, monkeypatch):
-    s = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=TWO, APX_CUTOVER="RyanJHamby/drillpad-workspace"))
+    s = dm.Settings.from_env(
+        env(tmp_path, APX_INSTALLATIONS=TWO, APX_CUTOVER="RyanJHamby/drillpad-workspace", APX_AGENT_USER="apx-agent")
+    )
 
     def factory(token):
         def api(method, path, body=None):
@@ -603,3 +605,72 @@ def test_a_pass_registers_the_claude_token_so_it_is_scrubbed_from_output(tmp_pat
     dm.run_once(s, api_factory=factory)
     assert token not in redact.redact(f"x {token}")
     redact.forget_all()
+
+
+def _gate_factory():
+    def factory(token):
+        def api(method, path, body=None):
+            if path.startswith("/app/"):
+                return {"token": "t", "expires_at": "2099-01-01T00:00:00Z"}
+            assert method == "GET"
+            if "/actions/variables/AUTOPILOT_ENABLED" in path:
+                return {"value": "true"}
+            if "/actions/variables/" in path:
+                raise GitHubError(404, path, "")
+            if "contents/.autopilot/repo.yaml" in path:
+                return {"content": base64.b64encode(b"mode: standard\ntier: A\n").decode()}
+            if "/issues?" in path:
+                return [
+                    {
+                        "number": 9,
+                        "created_at": "2026-10-20T00:00:00Z",
+                        "user": {"login": "RyanJHamby"},
+                        "labels": [{"name": "agent-ready"}],
+                    }
+                ]
+            return []
+
+        return api
+
+    return factory
+
+
+def test_agent_runs_stay_off_after_cutover_until_a_dedicated_agent_account_is_configured(tmp_path, monkeypatch):
+    monkeypatch.delenv("APX_LIVE", raising=False)
+    no_agent = dm.Settings.from_env(env(tmp_path, APX_SHADOW="0"))
+    assert no_agent.full_loop("RyanJHamby/stencil") and not no_agent.agents_allowed("RyanJHamby/stencil")
+    out = dm.run_once(no_agent, api_factory=_gate_factory())
+    assert not any("run-agent" in line for line in out)
+    assert any("agent runs blocked" in line and "S1b" in line for line in out)  # the reason is visible, not silent
+    with_agent = dm.Settings.from_env(env(tmp_path, APX_SHADOW="0", APX_AGENT_USER="apx-agent"))
+    assert with_agent.agents_allowed("RyanJHamby/stencil")
+    out2 = dm.run_once(with_agent, api_factory=_gate_factory())
+    assert any(line.startswith("DRY-RUN run-agent") for line in out2)
+
+
+def test_sandbox_and_agent_accounts_are_validated_and_must_differ(tmp_path):
+    ok = dm.Settings.from_env(env(tmp_path, APX_CI_USER="apx-ci", APX_AGENT_USER="apx-agent"))
+    assert ok.ci_user == "apx-ci" and ok.agent_user == "apx-agent"
+    bad_cases = (
+        {"APX_CI_USER": "root"},
+        {"APX_CI_USER": "apx"},
+        {"APX_AGENT_USER": "Bad User"},
+        {"APX_CI_USER": "same", "APX_AGENT_USER": "same"},
+    )
+    for bad in bad_cases:
+        with pytest.raises(dm.ConfigError):
+            dm.Settings.from_env(env(tmp_path, **bad))
+    assert dm.Settings.from_env(env(tmp_path)).ci_user == ""  # default: today's behaviour
+
+
+def test_build_deps_uses_the_sandbox_lanes_only_when_a_ci_account_is_configured(tmp_path, monkeypatch):
+    from autopilot.apx import guardlane
+    from autopilot.apx.sandbox import SandboxLanes
+
+    monkeypatch.setattr(guardlane, "fetch_kit", lambda repo, ref, dest: dest)  # no network in this test
+    plain = dm.build_deps(dm.Settings.from_env(env(tmp_path)), lambda *a, **k: {}, lambda r: "t", {})
+    boxed = dm.build_deps(dm.Settings.from_env(env(tmp_path, APX_CI_USER="apx-ci")), lambda *a, **k: {}, lambda r: "t", {})
+    assert not isinstance(getattr(plain.guard, "__self__", None), SandboxLanes)
+    assert isinstance(boxed.guard.__self__, SandboxLanes) and isinstance(boxed.checkout.__self__, SandboxLanes)
+    assert boxed.guard.__self__.launcher.user == "apx-ci"
+    assert "/Users/Shared/apx/kit" in boxed.guard.__self__.kit_dir  # the kit lives where the sandbox account can read it

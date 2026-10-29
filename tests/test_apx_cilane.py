@@ -111,3 +111,9 @@ def test_skipped_steps_show_their_directory():
     res = [cilane.CmdResult("x", False, 0.1, "", "exit 1")]
     ok, md = cilane.summarize(res, steps)
     assert not ok and "SKIPPED `apps/cp: npm test`" in md
+
+
+def test_a_ci_command_gets_enough_time_for_a_full_suite_by_default():
+    import inspect
+
+    assert inspect.signature(cilane.run_commands).parameters["timeout_each"].default >= 1800

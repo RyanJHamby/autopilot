@@ -51,7 +51,7 @@ def test_registered_exact_values_are_removed_in_any_context_longest_first():
     redact.register("supersecretvalue123")
     redact.register("supersecretvalue123456")
     out = redact.redact("a supersecretvalue123456 b supersecretvalue123 c short")
-    assert "supersecret" not in out and out.endswith("c short")  # no leftover tail from the shorter prefix value
+    assert "supersecret" not in out and "456" not in out and out.endswith("c short")  # no tail left by the shorter prefix
     redact.register(None)
     redact.register("")
 
@@ -99,7 +99,8 @@ def test_every_posted_check_summary_is_redacted_including_registered_values():
 
 
 def test_minted_installation_tokens_are_registered_automatically(tmp_path):
-    token = "gh" + "s_" + "NotInAnyPattern0" * 3
+    token = "plain-opaque-" + "Qw7Zk" * 6  # deliberately matches no credential shape, so only registration can catch it
+    assert redact.redact(f"leak {token}") == f"leak {token}"  # control: unregistered, it passes through
 
     class Factory:
         def __call__(self, t):
@@ -112,7 +113,7 @@ def test_minted_installation_tokens_are_registered_automatically(tmp_path):
         assert cache.token_for("o/r") == token
     finally:
         app_auth.make_jwt = monkey_jwt
-    assert token not in redact.redact(f"leak {token}")
+    assert token not in redact.redact(f"leak {token}")  # minting registered it
 
 
 def _deps(ci_out):

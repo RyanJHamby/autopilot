@@ -565,3 +565,41 @@ def test_ci_lane_runs_base_branch_steps_with_the_linked_toolchain_home(tmp_path,
     s2 = dm.Settings.from_env(env(tmp_path, APX_CI_TOOLCHAIN_LINKS=""))
     ok2, _ = dm.ci_lane(s2, co)
     assert not ok2  # control: with no links the same step fails
+
+
+def test_private_repos_only_includes_repos_the_api_confirms_private():
+    class A:
+        def __call__(self, method, path, body=None):
+            if path.endswith("/priv"):
+                return {"private": True}
+            if path.endswith("/pub"):
+                return {"private": False}
+            if path.endswith("/odd"):
+                return {}  # no private field: not confirmed
+            raise GitHubError(500, path, "x")  # lookup failure: not confirmed
+
+    got = dm.private_repos(A(), ["o/priv", "o/pub", "o/odd", "o/err"])
+    assert got == frozenset({"o/priv"})
+
+
+def test_a_pass_registers_the_claude_token_so_it_is_scrubbed_from_output(tmp_path, monkeypatch):
+    from autopilot.apx import redact
+
+    redact.forget_all()
+    token = "opaque-claude-token-" + "Zx3Qv" * 8
+    s = dm.Settings.from_env(env(tmp_path))
+    open(s.oauth_file, "w").write(token + "\n")
+    monkeypatch.delenv("APX_LIVE", raising=False)
+
+    def factory(t):
+        def api(method, path, body=None):
+            if path.startswith("/app/"):
+                return {"token": "t", "expires_at": "2099-01-01T00:00:00Z"}
+            raise GitHubError(404, path, "")
+
+        return api
+
+    assert redact.redact(f"x {token}") == f"x {token}"  # control: not yet known
+    dm.run_once(s, api_factory=factory)
+    assert token not in redact.redact(f"x {token}")
+    redact.forget_all()

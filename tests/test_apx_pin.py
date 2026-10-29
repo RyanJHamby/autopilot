@@ -28,7 +28,8 @@ RULESET = {
 
 
 class FakeGh:
-    def __init__(self, ruleset=RULESET, apx_posted=("guard / guard", "test"), rulesets=None):
+    def __init__(self, ruleset=RULESET, apx_posted=("guard / guard", "test"), rulesets=None, apx_failed=()):
+        self.apx_failed = set(apx_failed)
         self.ruleset = ruleset
         self.apx_posted = set(apx_posted)
         self.rulesets = rulesets if rulesets is not None else [{"id": ruleset["id"], "name": "autopilot-main"}]
@@ -48,6 +49,7 @@ class FakeGh:
             runs = [{"name": n, "conclusion": "success", "app": {"slug": "autopilot-apx"}} for n in self.apx_posted]
             runs.append({"name": "lint-other", "conclusion": "success", "app": {"slug": "github-actions"}})  # not apx: no credit
             runs.append({"name": "guard / guard", "conclusion": "failure", "app": {"slug": "autopilot-apx"}})
+            runs += [{"name": n, "conclusion": "failure", "app": {"slug": "autopilot-apx"}} for n in self.apx_failed]
             return {"check_runs": runs}
         raise AssertionError(path)
 
@@ -111,3 +113,8 @@ def test_undo_never_needs_evidence_and_scope_and_ruleset_shape_are_enforced(caps
     assert pin.run(REPO, apply=True, undo=False, force=False, gh=FakeGh(rulesets=two)) == 2
     assert pin.run(REPO, apply=False, undo=False, force=False, gh=FakeGh(ruleset={**RULESET, **pinned})) == 0
     assert "nothing to change" in capsys.readouterr().out
+
+
+def test_a_failed_apx_check_is_not_evidence_that_apx_is_ready_to_be_pinned():
+    gh = FakeGh(apx_posted=("guard / guard",), apx_failed=("test",))  # apx posted `test`, but only ever a failure
+    assert pin.missing_evidence(gh, REPO, {"guard / guard", "test"}) == ["test"]

@@ -140,6 +140,76 @@ def sandbox_checks(s, launcher) -> list[Check]:
     return out
 
 
+def agent_checks(s, launcher) -> list[Check]:
+    """The model's account: it may hold the Claude token and nothing that can write to GitHub. Proven from ITS side, plus the one
+    check only the orchestrator can make: that this account no longer keeps a copy of the Claude token."""
+    home = f"/Users/{s.agent_user}"
+    token = s.oauth_file
+    code_dir = f"{s.shared_dir}/autopilot"
+    python = f"{s.shared_dir}/venv/bin/python"
+    binary = s.agent_binary or f"{home}/.local/bin/claude"
+
+    def run(argv, env=None):
+        try:
+            return launcher.run(argv, cwd="/", env=env or {"PATH": "/usr/bin:/bin"}, capture_output=True, text=True, timeout=60)
+        except Exception as e:  # noqa: BLE001
+            return type("R", (), {"returncode": 255, "stdout": "", "stderr": type(e).__name__})()
+
+    out: list[Check] = []
+    who = run(["/usr/bin/id", "-un"])
+    out.append(
+        Check("agent account is usable via sudo", who.returncode == 0 and who.stdout.strip() == s.agent_user, s.agent_user)
+    )
+    admin = run(["/usr/sbin/dseditgroup", "-o", "checkmember", "-m", s.agent_user, "admin"])
+    out.append(
+        Check(
+            "agent account is not an admin",
+            "is a member" not in (admin.stdout + admin.stderr) or "NOT" in admin.stdout,
+            "standard user",
+        )
+    )
+    for label, argv in (
+        ("the App key", ["/bin/cat", str(s.key_path)]),
+        ("the orchestrator home", ["/bin/ls", str(Path(s.key_path).parent)]),
+    ):
+        r = run(argv)
+        out.append(
+            Check(
+                f"agent account CANNOT read {label}",
+                r.returncode != 0,
+                "readable: no write-key separation" if r.returncode == 0 else "denied",
+            )
+        )
+    shape = run(
+        [
+            python,
+            "-c",
+            f"from autopilot.apx.doctor import token_shape as t; c=t({token!r}); print('OK' if c.ok else 'BAD '+c.detail)",
+        ],
+        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": f"{code_dir}/src"},
+    )
+    out.append(
+        Check(
+            "agent account can read its own Claude token (shape checked, value not shown)",
+            shape.stdout.strip() == "OK",
+            shape.stdout.strip()[:80] or "unreadable",
+        )
+    )
+    kept = Path(s.key_path).parent / "claude-oauth"
+    out.append(
+        Check(
+            "orchestrator no longer holds a copy of the Claude token",
+            not kept.exists(),
+            f"remove {kept}" if kept.exists() else "gone",
+        )
+    )
+    ver = run([binary, "--version"])
+    out.append(Check("agent account can run the claude CLI", ver.returncode == 0, ver.stdout.strip()[:40] or binary))
+    work = run(["/bin/sh", "-c", f'test -d "{s.agent_work or home + "/work"}" && test -w "{s.agent_work or home + "/work"}"'])
+    out.append(Check("agent work directory exists and is writable", work.returncode == 0, s.agent_work or home + "/work"))
+    return out
+
+
 def run_doctor(
     s,
     *,
@@ -147,6 +217,7 @@ def run_doctor(
     which: Callable = shutil.which,
     approved: Callable[[str], list[str]] = kit_automerge.fetch_approved,
     launcher=None,
+    agent_launcher=None,
 ) -> list[Check]:
     out: list[Check] = []
     for tool, required in (("git", True), ("openssl", True), ("claude", True), ("gh", False)):
@@ -158,10 +229,13 @@ def run_doctor(
                 "found" if found else "missing" + ("" if required else " (needed only for the merge lane)"),
             )
         )
-    for label, path in (("app key", str(s.key_path)), ("claude oauth file", s.oauth_file)):
+    # with an agent account the Claude token lives in ITS home and this account must not (and cannot) read it
+    for label, path in (("app key", str(s.key_path)),) + (() if s.agent_user else (("claude oauth file", s.oauth_file),)):
         ok, why = _mode_ok(path)
         out.append(Check(f"{label} file", ok, why))
-    out.append(token_shape(s.oauth_file))
+    if not s.agent_user:
+        out.append(token_shape(s.oauth_file))
+        out.append(Check("agent account configured (APX_AGENT_USER)", True, "none: agent runs stay blocked (backlog S1b)"))
     if s.ci_user:
         from .runas import Launcher
 
@@ -170,6 +244,10 @@ def run_doctor(
         out.append(
             Check("sandbox account configured (APX_CI_USER)", False, "PR code still runs as the account that holds the secrets")
         )
+    if s.agent_user:
+        from .runas import Launcher as _L
+
+        out.extend(agent_checks(s, agent_launcher or _L(s.agent_user)))
     out.append(Check("installations within scope", set(s.installations) <= ALLOWED_REPOS, ", ".join(sorted(s.installations))))
     try:
         jwt_api = api_factory(make_jwt(s.app_id, s.key_path))

@@ -18,7 +18,7 @@ GOOD_PERMS = {
 }
 
 
-def settings(tmp_path, ci_user=""):
+def settings(tmp_path, ci_user="", agent_user=""):
     key = tmp_path / "k.pem"
     subprocess.run(["openssl", "genrsa", "-out", str(key), "2048"], check=True, capture_output=True)
     key.chmod(0o600)
@@ -34,6 +34,7 @@ def settings(tmp_path, ci_user=""):
             "APX_KIT_REPO": "o/kit",
             "APX_KIT_REF": "a" * 40,
             **({"APX_CI_USER": ci_user} if ci_user else {}),
+            **({"APX_AGENT_USER": agent_user} if agent_user else {}),
         }
     )
 
@@ -227,3 +228,105 @@ def test_other_sandbox_misconfigurations_each_fail_their_own_check(tmp_path):
     assert not run(s, launcher=Stub(wrong_user=True))["sandbox account is usable via sudo"].ok
     dead = run(s, launcher=Stub(dead=True))  # sudo not working at all must fail checks, never crash the doctor
     assert not dead["sandbox account is usable via sudo"].ok
+
+
+class AgentStub:
+    """Stands in for the model's account: usable, standard user, denied the write key and the orchestrator home, owns a valid token."""
+
+    def __init__(self, leak=(), admin=False, bad_token=False, no_cli=False, no_workdir=False, dead=False):
+        self.leak, self.admin, self.bad_token, self.no_cli, self.no_workdir, self.dead = (
+            leak,
+            admin,
+            bad_token,
+            no_cli,
+            no_workdir,
+            dead,
+        )
+
+    def run(self, argv, **kw):
+        if self.dead:
+            raise RuntimeError("sudo failed")
+        R = lambda rc, out="": type("R", (), {"returncode": rc, "stdout": out, "stderr": ""})()  # noqa: E731
+        cmd = argv[0]
+        if cmd == "/usr/bin/id":
+            return R(0, "apx-agent\n")
+        if cmd == "/usr/sbin/dseditgroup":
+            return R(
+                0 if self.admin else 67,
+                "yes apx-agent is a member of admin" if self.admin else "no apx-agent is NOT a member of admin",
+            )
+        if cmd == "/bin/cat":
+            return R(0 if "App key" in self.leak else 1)
+        if cmd == "/bin/ls":
+            return R(0 if "orchestrator home" in self.leak else 1)
+        if cmd == "/bin/sh":
+            return R(1 if self.no_workdir else 0)
+        if argv[1:2] == ["-c"]:
+            return R(0, "BAD too short (3 chars)\n" if self.bad_token else "OK\n")
+        if argv[1:2] == ["--version"]:
+            return R(1 if self.no_cli else 0, "2.1.312 (Claude Code)\n")
+        return R(0)
+
+
+def run_agent_doctor(s, agent=None, **kw):
+    kw.setdefault("which", lambda t: f"/usr/bin/{t}")
+    kw.setdefault("approved", lambda repo: ["a" * 40])
+    kw.setdefault("api_factory", factory())
+    return {c.name: c for c in dr.run_doctor(s, launcher=Stub(), agent_launcher=agent or AgentStub(), **kw)}
+
+
+def test_a_properly_configured_agent_account_passes_every_agent_check(tmp_path):
+    out = run_agent_doctor(settings(tmp_path, ci_user="apx-ci", agent_user="apx-agent"))
+    expected = {
+        "agent account is usable via sudo",
+        "agent account is not an admin",
+        "agent account CANNOT read the App key",
+        "agent account CANNOT read the orchestrator home",
+        "agent account can read its own Claude token (shape checked, value not shown)",
+        "orchestrator no longer holds a copy of the Claude token",
+        "agent account can run the claude CLI",
+        "agent work directory exists and is writable",
+    }
+    assert expected <= set(out), expected - set(out)
+    assert all(out[n].ok for n in expected), {n: out[n].detail for n in expected if not out[n].ok}
+    assert (
+        "claude oauth file file" not in out and "claude token shape" not in out
+    )  # this account no longer checks the token itself
+
+
+def test_without_an_agent_account_the_doctor_says_agent_runs_stay_blocked(tmp_path):
+    out = run(settings(tmp_path, ci_user="apx-ci"))
+    c = out["agent account configured (APX_AGENT_USER)"]
+    assert c.ok and "blocked" in c.detail and "claude token shape" in out  # the legacy single-account layout is still checked
+
+
+def test_every_way_the_agent_account_can_touch_the_write_key_fails(tmp_path):
+    s = settings(tmp_path, ci_user="apx-ci", agent_user="apx-agent")
+    for what, name in (
+        ("App key", "agent account CANNOT read the App key"),
+        ("orchestrator home", "agent account CANNOT read the orchestrator home"),
+    ):
+        out = run_agent_doctor(s, AgentStub(leak=(what,)))
+        assert not out[name].ok and "no write-key separation" in out[name].detail, what
+
+
+def test_the_orchestrator_keeping_a_copy_of_the_claude_token_fails(tmp_path):
+    s = settings(tmp_path, ci_user="apx-ci", agent_user="apx-agent")
+    kept = tmp_path / "claude-oauth"  # next to the App key, i.e. in the orchestrator's directory
+    kept.write_text("still-here")
+    out = run_agent_doctor(s)
+    assert not out["orchestrator no longer holds a copy of the Claude token"].ok
+    kept.unlink()
+    assert run_agent_doctor(s)["orchestrator no longer holds a copy of the Claude token"].ok
+
+
+def test_other_agent_misconfigurations_each_fail_their_own_check(tmp_path):
+    s = settings(tmp_path, ci_user="apx-ci", agent_user="apx-agent")
+    assert not run_agent_doctor(s, AgentStub(admin=True))["agent account is not an admin"].ok
+    assert not run_agent_doctor(s, AgentStub(bad_token=True))[
+        "agent account can read its own Claude token (shape checked, value not shown)"
+    ].ok
+    assert not run_agent_doctor(s, AgentStub(no_cli=True))["agent account can run the claude CLI"].ok
+    assert not run_agent_doctor(s, AgentStub(no_workdir=True))["agent work directory exists and is writable"].ok
+    dead = run_agent_doctor(s, AgentStub(dead=True))  # sudo broken must fail checks, never crash the doctor
+    assert not dead["agent account is usable via sudo"].ok

@@ -20,9 +20,15 @@ create table if not exists runs (
   status text not null default 'in_progress',
   conclusion text,
   model text,
-  turns integer
+  turns integer,
+  kind text not null default 'run',
+  ref text not null default ''
 )
 """
+MIGRATIONS = (
+    "alter table runs add column kind text not null default 'run'",
+    "alter table runs add column ref text not null default ''",
+)
 IN_FLIGHT = ("queued", "in_progress")
 
 
@@ -35,11 +41,20 @@ class Ledger:
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
         self.db.execute(SCHEMA)
+        have = {r["name"] for r in self.db.execute("pragma table_info(runs)")}
+        for stmt in MIGRATIONS:  # a ledger file from before these columns existed is upgraded in place
+            if stmt.split()[5] not in have:
+                self.db.execute(stmt)
+        self.db.commit()
 
-    def start(self, repo: str, issue: int, *, hard: bool = False, now: dt.datetime | None = None) -> int:
+    def start(
+        self, repo: str, issue: int, *, hard: bool = False, now: dt.datetime | None = None, kind: str = "run", ref: str = ""
+    ) -> int:
+        """kind 'fix' marks a red-CI retry of an existing PR; ref is then the PR head sha the retry was for."""
         now = now or dt.datetime.now(dt.timezone.utc)
         cur = self.db.execute(
-            "insert into runs (repo, issue, hard, created_at) values (?, ?, ?, ?)", (repo, issue, int(hard), _iso(now))
+            "insert into runs (repo, issue, hard, created_at, kind, ref) values (?, ?, ?, ?, ?, ?)",
+            (repo, issue, int(hard), _iso(now), kind, ref),
         )
         self.db.commit()
         return int(cur.lastrowid)
@@ -74,6 +89,18 @@ class Ledger:
         """True if any run (any outcome) for this issue started after `since`; used to cap re-dispatches to one a day."""
         row = self.db.execute(
             "select 1 from runs where repo=? and issue=? and created_at >= ? limit 1", (repo, issue, _iso(since))
+        ).fetchone()
+        return row is not None
+
+    def fix_attempts(self, repo: str, issue: int) -> int:
+        """Red-CI retries already made for this issue's PR, whatever their outcome (bounds the retry loop)."""
+        row = self.db.execute("select count(*) n from runs where repo=? and issue=? and kind='fix'", (repo, issue)).fetchone()
+        return int(row["n"])
+
+    def fixed_head(self, repo: str, issue: int, sha: str) -> bool:
+        """True if a retry was already made for exactly this PR head (so one red head is never retried twice)."""
+        row = self.db.execute(
+            "select 1 from runs where repo=? and issue=? and kind='fix' and ref=? limit 1", (repo, issue, sha)
         ).fetchone()
         return row is not None
 

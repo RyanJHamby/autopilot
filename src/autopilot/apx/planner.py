@@ -153,6 +153,45 @@ def plan_agent_runs(
     return acts, "ok"
 
 
+MAX_CI_FIXES = 2
+
+
+def plan_ci_fixes(
+    api: Api, repo: str, owner: str, ledger: Ledger, ci_contexts: list[str], *, limit: int, app_slug: str = APX_APP_SLUG
+) -> list[Action]:
+    """Open agent PRs whose CI check (posted by apx) FAILED on the current head get one more agent attempt, at most MAX_CI_FIXES
+    per issue and one per head. Only the CI check counts: a failed guard means the patch broke a rule, and a retry would just
+    try again to break it. `limit` is what the daily cap has left, so retries never exceed the cap."""
+    out: list[Action] = []
+    if limit <= 0:
+        return out
+    inflight = ledger.inflight_issues(repo)
+    for pr in api("GET", f"/repos/{repo}/pulls?state=open&per_page=100"):  # type: ignore[union-attr]
+        if len(out) >= limit:
+            break
+        ref = pr["head"]["ref"]
+        issue = kit_rebase.issue_of(ref)
+        if issue is None or not _trusted_pr(pr, repo, owner) or pr.get("draft"):
+            continue
+        if "needs-human" in {ln["name"] for ln in pr.get("labels", [])}:
+            continue
+        sha = pr["head"]["sha"]
+        if issue in inflight or ledger.fix_attempts(repo, issue) >= MAX_CI_FIXES or ledger.fixed_head(repo, issue, sha):
+            continue
+        runs = api("GET", f"/repos/{repo}/commits/{sha}/check-runs?per_page=100")["check_runs"]  # type: ignore[index]
+        ours = [c for c in runs if (c.get("app") or {}).get("slug") == app_slug]
+        if not ours or any(c.get("status") != "completed" for c in ours):
+            continue  # nothing posted yet, or still running: not a verdict
+        if any(c["name"] in ci_contexts and c.get("conclusion") == "failure" for c in ours) and not any(
+            c.get("conclusion") == "failure" for c in ours if c["name"] not in ci_contexts
+        ):
+            n = ledger.fix_attempts(repo, issue) + 1
+            out.append(
+                Action("fix-ci", repo, f"{pr['number']}:{sha}", f"PR #{pr['number']} issue #{issue} CI red; fix attempt {n}")
+            )
+    return out
+
+
 def plan_merges(api: Api, repo: str, owner: str) -> list[Action]:
     """Candidates for the kit's automerge: trusted open PRs whose head has check runs and none still running.
     The kit decides whether each one actually merges; this only avoids calling it on PRs that are plainly not ready."""

@@ -117,3 +117,41 @@ def test_a_ci_command_gets_enough_time_for_a_full_suite_by_default():
     import inspect
 
     assert inspect.signature(cilane.run_commands).parameters["timeout_each"].default >= 1800
+
+
+def test_toolchain_dirs_are_linked_into_the_scratch_home_and_nothing_else(tmp_path):
+    real = tmp_path / "real"
+    (real / ".cargo" / "bin").mkdir(parents=True)
+    (real / ".cargo" / "bin" / "rustc").write_text("x")
+    (real / ".ssh").mkdir()
+    (real / ".ssh" / "id_ed25519").write_text("private")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    assert cilane.link_toolchains(scratch, real, [".cargo", ".rustup"]) == [".cargo"]  # .rustup absent: skipped
+    assert (scratch / ".cargo" / "bin" / "rustc").read_text() == "x"
+    assert not (scratch / ".ssh").exists()  # credentials are never visible to the PR's code
+    assert cilane.link_toolchains(scratch, real, [".cargo"]) == []  # idempotent
+
+
+@pytest.mark.parametrize("bad", [".ssh/..", "../etc", "/etc", ".cargo/bin", "cargo", ".", "..", ".a b", ""])
+def test_toolchain_link_names_must_be_a_single_dot_directory(tmp_path, bad):
+    (tmp_path / "real").mkdir()
+    (tmp_path / "scratch").mkdir()
+    with pytest.raises(ValueError):
+        cilane.link_toolchains(tmp_path / "scratch", tmp_path / "real", [bad])
+
+
+def test_a_ci_command_finds_the_compiler_through_the_linked_home(tmp_path):
+    real = tmp_path / "real"
+    (real / ".cargo" / "bin").mkdir(parents=True)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (tmp_path / "probe.py").write_text(
+        "import os,sys\nsys.exit(0 if os.path.exists(os.path.join(os.environ['HOME'], '.cargo', 'bin')) else 1)\n"
+    )
+    ok = cilane.run_commands(tmp_path, [f"{PY} probe.py"], home=scratch, toolchain_links=[".cargo"], real_home=real)
+    assert ok[0].ok, ok[0].output
+    scratch2 = tmp_path / "scratch2"
+    scratch2.mkdir()
+    no = cilane.run_commands(tmp_path, [f"{PY} probe.py"], home=scratch2)  # control: without the link the probe fails
+    assert not no[0].ok

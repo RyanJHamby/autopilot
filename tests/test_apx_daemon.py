@@ -530,3 +530,38 @@ def test_timer_is_not_a_background_job_which_macos_throttles_to_efficiency_cores
         p = plistlib.loads((Path(__file__).resolve().parent.parent / "deploy/launchd" / name).read_bytes())
         assert p["ProcessType"] in ("Interactive", "Standard"), name  # Background made the CI lane ~4x slower on Apple Silicon
         assert "LowPriorityIO" not in p and "Nice" not in p, name
+
+
+def test_ci_toolchain_links_default_to_cargo_and_are_owner_configurable(tmp_path):
+    assert dm.Settings.from_env(env(tmp_path)).ci_toolchain_links == (".cargo",)
+    assert dm.Settings.from_env(env(tmp_path, APX_CI_TOOLCHAIN_LINKS=".cargo,.rustup")).ci_toolchain_links == (
+        ".cargo",
+        ".rustup",
+    )
+    assert dm.Settings.from_env(env(tmp_path, APX_CI_TOOLCHAIN_LINKS="")).ci_toolchain_links == ()
+
+
+def test_ci_lane_runs_base_branch_steps_with_the_linked_toolchain_home(tmp_path, monkeypatch):
+    real_home = tmp_path / "apxhome"
+    (real_home / ".cargo" / "bin").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(real_home))
+    s = dm.Settings.from_env(env(tmp_path))
+    s.work_dir.mkdir(parents=True)
+    co = tmp_path / "co"
+    co.mkdir()
+    git(co, "init", "-q")
+    git(co, "config", "user.email", "t@example.com")
+    git(co, "config", "user.name", "t")
+    (co / "probe.py").write_text(
+        "import os,sys\nsys.exit(0 if os.path.isdir(os.path.join(os.environ['HOME'], '.cargo', 'bin')) else 1)\n"
+    )
+    (co / ".autopilot").mkdir()
+    (co / ".autopilot" / "repo.yaml").write_text(f"ci:\n  - '{sys.executable} probe.py'\n")
+    git(co, "add", "-A")
+    sha = git(co, "commit-tree", git(co, "write-tree"), "-m", "i")
+    git(co, "update-ref", "refs/remotes/origin/main", sha)
+    ok, md = dm.ci_lane(s, co)
+    assert ok, md  # the probe only passes if the lane linked .cargo into its scratch HOME
+    s2 = dm.Settings.from_env(env(tmp_path, APX_CI_TOOLCHAIN_LINKS=""))
+    ok2, _ = dm.ci_lane(s2, co)
+    assert not ok2  # control: with no links the same step fails

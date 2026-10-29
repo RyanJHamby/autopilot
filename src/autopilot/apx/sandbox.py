@@ -75,9 +75,11 @@ class SandboxLanes:
         steps_for: Callable[[str], list],
         toolchain_links: list[str],
         url_for: Callable[[str], str | None] = lambda repo: None,
+        expected_user: str | None = None,
     ):
         self.__dict__.update(locals())
         del self.__dict__["self"]
+        self.expected_user = expected_user or launcher.user
         self._handles: dict[str, tuple[str, str]] = {}
         self._results: dict[str, dict] = {}
 
@@ -102,15 +104,19 @@ class SandboxLanes:
         if url:
             req["url"] = url
         res = run_in_sandbox(self.launcher, req, self.token_for(repo), python=self.python, code_dir=self.code_dir, home=self.home)
+        if "error" not in res and res.get("user") != self.expected_user:
+            # the job ran, but not as the sandbox account (a misconfigured sudo, say). Its result cannot be trusted and its
+            # PR code ran with the wrong privileges, so refuse it and say so.
+            res = {"error": f"sandbox ran as {res.get('user')!r}, expected {self.expected_user!r}; result refused"}
         self._results[str(co)] = res
         if "error" in res:
             return False, f"sandbox job failed: {res['error']}"
         g_ok, g_out = res["guard"]
-        return bool(g_ok), str(g_out)
+        return bool(g_ok), f"{g_out}\n\n_ran as {res['user']}_"
 
     def ci(self, co: Path) -> tuple[bool, str]:
         res = self._results.get(str(co)) or {}
         ci = res.get("ci")
         if not ci:
             return False, "not run: guard failed"
-        return bool(ci[0]), str(ci[1])
+        return bool(ci[0]), f"{ci[1]}\n\n_ran as {res['user']}_"

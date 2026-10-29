@@ -1,3 +1,4 @@
+import getpass
 import json
 import subprocess
 import sys
@@ -51,6 +52,7 @@ def lanes(tmp_path, sudo, remote, steps):
         steps_for=lambda repo: steps,
         toolchain_links=[],
         url_for=lambda repo: str(remote),
+        expected_user=getpass.getuser(),  # the fake sudo does not change user
     )
 
 
@@ -207,3 +209,38 @@ def test_the_job_reads_the_token_from_the_environment_and_prunes_old_scratch(tmp
     monkeypatch.undo()
     sandbox_job.run_job(req, None)
     assert not old.exists()  # stale scratch from earlier jobs is cleared at the start of every job
+
+
+def test_every_result_says_which_account_ran_it(fake_sudo, tmp_path):
+    sudo, _ = fake_sudo
+    remote, head = make_remote(tmp_path, {"probe.py": "import sys\nsys.exit(0)\n"})
+    L = lanes(tmp_path, sudo, remote, [[f"{sys.executable} probe.py", ""]])
+    g_ok, g_out, (c_ok, c_md) = run_lane(L, head)
+    assert g_ok and c_ok
+    assert f"_ran as {getpass.getuser()}_" in g_out and f"_ran as {getpass.getuser()}_" in c_md
+
+
+def test_a_job_that_ran_as_the_wrong_account_is_refused_and_its_pr_gets_no_credit(fake_sudo, tmp_path):
+    sudo, _ = fake_sudo
+    remote, head = make_remote(tmp_path, {"probe.py": "import sys\nsys.exit(0)\n"})
+    L = lanes(tmp_path, sudo, remote, [[f"{sys.executable} probe.py", ""]])
+    L.expected_user = "apx-ci"  # but the (fake) sudo ran it as the current user
+    g_ok, g_out, (c_ok, c_md) = run_lane(L, head)
+    assert not g_ok and "ran as" in g_out and "result refused" in g_out
+    assert not c_ok and "not run" in c_md  # a clean guard/CI result from the wrong account is never accepted
+
+
+def test_the_expected_account_defaults_to_the_launcher_account_not_anyone(tmp_path):
+    L = sandbox.SandboxLanes(
+        Launcher("apx-ci"),
+        base_branch="main",
+        kit_dir="/k",
+        work_root="/w",
+        python="/p",
+        code_dir="/c",
+        home="/h",
+        token_for=lambda r: "t",
+        steps_for=lambda r: [],
+        toolchain_links=[],
+    )
+    assert L.expected_user == "apx-ci"

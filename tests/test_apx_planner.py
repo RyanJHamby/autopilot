@@ -383,7 +383,8 @@ def test_an_unreadable_label_history_fails_closed():
                 raise urllib.error.URLError("dns")
             return super().__call__(method, path, body)
 
-    assert runs_for(Offline(issues=[issue(8, user="github-actions[bot]")])) == []
+    # only the issue whose history could not be read is excluded; the owner's own issue is unaffected and the pass does not crash
+    assert runs_for(Offline(issues=[issue(8, user="github-actions[bot]"), issue(4)])) == ["4"]
 
 
 def test_owner_authored_issues_still_run_without_any_label_history():

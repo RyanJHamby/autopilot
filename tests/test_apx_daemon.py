@@ -530,3 +530,12 @@ def test_timer_is_not_a_background_job_which_macos_throttles_to_efficiency_cores
         p = plistlib.loads((Path(__file__).resolve().parent.parent / "deploy/launchd" / name).read_bytes())
         assert p["ProcessType"] in ("Interactive", "Standard"), name  # Background made the CI lane ~4x slower on Apple Silicon
         assert "LowPriorityIO" not in p and "Nice" not in p, name
+
+
+def test_ci_toolchain_links_default_to_cargo_and_are_owner_configurable(tmp_path):
+    assert dm.Settings.from_env(env(tmp_path)).ci_toolchain_links == (".cargo",)
+    assert dm.Settings.from_env(env(tmp_path, APX_CI_TOOLCHAIN_LINKS=".cargo,.rustup")).ci_toolchain_links == (
+        ".cargo",
+        ".rustup",
+    )
+    assert dm.Settings.from_env(env(tmp_path, APX_CI_TOOLCHAIN_LINKS="")).ci_toolchain_links == ()

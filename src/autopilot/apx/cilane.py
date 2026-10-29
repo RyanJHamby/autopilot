@@ -64,11 +64,38 @@ def ci_env(home: Path, source: dict | None = None) -> dict:
     return env
 
 
+SAFE_LINK = re.compile(r"^\.[A-Za-z0-9_-]+$")  # a single dot-directory name such as .cargo, never a path
+
+
+def link_toolchains(home: Path, real_home: Path, names: list[str]) -> list[str]:
+    """CI runs with a fresh, empty HOME so a PR's tests cannot see ~/.ssh or any credentials. Some repos look for their
+    compilers under $HOME (drillpad-workspace finds rustc in $HOME/.cargo/bin), so the named toolchain directories are
+    symlinked into that scratch home. Only plain dot-directory names are accepted, and the owner chooses them."""
+    linked = []
+    for n in names:
+        if not SAFE_LINK.match(n):
+            raise ValueError(f"toolchain link {n!r} must be a single dot-directory name like .cargo")
+        src = real_home / n
+        if src.is_dir() and not (home / n).exists():
+            (home / n).symlink_to(src)
+            linked.append(n)
+    return linked
+
+
 def run_commands(
-    checkout: Path, commands: list, *, home: Path, timeout_each: int = 1800, source_env: dict | None = None
+    checkout: Path,
+    commands: list,
+    *,
+    home: Path,
+    timeout_each: int = 1800,
+    source_env: dict | None = None,
+    toolchain_links: list[str] | None = None,
+    real_home: Path | None = None,
 ) -> list[CmdResult]:
     """Run each command in order; stop at the first failure (later commands often depend on earlier ones)."""
     results: list[CmdResult] = []
+    if toolchain_links:
+        link_toolchains(home, real_home or Path.home(), toolchain_links)
     for item in commands:
         cmd, sub = (item, "") if isinstance(item, str) else item
         label = f"{sub}: {cmd}" if sub else cmd

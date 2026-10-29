@@ -70,6 +70,7 @@ class Settings:
     webhook_secret_file: str = ""
     authoritative: frozenset = frozenset()
     cutover: frozenset = frozenset()
+    ci_toolchain_links: tuple = (".cargo",)
 
     @classmethod
     def from_env(cls, env: dict | None = None) -> "Settings":
@@ -91,6 +92,7 @@ class Settings:
                 webhook_secret_file=e.get("APX_WEBHOOK_SECRET_FILE", ""),
                 authoritative=frozenset(r for r in e.get("APX_AUTHORITATIVE", "").split(",") if r),
                 cutover=frozenset(r for r in e.get("APX_CUTOVER", "").split(",") if r),
+                ci_toolchain_links=tuple(n for n in e.get("APX_CI_TOOLCHAIN_LINKS", ".cargo").split(",") if n),
             )
         except KeyError as ex:
             raise ConfigError(f"missing setting {ex}") from None
@@ -230,7 +232,8 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Dep
         )  # commands come from the BASE branch only
         cmds = cilane.parse_ci_steps(repo_cfg)
         home = Path(tempfile.mkdtemp(dir=s.work_dir))
-        return cilane.summarize(cilane.run_commands(co, cmds, home=home), cmds)
+        res = cilane.run_commands(co, cmds, home=home, toolchain_links=list(s.ci_toolchain_links), real_home=Path.home())
+        return cilane.summarize(res, cmds)
 
     def work(repo: str, issue: int, run_id: int) -> IssueResult:
         return work_on_issue(s, api, token_for, repo, issue, run_id, details.get(f"{repo}#{issue}", ""))

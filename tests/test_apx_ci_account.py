@@ -31,7 +31,9 @@ def test_the_sudoers_rule_lets_apx_act_as_apx_ci_and_nothing_wider():
     s = text()
     assert 'SUDOERS_LINE="$ORCH ALL=($CI) NOPASSWD:SETENV: ALL"' in s  # target user is pinned to apx-ci, never root or ALL
     assert "ALL=(ALL)" not in s and "ALL=(root)" not in s
-    assert s.index("visudo -cf") < s.index('install -m 440 -o root -g wheel "$TMP" "$SUDOERS_FILE"')  # validated first
+    check = 'visudo -cf "$TMP" >/dev/null || { say "sudoers syntax check failed; nothing installed"; exit 1; }'
+    assert check in s  # the real command, not the mention in a comment, and a failure aborts the install
+    assert s.index(check) < s.index('install -m 440 -o root -g wheel "$TMP" "$SUDOERS_FILE"')  # validated first
     assert ">> /etc/sudoers" not in s and "> /etc/sudoers " not in s  # only a drop-in file, never the main sudoers
 
 

@@ -833,3 +833,30 @@ def test_a_live_pass_hands_the_read_only_token_source_to_build_deps(tmp_path, mo
 
     dm.run_once(s, live=True, api_factory=factory)
     assert callable(seen["read"])  # without it the agent path would raise a config error on the first issue
+
+
+def test_one_repo_dropping_its_connection_costs_that_repo_the_pass_not_the_whole_pass():
+    import http.client
+
+    def api(method, path, body=None):
+        if "/RyanJHamby/autopilot/" in path:
+            raise http.client.RemoteDisconnected("Remote end closed connection without response")
+        if "/RyanJHamby/stencil/" in path:
+            raise GitHubError(502, path, "bad gateway")
+        return [{"head": {"sha": "s1", "ref": "agent/1-1"}}]
+
+    heads, failed = dm.open_heads(api, ["RyanJHamby/autopilot", "RyanJHamby/stencil", "RyanJHamby/drillpad-workspace"])
+    assert heads == {("RyanJHamby/drillpad-workspace", "s1"): "agent/1-1"}  # the healthy repo is still served
+    assert failed == {"RyanJHamby/autopilot", "RyanJHamby/stencil"}
+
+
+def test_a_surprising_response_shape_also_only_costs_that_repo():
+    heads, failed = dm.open_heads(lambda m, p, b=None: [{"head": None}], ["RyanJHamby/autopilot"])
+    assert heads == {} and failed == {"RyanJHamby/autopilot"}
+
+
+def test_actions_for_a_repo_whose_prs_could_not_be_listed_wait_for_the_next_pass():
+    from autopilot.apx.planner import Action
+
+    acts = [Action("check-pr", "a/x", "s"), Action("run-agent", "b/y", "1"), Action("check-pr", "a/x", "t")]
+    assert dm.readable_only(acts, {"a/x"}) == [acts[1]] and dm.readable_only(acts, set()) == acts

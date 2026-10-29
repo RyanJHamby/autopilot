@@ -26,6 +26,7 @@ class Fake:
         self.checks = kw.get("checks", {})
         self.cfg = kw.get("cfg", CFG)
         self.base_time = kw.get("base_time", "2026-10-01T00:00:00Z")  # old by default: nothing counts as stale
+        self.events = kw.get("events", {})  # issue number -> list of issue events
         self.pulls = kw.get("pulls", {})  # number -> {"mergeable_state": ..., "labels": [...]}
         self.files = kw.get("files", {})  # number -> [filenames]
         self.writes = []
@@ -56,6 +57,9 @@ class Fake:
         if "/check-runs" in path:
             sha = path.split("/commits/")[1].split("/")[0]
             return {"check_runs": [{"name": n} for n in self.checks.get(sha, [])]}
+        m = re.match(r".*/issues/(\d+)/events", path)
+        if m:
+            return self.events.get(int(m.group(1)), [])
         if "/issues?" in path:
             return self.issues
         raise AssertionError(path)
@@ -341,3 +345,47 @@ def test_a_network_error_for_one_repo_fails_that_repo_closed_without_crashing_th
 
     r = go(Offline())
     assert r["actions"] == [] and "fail closed" in r["note"] and "URLError" in r["note"]
+
+
+def labeled(by, label="agent-ready"):
+    return {"event": "labeled", "label": {"name": label}, "actor": {"login": by}}
+
+
+def runs_for(f):
+    return [a.ref for a in go(f)["actions"] if a.kind == "run-agent"]
+
+
+def test_a_bot_proposed_issue_runs_only_after_the_owner_labels_it_agent_ready():
+    bot = issue(8, user="github-actions[bot]")
+    assert runs_for(Fake(issues=[bot], events={8: [labeled("github-actions[bot]")]})) == []  # the bot approved its own proposal
+    assert runs_for(Fake(issues=[bot], events={8: [labeled("RyanJHamby")]})) == ["8"]  # the owner approved it
+    assert runs_for(Fake(issues=[bot])) == []  # no label history at all
+    # the MOST RECENT labelling decides: the owner labelled, then a bot re-applied it
+    assert runs_for(Fake(issues=[bot], events={8: [labeled("RyanJHamby"), labeled("github-actions[bot]")]})) == []
+    assert runs_for(Fake(issues=[bot], events={8: [labeled("github-actions[bot]"), labeled("RyanJHamby")]})) == ["8"]
+    assert (
+        runs_for(Fake(issues=[bot], events={8: [labeled("RyanJHamby", label="p1")]})) == []
+    )  # a different label is not approval
+
+
+def test_a_stranger_authored_issue_is_still_not_an_instruction_unless_the_owner_labelled_it():
+    stranger = issue(9, user="stranger")
+    assert runs_for(Fake(issues=[stranger])) == []
+    assert runs_for(Fake(issues=[stranger], events={9: [labeled("RyanJHamby")]})) == ["9"]
+
+
+def test_an_unreadable_label_history_fails_closed():
+    import urllib.error
+
+    class Offline(Fake):
+        def __call__(self, method, path, body=None):
+            if "/events" in path:
+                raise urllib.error.URLError("dns")
+            return super().__call__(method, path, body)
+
+    # only the issue whose history could not be read is excluded; the owner's own issue is unaffected and the pass does not crash
+    assert runs_for(Offline(issues=[issue(8, user="github-actions[bot]"), issue(4)])) == ["4"]
+
+
+def test_owner_authored_issues_still_run_without_any_label_history():
+    assert runs_for(Fake(issues=[issue(4)])) == ["4"]

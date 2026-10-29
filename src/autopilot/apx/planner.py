@@ -102,6 +102,20 @@ def plan_checks(
     return out
 
 
+def _owner_vouches(api: Api, repo: str, issue: dict, owner: str) -> bool:
+    """An issue may steer the agent only if the OWNER wrote it, or the owner applied the `agent-ready` label most recently (so a
+    bot-proposed audit issue becomes eligible the moment the owner approves it by labelling it). Text written by anyone else is
+    never an instruction by itself. Any error means no."""
+    if (issue.get("user") or {}).get("login") == owner:
+        return True
+    try:
+        events = api("GET", f"/repos/{repo}/issues/{issue['number']}/events?per_page=100")
+        labelled = [e for e in events if e.get("event") == "labeled" and (e.get("label") or {}).get("name") == "agent-ready"]  # type: ignore[union-attr]
+        return bool(labelled) and (labelled[-1].get("actor") or {}).get("login") == owner
+    except (GitHubError, OSError, KeyError, TypeError, AttributeError):
+        return False
+
+
 def plan_agent_runs(
     api: Api, repo: str, owner: str, ledger: Ledger, default_branch: str, now=None, rebase_issues: list[int] | None = None
 ) -> tuple[list[Action], str]:
@@ -123,7 +137,7 @@ def plan_agent_runs(
             "labels": [{"name": ln["name"]} for ln in i.get("labels", [])],
         }
         for i in raw  # type: ignore[union-attr]
-        if "pull_request" not in i and (i.get("user") or {}).get("login") == owner
+        if "pull_request" not in i and _owner_vouches(api, repo, i, owner)
     ]
     issues = [i for i in issues if not gate.skip_merged(i["number"], {ln["name"] for ln in i["labels"]}, merged)]
     picked = gate.pick_issues(issues, branches + [f"agent/{n}-inflight" for n in inflight], max(d.remaining, 0))

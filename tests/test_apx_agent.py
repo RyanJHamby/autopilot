@@ -191,3 +191,18 @@ def test_the_git_token_reaches_the_job_only_through_the_environment(monkeypatch,
     monkeypatch.setattr(agent_job, "run_agent", lambda req, token: seen.setdefault("t", token) and {"ok": True})
     monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
     assert agent_job.main() == 0 and seen["t"] == GIT_TOKEN
+
+
+def test_stale_scratch_from_earlier_agent_jobs_is_cleared_at_the_start_of_each_job(tmp_path):
+    import os
+    import time
+
+    remote, base = make_remote(tmp_path)
+    binary, _ = fake_claude(tmp_path, EDIT)
+    req = request(tmp_path, remote, base, binary)
+    old = Path(req["work_root"]) / "agent-old"
+    old.mkdir(parents=True)
+    t = time.time() - 3 * 24 * 3600
+    os.utime(old, (t, t))
+    assert agent_job.run_agent(req, None)["ok"]
+    assert not old.exists()

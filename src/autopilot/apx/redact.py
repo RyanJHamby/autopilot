@@ -28,7 +28,7 @@ _SHAPES = [
     re.compile(r"(?i)\b(authorization:\s*(?:basic|bearer)\s+)[A-Za-z0-9+/=._\-]{12,}"),
     re.compile(r"(?i)\b((?:api[_-]?key|secret|token|passwd|password)\b[\"']?\s*[:=]\s*[\"']?)[A-Za-z0-9/+_\-=.]{20,}"),
 ]
-_FENCE = re.compile(r"```.*?```", re.S)
+WITHHELD = "(raw output withheld on public repositories; see the apx log on the host)"
 
 
 def register(value: str | None) -> None:
@@ -58,4 +58,8 @@ def redact(text: str) -> str:
 
 def strip_output_blocks(markdown: str) -> str:
     """Public repos get step names and durations only: drop fenced raw output (the tail of a failing command)."""
-    return _FENCE.sub("(raw output withheld on public repositories; see the apx log on the host)", markdown)
+    # The raw output is always the LAST thing in a summary, inside a fence the lane opened. The output itself may contain backtick fences
+    # (source code, markdown), so matching "a fence ... the next fence" ends early and lets the rest through. Cut at the FIRST fence
+    # and drop everything after it instead.
+    head, sep, _ = markdown.partition("```")
+    return head.rstrip() + "\n\n" + WITHHELD if sep else markdown

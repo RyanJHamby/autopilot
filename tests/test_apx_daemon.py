@@ -61,6 +61,22 @@ def test_secret_file_must_be_private(tmp_path):
     assert dm.read_secret_file(str(f)) == "x"
 
 
+def test_routed_api_routes_the_bare_repo_path_too_not_just_paths_below_it():
+    used = []
+
+    class Cache:
+        def api_for(self, repo):
+            return lambda m, p, b=None: used.append((repo, p)) or {"private": True}
+
+    api = dm.routed_api(Cache())
+    assert api("GET", f"/repos/{REPO}") == {"private": True}  # `GET /repos/owner/name` has no trailing slash
+    assert used == [(REPO, f"/repos/{REPO}")]
+    # and therefore a private repo is recognised as private through the real routing, not only through a direct fake
+    assert dm.private_repos(api, [REPO]) == frozenset({REPO})
+    with pytest.raises(ValueError):
+        api("GET", "/repos/justowner")
+
+
 def test_routed_api_picks_token_by_repo_and_rejects_other_paths():
     used = []
 

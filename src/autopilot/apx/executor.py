@@ -12,6 +12,7 @@ with fakes. Rules it enforces:
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -37,6 +38,8 @@ class Deps:
     automerge: Callable[[str, int, str], tuple[int, str]] | None = None
     # report(repo, issue, model, turns, outcome, started_at) -> bool; best effort, failures are ignored
     report: Callable[..., bool] | None = None
+    # fix_ci(repo, issue, run_id, pr_number, head_sha, detail) -> IssueResult; adds a commit to the failing PR's branch
+    fix_ci: Callable[[str, int, int, int, str, str], "IssueResult"] | None = None
 
 
 @dataclass
@@ -116,6 +119,43 @@ def run_agent(api: Api, ledger: Ledger, deps: Deps, action: Action, *, hard: boo
     return conclusion
 
 
+def run_fix(api: Api, ledger: Ledger, deps: Deps, action: Action) -> str:
+    """One red-CI retry of an open agent PR. Returns 'success', 'failure' or 'skipped: why'. The PR must still be open, still be at the
+    head the planner saw, and still be an agent/* branch; otherwise nothing runs. The ledger row is closed on every path."""
+    repo = action.repo
+    pr_number, sha = action.ref.split(":", 1)
+    pr = api("GET", f"/repos/{repo}/pulls/{int(pr_number)}")
+    ref = (pr.get("head") or {}).get("ref", "")  # type: ignore[union-attr]
+    m = re.match(r"agent/(\d+)-", ref)
+    if pr.get("state") != "open" or (pr.get("head") or {}).get("sha") != sha or not m:  # type: ignore[union-attr]
+        return "skipped: PR changed since it was planned"
+    if deps.fix_ci is None:
+        return "skipped: fixes are not enabled"
+    issue = int(m.group(1))
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    run_id = ledger.start(repo, issue, kind="fix", ref=sha)
+    conclusion, model, turns = "failure", None, None
+    try:
+        r = deps.fix_ci(repo, issue, run_id, int(pr_number), sha, action.detail)
+        model, turns = r.model, r.turns
+        if r.ok:
+            conclusion = "success"
+        else:
+            # the PR is an issue too: the label stops further retries and tells the owner
+            _flag_needs_human(api, repo, int(pr_number))
+    except Exception:
+        _flag_needs_human(api, repo, int(pr_number))
+        raise
+    finally:
+        ledger.finish(run_id, conclusion, model=model, turns=turns)
+        if deps.report is not None:
+            try:
+                deps.report(repo, issue, model, turns, conclusion, started)
+            except Exception:  # noqa: BLE001 - reporting must never mask the run's own outcome
+                pass
+    return conclusion
+
+
 def execute(
     api: Api,
     ledger: Ledger,
@@ -155,6 +195,11 @@ def execute(
                 log.append(f"run-agent {a.repo} #{a.ref} {run_agent(api, ledger, deps, a)}")
             except Exception as e:  # noqa: BLE001 - one bad issue must not stop the loop
                 log.append(f"run-agent {a.repo} #{a.ref} crashed: {type(e).__name__}")
+        elif a.kind == "fix-ci":
+            try:
+                log.append(f"fix-ci {a.repo} {a.ref[:12]} {run_fix(api, ledger, deps, a)}")
+            except Exception as e:  # noqa: BLE001 - one bad PR must not stop the loop
+                log.append(f"fix-ci {a.repo} {a.ref[:12]} crashed: {type(e).__name__}")
         elif a.kind == "automerge":
             if deps.automerge is None:
                 log.append(f"automerge {a.repo} {a.ref}: lane not enabled")

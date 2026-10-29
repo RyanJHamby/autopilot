@@ -117,7 +117,14 @@ def _owner_vouches(api: Api, repo: str, issue: dict, owner: str) -> bool:
 
 
 def plan_agent_runs(
-    api: Api, repo: str, owner: str, ledger: Ledger, default_branch: str, now=None, rebase_issues: list[int] | None = None
+    api: Api,
+    repo: str,
+    owner: str,
+    ledger: Ledger,
+    default_branch: str,
+    now=None,
+    rebase_issues: list[int] | None = None,
+    ci_contexts: list[str] | None = None,
 ) -> tuple[list[Action], str]:
     cfg = load_cfg(api, repo, default_branch)
     open_prs = api("GET", f"/repos/{repo}/pulls?state=open&per_page=100")
@@ -126,6 +133,11 @@ def plan_agent_runs(
     d = gate.decide(cfg, ledger.runs(repo), n_agent, role="implementer", now=now)
     if not d.allow:
         return [], d.reason
+    detail = f"model={d.model} effort={d.effort} turns={d.max_turns}"
+    # finishing an open PR comes before starting new work, and shares the same daily cap
+    fixes = plan_ci_fixes(api, repo, owner, ledger, ci_contexts or [], limit=max(d.remaining, 0))
+    fixes = [Action(a.kind, a.repo, a.ref, f"{a.detail} {detail}") for a in fixes]
+    remaining = max(d.remaining, 0) - len(fixes)
     closed = api("GET", f"/repos/{repo}/pulls?state=closed&per_page=100")
     merged = gate.merged_agent_issues(closed)  # type: ignore[arg-type]
     inflight = ledger.inflight_issues(repo)
@@ -140,10 +152,9 @@ def plan_agent_runs(
         if "pull_request" not in i and _owner_vouches(api, repo, i, owner)
     ]
     issues = [i for i in issues if not gate.skip_merged(i["number"], {ln["name"] for ln in i["labels"]}, merged)]
-    picked = gate.pick_issues(issues, branches + [f"agent/{n}-inflight" for n in inflight], max(d.remaining, 0))
-    detail = f"model={d.model} effort={d.effort} turns={d.max_turns}"
-    acts = [Action("run-agent", repo, str(n), detail) for n in picked]
-    room = max(d.remaining, 0) - len(acts)  # re-runs for conflicted PRs share the same daily cap
+    picked = gate.pick_issues(issues, branches + [f"agent/{n}-inflight" for n in inflight], max(remaining, 0))
+    acts = fixes + [Action("run-agent", repo, str(n), detail) for n in picked]
+    room = remaining - len(picked)  # re-runs for conflicted PRs share the same daily cap
     for n in rebase_issues or []:
         if room <= 0:
             break
@@ -276,7 +287,14 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
             if meta.get("agents"):
                 redo = [int(a.ref) for a in rebases if a.kind == "rebase-agent"]
                 runs, note = plan_agent_runs(
-                    api, repo, owner, ledger, meta.get("default_branch", "main"), now, rebase_issues=redo
+                    api,
+                    repo,
+                    owner,
+                    ledger,
+                    meta.get("default_branch", "main"),
+                    now,
+                    rebase_issues=redo,
+                    ci_contexts=meta.get("ci_contexts"),
                 )
             else:
                 runs, note = [], "agent runs blocked: no dedicated agent account (backlog S1b)"

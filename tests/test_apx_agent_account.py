@@ -44,11 +44,19 @@ def test_it_proves_the_separation_from_every_side_and_aborts_on_any_leak():
     assert s.count("fail ") >= 6 and "must NOT be an admin" in s
 
 
+def test_the_token_is_installed_into_the_agent_home_at_mode_0600_by_the_real_command_not_just_the_preview():
+    s = text()
+    assert '  install -m 600 -o "$AGENT" -g staff "$OLD_TOKEN" "$NEW_TOKEN"\n' in s  # the executed line, not the DRY-RUN echo
+    assert 'install -d -m 700 -o "$AGENT" -g staff "$AGENT_HOME"' in s
+
+
 def test_the_only_deletion_is_the_old_copy_of_the_token_and_only_after_the_agent_proved_it_can_read_its_own():
     s = text()
     removals = re.findall(r"\brm -\w+ [^\n]*", s)
     assert len(removals) == 2, removals  # exactly: the old token copy, and the script's own temp file
-    assert any(r.startswith('rm -f "$OLD_TOKEN"') for r in removals) and any(r.startswith('rm -f "$TMP"') for r in removals)
+    assert sorted(removals) == sorted(['rm -f "$OLD_TOKEN"', 'rm -f "$TMP"\' EXIT']), (
+        removals
+    )  # whole lines, nothing appended to them
     assert 'rm -f "$OLD_TOKEN"' in s
     own = s.index('sudo -u "$AGENT" /bin/test -r "$NEW_TOKEN"')
     claude = s.index("--version >/dev/null 2>&1 || fail")

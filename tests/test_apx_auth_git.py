@@ -196,3 +196,31 @@ def test_a_hung_git_command_times_out_instead_of_holding_the_lock_forever(tmp_pa
     monkeypatch.setattr(gitops.subprocess, "run", hang)
     with pytest.raises(RuntimeError, match="timed out"):
         gitops._git(tmp_path, None, "fetch")
+
+
+def test_the_agent_token_is_read_only_single_repo_and_cached_separately(keys):
+    key, _ = keys
+    calls = []
+
+    def factory(token):
+        def api(method, path, body=None):
+            calls.append((path, body))
+            n = len(calls)
+            return {"token": f"tok{n}-" + "x" * 12, "expires_at": "2099-01-01T00:00:00Z"}
+
+        return api
+
+    c = app_auth.TokenCache("1", key, {"o/stencil": 9}, api_factory=factory)
+    ro = c.read_token_for("o/stencil")
+    assert calls[0] == (
+        "/app/installations/9/access_tokens",
+        {"repositories": ["stencil"], "permissions": {"contents": "read", "metadata": "read"}},
+    )
+    assert c.read_token_for("o/stencil") == ro and len(calls) == 1  # cached
+    full = c.token_for("o/stencil")
+    assert full != ro and calls[1][1] == {}  # the full-permission token is a separate request with no restriction
+    with pytest.raises(KeyError):
+        c.read_token_for("o/other")
+    from autopilot.apx import redact
+
+    assert ro not in redact.redact(f"leak {ro}")  # registered for redaction like every token we mint

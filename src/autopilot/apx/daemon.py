@@ -203,6 +203,16 @@ def make_report(s: Settings):
     return report.make_reporter(s.control_url, read_secret_file(s.webhook_secret_file))
 
 
+def ci_lane(s: Settings, co: Path) -> tuple[bool, str]:
+    """Run the repo's `ci:` steps (from the BASE branch only) in a scratch HOME that has just the owner-chosen toolchain
+    directories linked in."""
+    repo_cfg = yaml.safe_load(_git_show(co, f"origin/{s.default_branch}:.autopilot/repo.yaml")) or {}
+    cmds = cilane.parse_ci_steps(repo_cfg)
+    home = Path(tempfile.mkdtemp(dir=s.work_dir))
+    res = cilane.run_commands(co, cmds, home=home, toolchain_links=list(s.ci_toolchain_links), real_home=Path.home())
+    return cilane.summarize(res, cmds)
+
+
 def select_automerge(s: Settings, merge):
     """The merge lane exists only once some repo is cut over (the planner then offers it only for those repos); with
     everything in shadow mode Actions still merges and apx must not."""
@@ -227,13 +237,7 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str]) -> Dep
         return guardlane.run_guard(co, kit, base=f"origin/{s.default_branch}", head="HEAD", head_ref=head_ref, tmp=tmp)
 
     def ci(co: Path):
-        repo_cfg = (
-            yaml.safe_load(_git_show(co, f"origin/{s.default_branch}:.autopilot/repo.yaml")) or {}
-        )  # commands come from the BASE branch only
-        cmds = cilane.parse_ci_steps(repo_cfg)
-        home = Path(tempfile.mkdtemp(dir=s.work_dir))
-        res = cilane.run_commands(co, cmds, home=home, toolchain_links=list(s.ci_toolchain_links), real_home=Path.home())
-        return cilane.summarize(res, cmds)
+        return ci_lane(s, co)
 
     def work(repo: str, issue: int, run_id: int) -> IssueResult:
         return work_on_issue(s, api, token_for, repo, issue, run_id, details.get(f"{repo}#{issue}", ""))

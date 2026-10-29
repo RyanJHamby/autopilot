@@ -156,3 +156,26 @@ Do it in this order so two systems never act on the same repo:
    they can only fail on the spending limit). Until step 3, the kit's Actions dispatcher can still race apx on `agent-ready`
    issues if the spending limit is ever lifted, so step 3 should follow step 2 closely.
 Rollback: remove the repo from `APX_CUTOVER`, re-enable Actions.
+
+## Sandbox account: keep PR code away from the secrets (backlog S1)
+
+The App key and the Claude token are files owned by `apx`. Anything that runs as `apx` can read them, including a PR's tests. With a
+second account, `apx-ci`, the guard and the repo's CI commands run there instead, and `apx-ci` cannot read those files.
+
+Order matters (the sandbox runs a shared copy of this repo's code, which must already contain it):
+1. Merge the PR that adds this section, so `main` contains the sandbox job.
+2. Preview, then run, in **Terminal.app** (the real run prompts for a password for the new account):
+   ```
+   DRY_RUN=1 bash deploy/apx-ci-account.sh
+   sudo bash deploy/apx-ci-account.sh
+   ```
+   It creates `apx-ci` (private home, `uv`, links to `rustc`/`cargo`), a world-readable shared area `/Users/Shared/apx` (kit cache, a
+   copy of this repo, a Python with PyYAML), and the one sudoers rule `apx ALL=(apx-ci) NOPASSWD:SETENV: ALL` (syntax-checked first).
+   It then proves the split: `apx` can run commands as `apx-ci`, and `apx-ci` **cannot** read the App key.
+3. As `apx`, add `APX_CI_USER=apx-ci`, `APX_CI_WORK=/Users/apx-ci/work`, `APX_SHARED=/Users/Shared/apx` to `/Users/apx/.apx/apx.env`.
+4. Refresh both clones whenever code changes: `/Users/apx/autopilot` and `/Users/Shared/apx/autopilot`.
+5. Run the doctor. It now fails if the sandbox can read the key, the token or the orchestrator's home, if it is an admin, or if its
+   Python lacks PyYAML (without which the kit guard would silently lose its config).
+
+Agent runs stay **off** after a cutover until a separate agent account (`APX_AGENT_USER`, backlog S1b) exists, even if `APX_CUTOVER` is
+set: the planner says "agent runs blocked: no dedicated agent account". Rebases and merges are not affected.

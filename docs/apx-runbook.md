@@ -179,3 +179,19 @@ Order matters (the sandbox runs a shared copy of this repo's code, which must al
 
 Agent runs stay **off** after a cutover until a separate agent account (`APX_AGENT_USER`, backlog S1b) exists, even if `APX_CUTOVER` is
 set: the planner says "agent runs blocked: no dedicated agent account". Rebases and merges are not affected.
+
+## Pin required checks to the apx App (backlog S3, admin action, run by the owner)
+
+Until this is done the rulesets accept `guard / guard` and `test`/`build` from ANY app, so anything holding a `checks:write` token could post a
+passing check. Pinning makes only the apx App's results count.
+
+```
+cd ~/dev/autopilot
+python3 -m autopilot.apx.pin --repo RyanJHamby/drillpad-workspace            # dry run: shows what would change
+python3 -m autopilot.apx.pin --repo RyanJHamby/drillpad-workspace --apply     # writes the ruleset
+python3 -m autopilot.apx.pin --repo RyanJHamby/drillpad-workspace --undo --apply   # puts it back
+```
+It uses your own `gh` login (the edit needs admin). It changes only `integration_id` on the check names apx posts for that repo; other rules,
+bypass actors and conditions are sent back unchanged. It **refuses** unless apx has posted those checks successfully on the repo's recent PRs,
+because pinning a repo whose checks still come from Actions would stop every merge. Do drillpad-workspace first; autopilot and stencil only
+after apx is authoritative there. If apx stops, pinned PRs cannot merge until you undo the pin or use your admin bypass: that is the point.

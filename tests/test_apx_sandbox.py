@@ -147,3 +147,63 @@ def test_a_missing_work_directory_gives_an_actionable_error(fake_sudo, tmp_path)
         home=str(tmp_path),
     )
     assert "apx-ci-account.sh" in res["error"]
+
+
+def test_the_git_token_reaches_the_job_through_the_environment_only(fake_sudo, tmp_path):
+    sudo, log = fake_sudo
+    echo = tmp_path / "echo-python"
+    echo.write_text('#!/bin/sh\nprintf \'{"seen": "%s"}\\n\' "$APX_GIT_TOKEN"\n')
+    echo.chmod(0o755)
+    (tmp_path / "w").mkdir()
+    res = sandbox.run_in_sandbox(
+        Launcher("apx-ci", sudo=sudo),
+        {"work_root": str(tmp_path / "w")},
+        GIT_TOKEN,
+        python=str(echo),
+        code_dir=str(ROOT),
+        home=str(tmp_path),
+    )
+    assert res == {"seen": GIT_TOKEN}  # delivered
+    assert GIT_TOKEN not in log.read_text()  # never in a command line
+    none = sandbox.run_in_sandbox(
+        Launcher("apx-ci", sudo=sudo),
+        {"work_root": str(tmp_path / "w")},
+        None,
+        python=str(echo),
+        code_dir=str(ROOT),
+        home=str(tmp_path),
+    )
+    assert none == {"seen": ""}  # no token, no variable
+
+
+def test_the_job_reads_the_token_from_the_environment_and_prunes_old_scratch(tmp_path, monkeypatch):
+    import io
+    import os
+    import time
+
+    seen = {}
+    monkeypatch.setenv("APX_GIT_TOKEN", GIT_TOKEN)
+    monkeypatch.setattr(sandbox_job, "run_job", lambda req, token: seen.setdefault("token", token) and {"ok": 1})
+    monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
+    assert sandbox_job.main() == 0 and seen["token"] == GIT_TOKEN
+
+    root = tmp_path / "w"
+    old = root / "pr-old"
+    old.mkdir(parents=True)
+    t = time.time() - 3 * 24 * 3600
+    os.utime(old, (t, t))
+    remote, head = make_remote(tmp_path, {"a.txt": "x\n"})
+    req = {
+        "repo": "o/r",
+        "sha": head,
+        "base_branch": "main",
+        "head_ref": "agent/1-1",
+        "kit_dir": KIT,
+        "steps": [[f"{sys.executable} -c pass", ""]],
+        "toolchain_links": [],
+        "work_root": str(root),
+        "url": str(remote),
+    }
+    monkeypatch.undo()
+    sandbox_job.run_job(req, None)
+    assert not old.exists()  # stale scratch from earlier jobs is cleared at the start of every job

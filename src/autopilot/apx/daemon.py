@@ -27,7 +27,7 @@ import runner as kit_runner  # noqa: E402
 from . import cilane, claude_runner, committer, gitops, guardlane, mergelane, report, status  # noqa: E402
 from .app_auth import TokenCache  # noqa: E402
 from .executor import Deps, IssueResult, execute  # noqa: E402
-from .github import Api, make_api  # noqa: E402
+from .github import Api, GitHubError, make_api  # noqa: E402
 from .ledger import Ledger  # noqa: E402
 from .planner import ALLOWED_REPOS, Action, load_cfg, plan  # noqa: E402
 from .redact import redact, register  # noqa: E402
@@ -483,6 +483,25 @@ def run_once(s: Settings, *, live: bool = False, api_factory=make_api) -> list[s
         return _run_once_locked(s, live=live, api_factory=api_factory)
 
 
+def open_heads(api: Api, repos) -> tuple[dict[tuple[str, str], str], set[str]]:
+    """{(repo, head sha): head branch} for every open PR, and the repos that could not be listed. One dropped connection must cost
+    that repo this pass, never the whole pass (it used to raise out of the daemon)."""
+    heads: dict[tuple[str, str], str] = {}
+    failed: set[str] = set()
+    for repo in repos:
+        try:
+            for pr in api("GET", f"/repos/{repo}/pulls?state=open&per_page=100"):  # type: ignore[union-attr]
+                heads[(repo, pr["head"]["sha"])] = pr["head"]["ref"]
+        except (GitHubError, OSError, KeyError, TypeError):
+            failed.add(repo)
+    return heads, failed
+
+
+def readable_only(actions: list[Action], unreadable: set[str]) -> list[Action]:
+    """Without a repo's PR heads none of its actions can be carried out safely, so they wait for the next pass."""
+    return [a for a in actions if a.repo not in unreadable]
+
+
 def private_repos(api: Api, repos) -> frozenset:
     """Repos confirmed private by the API. Anything we cannot confirm is treated as public, so its output is withheld."""
     out = set()
@@ -530,10 +549,10 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     if not really_live:
         return log + execute(api, ledger, None, actions, contexts={}, head_refs={}, dry_run=True)  # type: ignore[arg-type]
     details = {f"{a.repo}#{a.ref}": a.detail for a in actions if a.kind == "run-agent"}
-    heads = {}
-    for repo in s.installations:
-        for pr in api("GET", f"/repos/{repo}/pulls?state=open&per_page=100"):  # type: ignore[union-attr]
-            heads[(repo, pr["head"]["sha"])] = pr["head"]["ref"]
+    heads, unreadable = open_heads(api, s.installations)
+    for repo in sorted(unreadable):
+        log.append(f"{repo}: skipped this pass (could not list open PRs)")
+    actions = readable_only(actions, unreadable)
     deps = build_deps(s, api, cache.token_for, details, read_token_for=cache.read_token_for)
     ctx = {r: s.contexts(r) for r in s.installations}
     return log + execute(

@@ -20,6 +20,7 @@ from .checks import post_check, post_pending
 from .github import Api
 from .ledger import Ledger
 from .planner import Action
+from .redact import strip_output_blocks
 
 
 @dataclass
@@ -48,7 +49,9 @@ class IssueResult:
     model: str | None = None
 
 
-def run_check_pr(api: Api, deps: Deps, action: Action, *, guard_ctx: str, ci_ctx: str, head_ref: str) -> dict[str, bool]:
+def run_check_pr(
+    api: Api, deps: Deps, action: Action, *, guard_ctx: str, ci_ctx: str, head_ref: str, public: bool = True
+) -> dict[str, bool]:
     repo, sha = action.repo, action.ref
     post_pending(api, repo, sha, guard_ctx)
     post_pending(api, repo, sha, ci_ctx)
@@ -64,7 +67,7 @@ def run_check_pr(api: Api, deps: Deps, action: Action, *, guard_ctx: str, ci_ctx
         g_ok, g_out = deps.guard(co, head_ref)
     except Exception as e:  # noqa: BLE001
         g_ok, g_out = False, f"guard lane crashed: {type(e).__name__}"
-    post_check(api, repo, sha, guard_ctx, g_ok, g_out)
+    post_check(api, repo, sha, guard_ctx, g_ok, strip_output_blocks(g_out) if public else g_out)
     res[guard_ctx] = g_ok
     if not g_ok:
         # do not run the PR's code when the guard rejected it
@@ -75,7 +78,7 @@ def run_check_pr(api: Api, deps: Deps, action: Action, *, guard_ctx: str, ci_ctx
         c_ok, c_out = deps.ci(co)
     except Exception as e:  # noqa: BLE001
         c_ok, c_out = False, f"ci lane crashed: {type(e).__name__}"
-    post_check(api, repo, sha, ci_ctx, c_ok, c_out)
+    post_check(api, repo, sha, ci_ctx, c_ok, strip_output_blocks(c_out) if public else c_out)
     res[ci_ctx] = c_ok
     return res
 
@@ -122,8 +125,11 @@ def execute(
     contexts: dict[str, dict],
     head_refs: dict[tuple[str, str], str],
     dry_run: bool = True,
+    private_repos: frozenset | None = None,
 ) -> list[str]:
-    """contexts: {repo: {"guard": "guard / guard", "ci": "build"}}; head_refs: {(repo, sha): head branch name}."""
+    """contexts: {repo: {"guard": "guard / guard", "ci": "build"}}; head_refs: {(repo, sha): head branch name}.
+    private_repos: repos known to be private. Everything else is treated as PUBLIC (fail closed), and a public repo's check
+    summary gets step names and durations only, never the raw tail of a failing command."""
     log = []
     for a in actions:
         if dry_run:
@@ -132,7 +138,15 @@ def execute(
         if a.kind == "check-pr":
             ctx = contexts[a.repo]
             try:
-                r = run_check_pr(api, deps, a, guard_ctx=ctx["guard"], ci_ctx=ctx["ci"], head_ref=head_refs[(a.repo, a.ref)])
+                r = run_check_pr(
+                    api,
+                    deps,
+                    a,
+                    guard_ctx=ctx["guard"],
+                    ci_ctx=ctx["ci"],
+                    head_ref=head_refs[(a.repo, a.ref)],
+                    public=a.repo not in (private_repos or frozenset()),
+                )
                 log.append(f"check-pr {a.repo} {a.ref[:7]} {r}")
             except Exception as e:  # noqa: BLE001 - e.g. a network error posting a check; the next pass retries this PR
                 log.append(f"check-pr {a.repo} {a.ref[:7]} failed: {type(e).__name__}")

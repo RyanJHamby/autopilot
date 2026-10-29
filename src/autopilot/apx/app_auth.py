@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .github import Api, make_api
+from .redact import register
 
 REFRESH_MARGIN = 300  # seconds before expiry at which a cached token is replaced
 
@@ -57,6 +58,7 @@ class TokenCache:
         r = jwt_api("POST", f"/app/installations/{self.installations[repo]}/access_tokens", {})
         exp = _parse_iso(r["expires_at"])  # type: ignore[index]
         self._tokens[repo] = Token(r["token"], exp)  # type: ignore[index]
+        register(r["token"])  # type: ignore[index]  # scrubbed from anything apx later publishes
         return r["token"]  # type: ignore[index]
 
     def api_for(self, repo: str) -> Api:

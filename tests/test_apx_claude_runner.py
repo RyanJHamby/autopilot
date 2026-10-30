@@ -64,6 +64,12 @@ def test_prompt_tells_the_agent_to_run_lint_and_tests_before_finishing():
     assert "linter AND its tests" in p and "fix every failure" in p
 
 
+def test_prompt_demands_autofix_and_format_on_the_changed_files_only():
+    for p in (cr.build_prompt("o/r", 7, "T", "b", []), cr.build_fix_prompt("o/r", 7, "T", "b", [], "boom")):
+        assert "ruff check --fix" in p and "ruff format" in p
+        assert "exactly the files you changed" in p and "never whole directories" in p
+
+
 def test_env_is_scrubbed_and_token_only_in_agent_env(tmp_path):
     src = {"PATH": "/usr/bin", "GITHUB_TOKEN": "gh-secret", "GH_TOKEN": "x", "AWS_SECRET_ACCESS_KEY": "y", "LANG": "C"}
     env = cr.build_env("tok", tmp_path, src)

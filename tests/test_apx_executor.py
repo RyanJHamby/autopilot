@@ -216,3 +216,36 @@ def test_a_network_error_while_posting_one_pr_check_does_not_lose_the_rest_of_th
         dry_run=False,
     )
     assert "failed: URLError" in log[0] and "def5678"[:7] in log[1] and "failed" not in log[1]  # the second PR still got checked
+
+
+# --- check-main ---
+
+
+def main_action():
+    return Action("check-main", REPO, "m" * 40, "main head not yet checked")
+
+
+def run_main(d, **kw):
+    api = Api()
+    log = ex.execute(
+        api, Ledger(), d, [main_action()], contexts=CTX, head_refs={}, dry_run=False, private_repos=frozenset({REPO})
+    )
+    return api, log
+
+
+def test_check_main_posts_the_ci_result_under_the_ci_check_name():
+    api, log = run_main(deps(ci=(True, "- PASS")))
+    assert api.checks() == [("build", "in_progress", None), ("build", "completed", "success")]
+    assert log == ["check-main RyanJHamby/stencil mmmmmmm green"]
+
+
+def test_a_red_main_is_posted_as_a_failure_and_logged_as_a_problem():
+    api, log = run_main(deps(ci=(False, "- FAIL `ruff`")))
+    assert api.checks()[-1] == ("build", "completed", "failure")
+    assert "failed (main is red)" in log[0]  # the status watcher keys on the word "failed"
+
+
+def test_a_lane_that_could_not_run_is_not_reported_as_a_red_main():
+    for d in (deps(ci=(False, "not run: guard failed")), deps(checkout_err=True), deps(ci_err=True)):
+        api, log = run_main(d)
+        assert "could not run" in log[0] and "failed (main is red)" not in log[0]

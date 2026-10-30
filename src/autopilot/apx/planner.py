@@ -102,6 +102,24 @@ def plan_checks(
     return out
 
 
+def main_ci(api: Api, repo: str, default_branch: str, ci_ctx: str, app_slug: str = APX_APP_SLUG) -> tuple[str, str]:
+    """(sha, state) of the default branch head as apx's own CI check sees it: none | ok | red. A check still running is ok: only a failure pauses work.
+    Only checks posted by the apx App count, so an Actions result of the same name cannot make main look green."""
+    sha = api("GET", f"/repos/{repo}/git/ref/heads/{default_branch}")["object"]["sha"]  # type: ignore[index]
+    runs = api("GET", f"/repos/{repo}/commits/{sha}/check-runs?per_page=100")["check_runs"]  # type: ignore[index]
+    ours = [c for c in runs if c.get("name") == ci_ctx and (c.get("app") or {}).get("slug") == app_slug]
+    if not ours:
+        return sha, "none"
+    return sha, "red" if any(c.get("conclusion") == "failure" for c in ours) else "ok"
+
+
+def plan_main_check(sha: str, state: str, repo: str, default_branch: str) -> list[Action]:
+    """The default branch is only ever checked when it moves, and only if nobody has checked this head yet."""
+    if state != "none":
+        return []
+    return [Action("check-main", repo, sha, f"{default_branch} head not yet checked")]
+
+
 def _owner_vouches(api: Api, repo: str, issue: dict, owner: str) -> bool:
     """An issue may steer the agent only if the OWNER wrote it, or the owner applied the `agent-ready` label most recently (so a
     bot-proposed audit issue becomes eligible the moment the owner approves it by labelling it). Text written by anyone else is
@@ -277,6 +295,11 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
                 meta.get("contexts", ["guard / guard"]),
                 base_time=base_commit_time(api, repo, meta.get("default_branch", "main")),
             )
+            main_state = "off"
+            if meta.get("main_check") and meta.get("ci_contexts"):
+                branch = meta.get("default_branch", "main")
+                main_sha, main_state = main_ci(api, repo, branch, meta["ci_contexts"][0])
+                actions += plan_main_check(main_sha, main_state, repo, branch)
             if not meta.get("loop", meta.get("agents")):
                 # shadow mode: Actions is still the system of record, so apx only reports checks. Updating branches or
                 # running agents here would race the Actions jobs and open duplicate PRs.
@@ -284,7 +307,10 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
                 continue
             rebases = plan_rebases(api, repo, owner, ledger, now)
             updates = [a for a in rebases if a.kind == "update-branch"]
-            if meta.get("agents"):
+            if main_state == "red":
+                # new work built on a broken main is blamed for errors it did not cause: hold agent runs and fixes until main is green
+                runs, note = [], f"main failed {meta['ci_contexts'][0]}: agent work paused until it is green"
+            elif meta.get("agents"):
                 redo = [int(a.ref) for a in rebases if a.kind == "rebase-agent"]
                 runs, note = plan_agent_runs(
                     api,

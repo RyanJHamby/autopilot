@@ -207,6 +207,8 @@ def test_run_once_is_dry_run_unless_both_flags(tmp_path, monkeypatch):
                 raise GitHubError(404, path, "")
             if "contents/.autopilot/repo.yaml" in path:
                 return {"content": base64.b64encode(b"mode: standard\ntier: A\n").decode()}
+            if path.endswith("/git/ref/heads/main"):
+                return {"object": {"sha": "m" * 40}}
             if "/check-runs" in path:
                 return {"check_runs": []}
             if re.search(r"/pulls/\d+$", path):
@@ -223,6 +225,10 @@ def test_run_once_is_dry_run_unless_both_flags(tmp_path, monkeypatch):
                     if "state=open" in path
                     else []
                 )
+            if path.endswith("/git/ref/heads/main"):
+                return {"object": {"sha": "m" * 40}}
+            if "/check-runs" in path:
+                return {"check_runs": []}
             return []
 
         return api
@@ -260,6 +266,10 @@ def test_merge_lane_is_off_in_shadow_mode_and_planned_after_cutover(tmp_path, mo
                         "user": {"login": "RyanJHamby"},
                     }
                 ]
+            if path.endswith("/git/ref/heads/main"):
+                return {"object": {"sha": "m" * 40}}
+            if "/check-runs" in path:
+                return {"check_runs": []}
             return []
 
         return api
@@ -405,6 +415,10 @@ def test_run_once_in_shadow_mode_never_plans_an_agent_run(tmp_path, monkeypatch)
                         "labels": [{"name": "agent-ready"}],
                     }
                 ]
+            if path.endswith("/git/ref/heads/main"):
+                return {"object": {"sha": "m" * 40}}
+            if "/check-runs" in path:
+                return {"check_runs": []}
             return []
 
         return api
@@ -453,6 +467,8 @@ def test_authoritative_repo_checks_run_under_the_required_names_end_to_end(tmp_p
                 raise GitHubError(404, path, "")
             if "contents/.autopilot/repo.yaml" in path:
                 return {"content": base64.b64encode(b"mode: standard\ntier: A\n").decode()}
+            if path.endswith("/git/ref/heads/main"):
+                return {"object": {"sha": "m" * 40}}
             if "/check-runs" in path:
                 return {"check_runs": []}
             if "pulls?state=open" in path:
@@ -467,6 +483,10 @@ def test_authoritative_repo_checks_run_under_the_required_names_end_to_end(tmp_p
                         "user": {"login": "RyanJHamby"},
                     }
                 ]
+            if path.endswith("/git/ref/heads/main"):
+                return {"object": {"sha": "m" * 40}}
+            if "/check-runs" in path:
+                return {"check_runs": []}
             return []
 
         return api
@@ -530,6 +550,10 @@ def test_run_once_plans_agent_runs_and_merges_only_for_the_cutover_repo(tmp_path
                         "labels": [{"name": "agent-ready"}],
                     }
                 ]
+            if path.endswith("/git/ref/heads/main"):
+                return {"object": {"sha": "m" * 40}}
+            if "/check-runs" in path:
+                return {"check_runs": []}
             return []
 
         return api
@@ -644,6 +668,10 @@ def _gate_factory():
                         "labels": [{"name": "agent-ready"}],
                     }
                 ]
+            if path.endswith("/git/ref/heads/main"):
+                return {"object": {"sha": "m" * 40}}
+            if "/check-runs" in path:
+                return {"check_runs": []}
             return []
 
         return api
@@ -842,6 +870,10 @@ def test_a_live_pass_hands_the_read_only_token_source_to_build_deps(tmp_path, mo
                 return {"content": base64.b64encode(b"mode: standard\ntier: A\n").decode()}
             if re.search(r"/repos/[^/]+/[^/]+$", path):
                 return {"private": True}
+            if path.endswith("/git/ref/heads/main"):
+                return {"object": {"sha": "m" * 40}}
+            if "/check-runs" in path:
+                return {"check_runs": []}
             return []
 
         return api

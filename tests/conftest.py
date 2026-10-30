@@ -4,6 +4,13 @@ import textwrap
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _clean_git_env(monkeypatch):
+    """git sets GIT_DIR, GIT_INDEX_FILE etc. for hooks (pre-push runs this suite); tests that make their own repos must not inherit them."""
+    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR", "GIT_PREFIX"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture()
 def fake_sudo(tmp_path):
     """A stand-in for sudo: records its argv, drops the environment except PATH and --preserve-env names (like env_reset), runs the rest."""

@@ -866,6 +866,27 @@ def cmd_report(ns: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_specs(ns: argparse.Namespace) -> int:
+    """Read-only: which specs exist, their lifecycle state, linked issue, handshake verdict and last change."""
+    from autopilot import specs
+
+    d = Path(ns.dir)
+    cfg: dict = {}
+    cfg_path = Path(ns.config)
+    if cfg_path.exists():
+        cfg = yaml.safe_load(cfg_path.read_text()) or {}
+    if ns.log:
+        f = d / f"{ns.log}.md"
+        if not f.exists():
+            print(f"no such spec: {f}")
+            return 2
+        print("\n".join(specs.history(f)) or "(not committed yet)")
+        return 0
+    rows = specs.load(d, cfg)
+    print(specs.render(rows), end="")
+    return 1 if any(r.problems for r in rows) else 0
+
+
 def cmd_digest(ns: argparse.Namespace) -> int:
     """Read-only: markdown summary of the last 24h across enabled repos. Uses gh list/get only; calls no model."""
     import datetime as dt
@@ -1907,6 +1928,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--days", type=int, default=14)
     p.add_argument("--min-clean", type=int, default=10, help="clean merges before suggesting auto-merge for a class")
     p.set_defaults(fn=cmd_report)
+    p = sub.add_parser("specs", help="read-only index of specs/: status, issue, handshake, last change (--log ID for history)")
+    p.add_argument("--dir", default="specs")
+    p.add_argument("--config", default=".autopilot/repo.yaml")
+    p.add_argument("--log", default="", help="print the git history of one spec")
+    p.set_defaults(fn=cmd_specs)
     p = sub.add_parser("digest", help="read-only markdown summary of the last 24h across enabled repos (no model)")
     p.set_defaults(fn=cmd_digest)
     p = sub.add_parser("retro", help="read-only evidence packet: why agent runs/PRs failed to land")

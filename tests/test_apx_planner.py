@@ -29,6 +29,7 @@ class Fake:
         self.events = kw.get("events", {})  # issue number -> list of issue events
         self.pulls = kw.get("pulls", {})  # number -> {"mergeable_state": ..., "labels": [...]}
         self.files = kw.get("files", {})  # number -> [filenames]
+        self.main_sha = kw.get("main_sha", "msha")
         self.writes = []
 
     def __call__(self, method, path, body=None):
@@ -54,9 +55,11 @@ class Fake:
             return self.open
         if "pulls?state=closed" in path:
             return self.closed
+        if re.match(r".*/git/ref/heads/main$", path):
+            return {"object": {"sha": self.main_sha}}
         if "/check-runs" in path:
             sha = path.split("/commits/")[1].split("/")[0]
-            return {"check_runs": [{"name": n} for n in self.checks.get(sha, [])]}
+            return {"check_runs": [n if isinstance(n, dict) else {"name": n} for n in self.checks.get(sha, [])]}
         m = re.match(r".*/issues/(\d+)/events", path)
         if m:
             return self.events.get(int(m.group(1)), [])
@@ -508,3 +511,57 @@ def test_plan_puts_red_ci_fixes_before_new_issues_and_they_share_the_daily_cap()
     assert len(total) <= cap  # fixes plus new runs never exceed what the daily cap leaves
     without = planner.plan(f, Ledger(), {REPO: {**meta[REPO], "ci_contexts": None}}, now=NOW)[REPO]["actions"]
     assert not [a for a in without if a.kind == "fix-ci"]  # no CI context configured: no fixes
+
+
+# --- main health: the default branch is checked when it moves, and a red main pauses agent work ---
+
+
+def main_run(name, conclusion="success", status="completed", app="autopilot-apx"):
+    return {"name": name, "conclusion": conclusion, "status": status, "app": {"slug": app}}
+
+
+MAIN_META = {
+    REPO: {"contexts": ["guard / guard", "build"], "agents": True, "loop": True, "main_check": True, "ci_contexts": ["build"]}
+}
+BUSY = dict(open=[pr(1, "agent/5-1", "s1")], issues=[issue(4)])
+
+
+def kind_list(r):
+    return sorted(a.kind for a in r["actions"])
+
+
+def test_an_unchecked_main_head_gets_a_check_main_action():
+    r = planner.plan(Fake(**BUSY), Ledger(), MAIN_META, now=NOW)[REPO]
+    assert [(a.kind, a.ref) for a in r["actions"] if a.kind == "check-main"] == [("check-main", "msha")]
+
+
+def test_a_green_or_running_main_check_plans_nothing_and_does_not_stop_agents():
+    for run in (main_run("build"), main_run("build", conclusion=None, status="in_progress")):
+        r = planner.plan(Fake(checks={"msha": [run]}, **BUSY), Ledger(), MAIN_META, now=NOW)[REPO]
+        assert "check-main" not in kind_list(r) and "run-agent" in kind_list(r), run
+
+
+def test_a_red_main_pauses_agent_runs_and_fixes_but_not_checks_or_merges():
+    f = Fake(checks={"msha": [main_run("build", "failure")]}, **BUSY)
+    r = planner.plan(f, Ledger(), {REPO: {**MAIN_META[REPO], "merge": True}}, now=NOW)[REPO]
+    assert "run-agent" not in kind_list(r) and "fix-ci" not in kind_list(r)
+    assert "check-pr" in kind_list(r)  # the fix for main must still be checked (and merged)
+    assert "main failed build" in r["note"] and "paused" in r["note"]
+
+
+def test_a_failed_check_of_the_same_name_from_another_app_does_not_make_main_red():
+    f = Fake(checks={"msha": [main_run("build", "failure", app="github-actions")]}, **BUSY)
+    r = planner.plan(f, Ledger(), MAIN_META, now=NOW)[REPO]
+    assert "run-agent" in kind_list(r) and "check-main" in kind_list(r)  # Actions' red does not count; apx has not checked yet
+
+
+def test_a_new_main_head_is_checked_again_after_a_red_one_so_a_fix_clears_the_pause():
+    red = Fake(checks={"old": [main_run("build", "failure")]}, main_sha="new", **BUSY)
+    r = planner.plan(red, Ledger(), MAIN_META, now=NOW)[REPO]
+    assert "check-main" in kind_list(r) and "run-agent" in kind_list(r)
+
+
+def test_main_is_not_checked_when_the_repo_does_not_ask_for_it():
+    meta = {REPO: {k: v for k, v in MAIN_META[REPO].items() if k != "main_check"}}
+    r = planner.plan(Fake(**BUSY), Ledger(), meta, now=NOW)[REPO]
+    assert "check-main" not in kind_list(r)

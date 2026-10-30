@@ -555,6 +555,7 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
             "merge": s.full_loop(r),
             "agents": s.agents_allowed(r),
             "ci_contexts": [s.contexts(r)["ci"]],
+            "main_check": s.full_loop(r) or r in s.authoritative,  # repos whose required checks come from apx also watch main
         }
         for r in s.installations
     }

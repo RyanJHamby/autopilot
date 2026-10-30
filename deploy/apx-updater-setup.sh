@@ -30,6 +30,8 @@ case "$SHA" in *[!0-9a-f]*) say "bad sha $SHA"; exit 1;; esac
 say "first release: $SHA"
 
 as_orch /Users/apx/.local/bin/uv pip install --python "$SHARED/venv/bin/python" pytest pyyaml
+# uv installs under the orchestrator's umask (077); the no-secrets test account must be able to read the packages.
+as_orch chmod -R go+rX "$SHARED/venv"
 as_orch mkdir -p "$SHARED/releases"
 if [ ! -d "$SHARED/releases/$SHA" ]; then
   as_orch git clone -q --no-hardlinks "$SRC" "$SHARED/releases/$SHA"

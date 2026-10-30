@@ -211,3 +211,12 @@ def test_the_host_scripts_and_plists_are_well_formed():
     )  # never runs from a release it manages
     sw = (d / "apx-switch-to-current.sh").read_text()
     assert "--live" in sw and "APX_UPDATE_LIVE=1" in sw and "/updater/src" in sw and ".bak" in sw
+
+
+def test_setup_makes_the_venv_readable_by_the_test_account_after_installing():
+    from pathlib import Path
+
+    t = (Path(__file__).resolve().parent.parent / "deploy" / "apx-updater-setup.sh").read_text().splitlines()
+    install = next(i for i, ln in enumerate(t) if "uv pip install" in ln)
+    fix = next(i for i, ln in enumerate(t) if "chmod -R go+rX" in ln and "venv" in ln)
+    assert fix > install  # uv installs 0700 under the orchestrator's umask; apx-ci could not import pytest's dependencies

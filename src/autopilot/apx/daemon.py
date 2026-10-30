@@ -85,6 +85,11 @@ class Settings:
     agent_work: str = ""  # default /Users/<agent_user>/work
     agent_binary: str = ""  # default /Users/<agent_user>/.local/bin/claude
 
+    def code_dir(self) -> str:
+        """The code the sandbox and the version label use: the updater's `current` release once it exists, else the manual checkout."""
+        cur = os.path.join(self.shared_dir, "current")
+        return cur if os.path.islink(cur) else os.path.join(self.shared_dir, "autopilot")
+
     @classmethod
     def from_env(cls, env: dict | None = None) -> "Settings":
         e = os.environ if env is None else env
@@ -225,7 +230,7 @@ def work_on_issue(
                 r,
                 tok,
                 python=f"{s.shared_dir}/venv/bin/python",
-                code_dir=f"{s.shared_dir}/autopilot",
+                code_dir=s.code_dir(),
                 home=f"/Users/{s.agent_user}",
             )
         )
@@ -331,7 +336,7 @@ def fix_pr(
             r,
             tok,
             python=f"{s.shared_dir}/venv/bin/python",
-            code_dir=f"{s.shared_dir}/autopilot",
+            code_dir=s.code_dir(),
             home=f"/Users/{s.agent_user}",
         )
     )
@@ -392,7 +397,7 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_t
             kit_dir=str(kit),
             work_root=s.ci_work,
             python=f"{s.shared_dir}/venv/bin/python",
-            code_dir=f"{s.shared_dir}/autopilot",
+            code_dir=s.code_dir(),
             home=f"/Users/{s.ci_user}",
             token_for=read_token_for,
             steps_for=lambda repo: [list(x) for x in cilane.parse_ci_steps(load_cfg(api, repo, s.default_branch))],
@@ -631,7 +636,7 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as e:
         print(f"apx config error: {e}", file=sys.stderr)
         return 2
-    version = status.code_version(f"{st.shared_dir}/autopilot")
+    version = status.code_version(st.code_dir())
     try:
         lines = run_once(st, live=ns.live)
     except Exception as e:  # noqa: BLE001 - record that the pass died so the owner's watcher can say so, then fail loudly

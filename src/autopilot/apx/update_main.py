@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import gitops, release
 from .app_auth import TokenCache
-from .daemon import Settings, routed_api
+from .daemon import Settings, routed_api, single_instance
 from .github import make_api
 from .redact import redact
 from .runas import Launcher
@@ -83,18 +83,25 @@ def main(argv: list[str] | None = None) -> int:
         elif not live:
             line = f"dry-run: would consider {head[:7]} (running {release.current(root)})"
         else:
-            line = run_update(
-                root,
-                api,
-                repo=REPO,
-                default_branch="main",
-                owner=s.owner,
-                required_checks=list(CHECKS),
-                candidate=head,
-                status=status,
-                stage=make_stage(cache.read_token_for(REPO)),
-                run_tests=make_run_tests(Launcher(s.ci_user or None), f"{s.shared_dir}/venv/bin/python", f"/Users/{s.ci_user}"),
-            )
+            with single_instance(s.work_dir) as got:  # never swap under a running pass: it would mix two releases
+                line = (
+                    "update: a pass is running, will try again next tick"
+                    if not got
+                    else run_update(
+                        root,
+                        api,
+                        repo=REPO,
+                        default_branch="main",
+                        owner=s.owner,
+                        required_checks=list(CHECKS),
+                        candidate=head,
+                        status=status,
+                        stage=make_stage(cache.read_token_for(REPO)),
+                        run_tests=make_run_tests(
+                            Launcher(s.ci_user or None), f"{s.shared_dir}/venv/bin/python", f"/Users/{s.ci_user}"
+                        ),
+                    )
+                )
     except Exception as e:  # noqa: BLE001 - the updater must report, not crash silently
         line = f"update failed: {type(e).__name__}"
     line = redact(line)

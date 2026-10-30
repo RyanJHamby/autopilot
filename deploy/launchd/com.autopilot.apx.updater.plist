@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- apx updater timer (docs/apx-updater-design.md). Installed by deploy/apx-updater-setup.sh as a DRY-RUN: it prints what it would
+     do and writes /Users/Shared/apx/update.json. deploy/apx-switch-to-current.sh makes it live (it sets APX_UPDATE_LIVE=1 and passes the live flag).
+     It runs from /Users/Shared/apx/updater, a copy that is never updated automatically. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.autopilot.apx.updater</string>
+  <key>UserName</key><string>apx</string>
+  <key>GroupName</key><string>staff</string>
+  <key>WorkingDirectory</key><string>/Users/Shared/apx/updater</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>set -a; . /Users/apx/.apx/apx.env; set +a; export PYTHONPATH=/Users/Shared/apx/updater/src; exec /Users/Shared/apx/venv/bin/python -m autopilot.apx.update_main</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/apx</string>
+    <key>PATH</key><string>/Users/apx/.local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key><integer>120</integer>
+  <key>RunAtLoad</key><false/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/apx/Library/Logs/apx-updater.log</string>
+  <key>StandardErrorPath</key><string>/Users/apx/Library/Logs/apx-updater.err.log</string>
+</dict>
+</plist>

@@ -150,3 +150,64 @@ def test_rolled_back_counts_as_a_status_problem_word(name):
     from autopilot.apx.status import problems_in
 
     assert problems_in([f"x {name} y"])
+
+
+class FakeCache:
+    def read_token_for(self, repo):
+        return "tok"
+
+
+def live_world(monkeypatch, tmp_path, lock_free):
+    import contextlib
+
+    patch_world(monkeypatch, tmp_path, "apx-ci")
+    monkeypatch.setattr(um, "TokenCache", lambda *a, **k: FakeCache())
+    monkeypatch.setenv("APX_UPDATE_LIVE", "1")
+    calls = []
+    monkeypatch.setattr(um, "run_update", lambda *a, **k: calls.append(1) or "update: swapped")
+
+    @contextlib.contextmanager
+    def lock(work_dir):
+        yield lock_free
+
+    monkeypatch.setattr(um, "single_instance", lock)
+    return calls
+
+
+def test_a_running_pass_blocks_the_swap(monkeypatch, tmp_path, capsys):
+    calls = live_world(monkeypatch, tmp_path, lock_free=False)
+    um.main(["--live"])
+    assert calls == [] and "a pass is running" in capsys.readouterr().out
+
+
+def test_with_the_lock_free_the_update_runs(monkeypatch, tmp_path, capsys):
+    calls = live_world(monkeypatch, tmp_path, lock_free=True)
+    um.main(["--live"])
+    assert calls == [1] and "swapped" in capsys.readouterr().out
+
+
+def test_code_dir_follows_current_once_it_exists(tmp_path):
+    s = settings("apx-ci")
+    s.shared_dir = str(tmp_path)
+    assert s.code_dir() == f"{tmp_path}/autopilot"
+    (tmp_path / "rel").mkdir()
+    (tmp_path / "current").symlink_to(tmp_path / "rel")
+    assert s.code_dir() == f"{tmp_path}/current"
+
+
+def test_the_host_scripts_and_plists_are_well_formed():
+    import plistlib
+    import subprocess
+    from pathlib import Path
+
+    d = Path(__file__).resolve().parent.parent / "deploy"
+    for sh in ("apx-updater-setup.sh", "apx-switch-to-current.sh"):
+        assert subprocess.run(["bash", "-n", str(d / sh)]).returncode == 0
+    p = plistlib.loads((d / "launchd" / "com.autopilot.apx.updater.plist").read_bytes())
+    cmd = p["ProgramArguments"][-1]
+    assert p["UserName"] == "apx" and "--live" not in cmd and "APX_UPDATE_LIVE" not in cmd  # phase 1 is a dry run
+    assert (
+        p["WorkingDirectory"] == "/Users/Shared/apx/updater" and "/releases/" not in cmd
+    )  # never runs from a release it manages
+    sw = (d / "apx-switch-to-current.sh").read_text()
+    assert "--live" in sw and "APX_UPDATE_LIVE=1" in sw and "/updater/src" in sw and ".bak" in sw

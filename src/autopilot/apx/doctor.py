@@ -145,7 +145,7 @@ def agent_checks(s, launcher) -> list[Check]:
     check only the orchestrator can make: that this account no longer keeps a copy of the Claude token."""
     home = f"/Users/{s.agent_user}"
     token = s.oauth_file
-    code_dir = f"{s.shared_dir}/autopilot"
+    code_dir = s.code_dir()
     python = f"{s.shared_dir}/venv/bin/python"
     binary = s.agent_binary or f"{home}/.local/bin/claude"
 

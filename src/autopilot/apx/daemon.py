@@ -22,6 +22,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
+import gate  # noqa: E402
 import runner as kit_runner  # noqa: E402
 
 from . import cilane, claude_runner, committer, gitops, guardlane, mergelane, report, status  # noqa: E402
@@ -33,6 +34,7 @@ from .planner import ALLOWED_REPOS, Action, load_cfg, plan  # noqa: E402
 from .redact import redact, register  # noqa: E402
 from .runas import Launcher  # noqa: E402
 from .sandbox import SandboxLanes, run_agent_in_sandbox  # noqa: E402
+from .usage import repo_usage, usage_line  # noqa: E402
 
 
 class ConfigError(RuntimeError):
@@ -524,6 +526,16 @@ def _register_known_secrets(s: Settings) -> None:
             pass
 
 
+def usage_lines(ledger: Ledger, repos) -> list[str]:
+    """One usage line per repo for the status file. The cap is the gate's default for tier A: a repo's own cap lives in repo.yaml,
+    which is fetched over the network during planning, so a tier B/C repo's remaining count here is approximate."""
+    try:
+        cap = int(gate.DEFAULTS["runs_per_day"]["A"])
+        return [usage_line(repo_usage(ledger, r, cap=cap)) for r in sorted(repos)]
+    except Exception as e:  # noqa: BLE001 - a meter must never break a pass
+        return [f"usage meter unavailable: {type(e).__name__}"]
+
+
 def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     _register_known_secrets(s)
     gitops.prune_work(s.work_dir)
@@ -546,6 +558,7 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     planned = plan(api, ledger, repos, s.owner)
     actions: list[Action] = [a for r in planned.values() for a in r["actions"]]
     log = [f"{repo}: {len(r['actions'])} action(s) - {r['note']}" for repo, r in planned.items()]
+    log += usage_lines(ledger, s.installations)
     if not really_live:
         return log + execute(api, ledger, None, actions, contexts={}, head_refs={}, dry_run=True)  # type: ignore[arg-type]
     details = {f"{a.repo}#{a.ref}": a.detail for a in actions if a.kind == "run-agent"}

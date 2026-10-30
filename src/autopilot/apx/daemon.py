@@ -383,6 +383,9 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_t
     kit_root = Path(s.shared_dir) / "kit" if s.ci_user else s.work_dir / "kit"
     kit = guardlane.fetch_kit(s.kit_repo, s.kit_ref, kit_root / s.kit_ref)
     if s.ci_user:
+        if read_token_for is None:
+            # PR code runs in this lane; the full installation token (checks:write, contents:write) must never reach it
+            raise ConfigError("a CI account is configured but no read-only token source was provided")
         lanes = SandboxLanes(
             Launcher(s.ci_user),
             base_branch=s.default_branch,
@@ -391,7 +394,7 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_t
             python=f"{s.shared_dir}/venv/bin/python",
             code_dir=f"{s.shared_dir}/autopilot",
             home=f"/Users/{s.ci_user}",
-            token_for=token_for,
+            token_for=read_token_for,
             steps_for=lambda repo: [list(x) for x in cilane.parse_ci_steps(load_cfg(api, repo, s.default_branch))],
             toolchain_links=list(s.ci_toolchain_links),
         )

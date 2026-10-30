@@ -23,6 +23,9 @@ SHA = re.compile(r"[0-9a-f]{7,40}")
 KEEP = 3
 HEALTHY_AFTER = dt.timedelta(minutes=6)  # three 2-minute passes
 DEAD_AFTER = dt.timedelta(minutes=15)  # no pass at all since the swap
+WATCH_FOR = dt.timedelta(
+    minutes=30
+)  # after this a swap is no longer judged: a later failure is not the release's fault to roll back
 
 
 def _link(root: Path, name: str, target: Path) -> None:
@@ -74,7 +77,7 @@ def rollback(root: Path) -> str:
 
 
 def canary(root: Path, status: dict, now: dt.datetime) -> str:
-    """'none' (no swap to judge), 'pending', 'healthy' or 'bad', from the last swap and the latest status file.
+    """'none' (no swap to judge, or it is older than WATCH_FOR), 'pending', 'healthy' or 'bad', from the last swap and the latest status file.
 
     bad: the first pass after the swap reported a problem, or no pass has finished within DEAD_AFTER.
     healthy: a pass finished at least HEALTHY_AFTER after the swap, reported ok, and ran the new code.
@@ -85,6 +88,8 @@ def canary(root: Path, status: dict, now: dt.datetime) -> str:
         swapped = dt.datetime.fromisoformat(sw["at"])
         sha = sw["sha"]
     except (OSError, ValueError, KeyError):
+        return "none"
+    if now - swapped > WATCH_FOR:
         return "none"
     try:
         ts = dt.datetime.fromisoformat(status["ts"])

@@ -127,3 +127,11 @@ def test_current_still_exists_at_the_instant_of_the_rename(tmp_path, monkeypatch
     monkeypatch.setattr(rel.os, "replace", spy)
     rel.swap(tmp_path, "bbbbbbb", now=T0)
     assert True in seen and False not in seen  # never a moment without a `current`
+
+
+def test_canary_stops_judging_after_the_watch_window(tmp_path):
+    swapped(tmp_path)
+    late = T0 + dt.timedelta(hours=3)
+    assert rel.canary(tmp_path, st(170, ok=False), late) == "none"  # a failure hours later is not the release's fault
+    assert rel.canary(tmp_path, {}, late) == "none"
+    assert rel.canary(tmp_path, st(2, ok=False), T0 + dt.timedelta(minutes=29)) == "bad"  # still inside the window

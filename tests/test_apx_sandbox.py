@@ -224,7 +224,9 @@ def test_a_job_that_ran_as_the_wrong_account_is_refused_and_its_pr_gets_no_credi
     sudo, _ = fake_sudo
     remote, head = make_remote(tmp_path, {"probe.py": "import sys\nsys.exit(0)\n"})
     L = lanes(tmp_path, sudo, remote, [[f"{sys.executable} probe.py", ""]])
-    L.expected_user = "apx-ci"  # but the (fake) sudo ran it as the current user
+    L.expected_user = (
+        f"not-{getpass.getuser()}"  # an account that is never the current user, whoever runs the suite (CI runs it AS apx-ci)
+    )
     g_ok, g_out, (c_ok, c_md) = run_lane(L, head)
     assert not g_ok and "ran as" in g_out and "result refused" in g_out
     assert not c_ok and "not run" in c_md  # a clean guard/CI result from the wrong account is never accepted

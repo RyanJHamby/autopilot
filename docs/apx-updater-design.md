@@ -76,3 +76,12 @@ If any condition fails, apx keeps running the current release and writes one lin
 ## Not verified
 
 Everything above is design. I have not checked that a symlink swap plus launchd restart behaves as described on this Mac, or that the Verified flag is exposed on the commits API for a web-flow merge in every case.
+
+## Drill results (2026-10-30)
+
+Run on the real host after the updater went live.
+
+- **Rollback: passed.** A deliberately crashing release (PR 162, crash only when `APX_LIVE=1`) was swapped in at 18:02:50 UTC, its first live pass crashed, and by 18:06 the canary had returned `current` to the previous release and set `HOLD`.
+- **Found by the drill:** the shared venv's packages were installed mode 0700, so the no-secrets test account could not import pytest and every candidate failed its tests. It failed safe (nothing swapped). Fixed in PR 163 (`chmod -R go+rX` after the install, with a test).
+- **Trap:** the updater only adopts a commit whose PR head has green `apx / guard` and `apx / build` check runs from the apx App. A PR merged before the daemon's next pass has posted them (about one to four minutes after a push) is never adoptable, and main's head stays unadopted until a later PR merges with those checks. Wait for the apx checks before merging.
+- **Not yet shown:** a clean unattended swap to a good release (pending the next PR merged with apx checks), and the same on the Oracle host.

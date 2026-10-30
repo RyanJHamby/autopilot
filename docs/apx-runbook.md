@@ -231,3 +231,11 @@ To get a local macOS notification when apx stops (no pass for 15 minutes) or a p
     launchctl load ~/Library/LaunchAgents/com.autopilot.apx.watch.plist
 
 You are told once per distinct problem and once when it clears. Phone push needs the control-plane webhook secret (backlog O3).
+
+## Active hours (optional)
+
+Add `APX_ACTIVE_WINDOW=18:00-08:30` to apx.env (zone `APX_ACTIVE_TZ`, default `America/New_York`; weekends open all day unless
+`APX_ACTIVE_WEEKENDS=0`). Outside the window both the daemon and the updater do nothing: no GitHub polling, no CI, no agent run, no swap.
+The status file still gets a fresh heartbeat marked `idle`, so the owner's watcher does not call it dead, and the updater's canary never
+counts an idle heartbeat as proof. A swap needs at least 45 minutes of window left. Unset means always on; a malformed value stops the
+daemon with a config error (it never falls back to always on). Checks on PRs opened during closed hours wait until the window opens.

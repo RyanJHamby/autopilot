@@ -42,7 +42,7 @@ def install(root):
     rel.swap(root, RUN, now=T0 - dt.timedelta(days=1))
 
 
-def go(root, gh=None, status=None, stage=None, tests=None):
+def go(root, gh=None, status=None, stage=None, tests=None, can_swap=True):
     calls = []
 
     def default_stage(releases, sha):
@@ -65,6 +65,7 @@ def go(root, gh=None, status=None, stage=None, tests=None):
         stage=stage or default_stage,
         run_tests=tests or default_tests,
         now=T0,
+        can_swap=can_swap,
     )
     return msg, calls
 
@@ -149,3 +150,10 @@ def test_a_successful_swap_prunes_old_releases(tmp_path):
     go(tmp_path)
     left = {d.name for d in (tmp_path / "releases").iterdir()}
     assert CAND in left and RUN in left and len(left) <= 4
+
+
+def test_too_close_to_the_end_of_the_active_window_nothing_is_staged_or_swapped(tmp_path):
+    install(tmp_path)
+    msg, calls = go(tmp_path, can_swap=False)
+    assert "waiting" in msg and "active window" in msg
+    assert calls == [] and rel.current(tmp_path) == RUN

@@ -27,7 +27,9 @@ def problems_in(lines: list[str]) -> list[str]:
     return [ln for ln in lines if any(w in ln for w in PROBLEM_WORDS)]
 
 
-def write_status(path: str | Path, lines: list[str], *, live: bool, version: str = "", now: dt.datetime | None = None) -> bool:
+def write_status(
+    path: str | Path, lines: list[str], *, live: bool, version: str = "", now: dt.datetime | None = None, idle: bool = False
+) -> bool:
     """Atomic, world-readable, never raises (a status file must not be able to break a pass). True if written."""
     now = now or dt.datetime.now(dt.timezone.utc)
     clean = [redact(ln)[:300] for ln in lines][:60]
@@ -39,6 +41,8 @@ def write_status(path: str | Path, lines: list[str], *, live: bool, version: str
         "problems": problems_in(clean)[:10],
         "lines": clean,
     }
+    if idle:
+        body["idle"] = True  # a heartbeat only: no pass ran, so the updater's canary must not read it as proof
     try:
         path = Path(path)
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".status-")

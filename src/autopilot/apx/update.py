@@ -36,7 +36,14 @@ def run_update(
     now: Optional[dt.datetime] = None,
 ) -> str:
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
-    if (root / "HOLD").exists():
+    hold = root / "HOLD"
+    if hold.exists():
+        try:
+            why = hold.read_text()
+        except OSError:
+            why = ""
+        if "rolled back" in why:  # keep the owner's alarm up until they look at it and delete HOLD
+            return "update: rolled back earlier and held; look at it, then delete HOLD"
         return "update: HOLD is set, nothing adopted"
 
     judged = release.canary(root, status, now)

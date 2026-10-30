@@ -17,8 +17,9 @@ from pathlib import Path
 
 from .redact import redact
 
-PROBLEM_WORDS = ("planner error", "crashed", "failed", "config error")
+PROBLEM_WORDS = ("planner error", "crashed", "failed", "config error", "rolled back")
 DEFAULT_STATUS = "/Users/Shared/apx/status.json"
+DEFAULT_UPDATE_STATUS = "/Users/Shared/apx/update.json"
 STALE_AFTER = dt.timedelta(minutes=15)  # the timer fires every 2 minutes; a long agent run can hold a pass for a while
 
 
@@ -81,9 +82,32 @@ def notify(title: str, message: str) -> None:
     subprocess.run(["/usr/bin/osascript", "-e", script, title, message], capture_output=True, timeout=15)
 
 
-def watch_once(path: str | Path, state_file: str | Path, *, now: dt.datetime | None = None, notifier=notify) -> str:
+def check_update(path: str | Path) -> tuple[str, str]:
+    """The updater's last line. A missing or unreadable file is fine (the updater may not be installed); only a problem counts, and
+    it is never 'stale': a rollback stays raised until the owner deals with it."""
+    try:
+        s = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return "ok", ""
+    if s.get("ok", True):
+        return "ok", ""
+    return "problem", f"apx updater: {(s.get('problems') or ['unknown problem'])[0]}"[:200]
+
+
+def watch_once(
+    path: str | Path,
+    state_file: str | Path,
+    *,
+    now: dt.datetime | None = None,
+    notifier=notify,
+    update_path: str | Path | None = None,
+) -> str:
     """Notify once per distinct problem (and once when it clears); returns the level. State lives in the owner's own file."""
     level, msg = check_status(path, now=now)
+    if level == "ok" and update_path:
+        level, msg = check_update(update_path)
+        if level == "ok":
+            msg = ""
     state = Path(state_file)
     try:
         last = state.read_text().strip()
@@ -109,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         level, msg = check_status(path)
         print(f"{level}: {msg}")
         return 0 if level == "ok" else 1
-    return 0 if watch_once(path, state) == "ok" else 1
+    return 0 if watch_once(path, state, update_path=os.environ.get("APX_UPDATE_STATUS", DEFAULT_UPDATE_STATUS)) == "ok" else 1
 
 
 if __name__ == "__main__":

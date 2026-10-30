@@ -638,6 +638,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     version = status.code_version(st.code_dir())
     try:
+        if os.environ.get("APX_LIVE") == "1":
+            raise RuntimeError("rollback drill: this commit must be rolled back")
         lines = run_once(st, live=ns.live)
     except Exception as e:  # noqa: BLE001 - record that the pass died so the owner's watcher can say so, then fail loudly
         status.write_status(status_path, [f"pass crashed: {type(e).__name__}"], live=ns.live, version=version)

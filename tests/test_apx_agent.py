@@ -151,7 +151,7 @@ def test_a_result_from_the_wrong_account_is_refused_and_yields_no_changes(fake_s
         python=sys.executable,
         code_dir=str(ROOT),
         home=str(tmp_path / "h"),
-        # expected_user defaults to apx-agent, but the fake sudo ran it as the current user
+        expected_user=f"not-{getpass.getuser()}",  # never the current user, whoever runs the suite
     )
     assert not res["ok"] and "result refused" in res["error"] and changes == []
 

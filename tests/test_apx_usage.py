@@ -81,7 +81,16 @@ def test_usage_line_shape_and_daemon_lines():
     done(L, 1, hrs(2))
     done(L, 2, hrs(1), kind="fix")
     line = usage_line(repo_usage(L, R, cap=2, now=NOW))
-    assert line == "o/a: usage today 2 runs (0 of 2 left in 24h), 1 fixes, 7d: 2 runs"
-    assert usage_line(repo_usage(L, R, now=NOW)) == "o/a: usage today 2 runs, 1 fixes, 7d: 2 runs"
+    assert line == "o/a: usage last 24h 2 runs (0 of 2 left), 1 fixes, 7d: 2 runs"
+    assert usage_line(repo_usage(L, R, now=NOW)) == "o/a: usage last 24h 2 runs, 1 fixes, 7d: 2 runs"
     lines = dm.usage_lines(L, {R: {}, "o/none": {}})
-    assert len(lines) == 2 and lines[1].startswith("o/none: usage today 0 runs")
+    assert len(lines) == 2 and lines[1].startswith("o/none: usage last 24h 0 runs")
+
+
+def test_status_line_counts_the_rolling_24h_not_the_utc_day():
+    # a run 3h before midnight is in yesterday's UTC day but inside the gate's 24h window: line and 'left' must agree
+    L = Ledger()
+    done(L, 1, MIDNIGHT - dt.timedelta(hours=3))
+    u = repo_usage(L, R, cap=2, now=NOW)
+    assert u.today.started == 0 and u.day.started == 1 and u.remaining == 1
+    assert usage_line(u) == "o/a: usage last 24h 1 runs (1 of 2 left), 0 fixes, 7d: 1 runs"

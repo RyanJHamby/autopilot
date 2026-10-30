@@ -5,7 +5,7 @@ Counting rules (kept in one place, `_summarise`):
 - "ok" is conclusion 'success'; "failed" is any other finished conclusion except skipped/cancelled (those never reached the model).
 - "fixes" is the subset of started rows with kind='fix'.
 - "turns" sums the turns recorded at finish(); finished rows that recorded none are counted in `turns_unrecorded`, not guessed.
-- "today" is the current UTC calendar day; "week" is the 7 rolling days ending now.
+- "day" is the rolling 24h the gate caps on (the status line uses it); "today" is the current UTC calendar day; "week" is the 7 rolling days ending now.
 - `remaining` mirrors gate.decide(): a rolling 24h window, skipped/cancelled excluded, against the repo's daily cap.
 To add cost later, add fields to `Window` and one line in `_summarise`; callers read the dict from `to_dict()`.
 """
@@ -35,6 +35,7 @@ class Window:
 class RepoUsage:
     repo: str
     today: Window
+    day: Window  # rolling 24h, the window the gate caps on
     week: Window
     cap: Optional[int]  # None when the daily cap is not known
     used_24h: int  # what gate.decide() counts against the cap
@@ -89,6 +90,7 @@ def repo_usage(ledger: Ledger, repo: str, *, cap: Optional[int] = None, now: Opt
     return RepoUsage(
         repo=repo,
         today=_summarise(rows, midnight),
+        day=_summarise(rows, day_start),
         week=_summarise(rows, week_start),
         cap=cap,
         used_24h=used,
@@ -97,5 +99,6 @@ def repo_usage(ledger: Ledger, repo: str, *, cap: Optional[int] = None, now: Opt
 
 
 def usage_line(u: RepoUsage) -> str:
-    left = "" if u.remaining is None else f" ({u.remaining} of {u.cap} left in 24h)"
-    return f"{u.repo}: usage today {u.today.started} runs{left}, {u.today.fixes} fixes, 7d: {u.week.started} runs"
+    """Every number on the line is the gate's rolling 24h window, so 'used' and 'left' can never disagree."""
+    left = "" if u.remaining is None else f" ({u.remaining} of {u.cap} left)"
+    return f"{u.repo}: usage last 24h {u.day.started} runs{left}, {u.day.fixes} fixes, 7d: {u.week.started} runs"

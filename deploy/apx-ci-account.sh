@@ -43,7 +43,9 @@ fi
 run install -d -m 700 -o "$CI" -g staff "$CI_HOME" "$CI_HOME/work" "$CI_HOME/.local" "$CI_HOME/.local/bin" "$CI_HOME/.cargo" "$CI_HOME/.cargo/bin"
 run install -m 755 -o "$CI" -g staff "$OWNER_HOME/.local/bin/uv" "$CI_HOME/.local/bin/uv"
 for t in rustc cargo; do
-  run ln -sf "/opt/homebrew/bin/$t" "$CI_HOME/.cargo/bin/$t"
+  src=/opt/homebrew/bin/$t  # Apple Silicon Homebrew; Intel Macs keep it under /usr/local
+  [ -e "$src" ] || src=/usr/local/bin/$t
+  run ln -sf "$src" "$CI_HOME/.cargo/bin/$t"
 done
 run chown -h -R "$CI:staff" "$CI_HOME/.cargo"
 

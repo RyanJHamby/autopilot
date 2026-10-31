@@ -44,7 +44,7 @@ def make_run_tests(launcher: Launcher, python: str, home: str):
             "PYTHONPATH": f"{path}/src",
             "PYTHONDONTWRITEBYTECODE": "1",
             "HOME": home,
-            "PATH": f"/opt/homebrew/bin:{home}/.local/bin:/usr/bin:/bin",
+            "PATH": f"/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:/usr/bin:/bin",
             "CI": "true",
             "LANG": "en_US.UTF-8",
         }

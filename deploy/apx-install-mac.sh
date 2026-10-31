@@ -69,12 +69,12 @@ if [ "$DRY_RUN" = 1 ] || [ ! -d "$APX_HOME/autopilot/.git" ]; then
 else
   as_apx git -C "$APX_HOME/autopilot" pull --quiet --ff-only
 fi
-as_apx env PATH="$APX_HOME/.local/bin:/opt/homebrew/bin:/usr/bin:/bin" sh -c "cd $APX_HOME/autopilot && uv sync --quiet"
+as_apx env PATH="$APX_HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" sh -c "cd $APX_HOME/autopilot && uv sync --quiet"
 
 # --- prove it, as apx ---------------------------------------------------------------------------------------------
 say ""
 say "Running the doctor as apx..."
-as_apx env PATH="$APX_HOME/.local/bin:/opt/homebrew/bin:/usr/bin:/bin" sh -c \
+as_apx env PATH="$APX_HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" sh -c \
   "set -a; . $APX_HOME/.apx/apx.env; set +a; cd $APX_HOME/autopilot && uv run python -m autopilot.apx.daemon --doctor"
 say ""
 say "Done. Next: after the doctor passes, remove your own copy of the secrets:  $OWNER_HOME/.apx/app.pem and claude-oauth"

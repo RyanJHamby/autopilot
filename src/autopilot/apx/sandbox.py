@@ -28,7 +28,7 @@ def run_in_sandbox(
     env = {
         "PYTHONPATH": f"{code_dir}/src",
         "HOME": home,
-        "PATH": f"/opt/homebrew/bin:{home}/.local/bin:/usr/bin:/bin",
+        "PATH": f"/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:/usr/bin:/bin",
         "CI": "true",
         "LANG": "en_US.UTF-8",
         "GIT_TERMINAL_PROMPT": "0",

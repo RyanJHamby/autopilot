@@ -34,6 +34,7 @@ def run_update(
     stage: Callable[[Path, str], None],
     run_tests: Callable[[Path], bool],
     now: Optional[dt.datetime] = None,
+    can_swap: bool = True,
 ) -> str:
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
     hold = root / "HOLD"
@@ -59,6 +60,9 @@ def run_update(
     ok, why = verify(api, repo, default_branch, running, candidate, owner=owner, required_checks=required_checks, now=now)
     if not ok:
         return f"update to {candidate[:7]} skipped: {why}"
+
+    if not can_swap:
+        return f"update to {candidate[:7]} waiting: too close to the end of the active window to watch a swap"
 
     dest = release.release_dir(root, candidate)
     try:

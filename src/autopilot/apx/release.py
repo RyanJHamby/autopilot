@@ -95,6 +95,8 @@ def canary(root: Path, status: dict, now: dt.datetime) -> str:
         ts = dt.datetime.fromisoformat(status["ts"])
     except (KeyError, ValueError, TypeError):
         ts = None
+    if status.get("idle"):
+        return "pending"  # the host is outside its active window: no pass has run, so there is nothing to judge yet
     if ts is None or ts <= swapped:
         return "bad" if now - swapped > DEAD_AFTER else "pending"
     if not status.get("ok", False):

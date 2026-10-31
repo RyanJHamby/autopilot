@@ -18,6 +18,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 import yaml
 
@@ -25,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import gate  # noqa: E402
 import runner as kit_runner  # noqa: E402
 
-from . import cilane, claude_runner, committer, gitops, guardlane, mergelane, report, status  # noqa: E402
+from . import cilane, claude_runner, committer, gitops, guardlane, mergelane, report, status, window  # noqa: E402
 from .app_auth import TokenCache  # noqa: E402
 from .executor import Deps, IssueResult, execute  # noqa: E402
 from .github import Api, GitHubError, make_api  # noqa: E402
@@ -84,6 +85,7 @@ class Settings:
     agent_user: str = ""
     agent_work: str = ""  # default /Users/<agent_user>/work
     agent_binary: str = ""  # default /Users/<agent_user>/.local/bin/claude
+    active_window: Optional[window.Window] = None  # None = always on; outside it a pass (and an update) does nothing
 
     def code_dir(self) -> str:
         """The code the sandbox and the version label use: the updater's `current` release once it exists, else the manual checkout."""
@@ -119,7 +121,12 @@ class Settings:
                 agent_user=e.get("APX_AGENT_USER", ""),
                 agent_work=e.get("APX_AGENT_WORK", ""),
                 agent_binary=e.get("APX_AGENT_BINARY", ""),
+                active_window=window.parse(
+                    e.get("APX_ACTIVE_WINDOW", ""), e.get("APX_ACTIVE_TZ", ""), e.get("APX_ACTIVE_WEEKENDS", "1")
+                ),
             )
+        except ValueError as ex:
+            raise ConfigError(str(ex)) from None
         except KeyError as ex:
             raise ConfigError(f"missing setting {ex}") from None
         bad = set(s.installations) - ALLOWED_REPOS
@@ -637,6 +644,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"apx config error: {e}", file=sys.stderr)
         return 2
     version = status.code_version(st.code_dir())
+    if st.active_window and not st.active_window.is_open(dt.datetime.now(dt.timezone.utc)):
+        line = window.idle_line(st.active_window)
+        print(line)
+        status.write_status(status_path, [line], live=ns.live, version=version, idle=True)  # a fresh heartbeat: idle is not dead
+        return 0
     try:
         lines = run_once(st, live=ns.live)
     except Exception as e:  # noqa: BLE001 - record that the pass died so the owner's watcher can say so, then fail loudly

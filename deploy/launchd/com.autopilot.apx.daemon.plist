@@ -24,7 +24,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key><string>/Users/apx</string>
-    <key>PATH</key><string>/Users/apx/.local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>/Users/apx/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>StartInterval</key><integer>120</integer>
   <key>RunAtLoad</key><false/>

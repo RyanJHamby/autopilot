@@ -300,3 +300,19 @@ Tue: built the standard engine (14 checks, 58 fixture tests, 8 hand mutations al
 ## 2026-11-03 06:32 EST (at e2dfd92)
 
 Thu: built ap trace and ap drill. Deviation from plan: autopilot specs have no AC-n ids (acceptance is a list of commands), and adding ids means editing the protected specs/_TEMPLATE.md, so trace maps each pytest acceptance command to the tests it names in JUnit XML instead. It catches an all-skipped acceptance (exit 0) and a link to tests that never ran; it cannot catch a test with no assertion, and the drill records that as a limit. Drills use a throwaway fixture rather than a clone of a real repo, so they are hermetic and fast. Drills: baseline-green, hollow-link (skipped caught, no-assertion limit), guard-on-diff (protected paths, human not blocked, test deletion).
+
+## 2026-11-03 06:33 EST (at 8edf3fb)
+
+Ran `standard-portfolio-offline` → [results/2026-11-03-0633-standard-portfolio-offline](../results/2026-11-03-0633-standard-portfolio-offline) (exit 1, 1s). Notes: first run, before I reworded one CODEOWNERS message; superseded by the -2 run below. Apple M4, 32 GB (from env.txt).
+
+## 2026-11-03 06:33 EST (at 8edf3fb)
+
+Ran `standard-drills` → [results/2026-11-03-0633-standard-drills](../results/2026-11-03-0633-standard-drills) (exit 0, 1s). Notes: 6 drill results, all as expected: 1 green, 4 caught, 1 limit (a test with no assertion is invisible to trace). Apple M4, 32 GB.
+
+## 2026-11-03 06:34 EST (at 8edf3fb)
+
+Ran `standard-tests` → [results/2026-11-03-0633-standard-tests](../results/2026-11-03-0633-standard-tests) (exit 0, 47s). Notes: 1034 tests pass. Apple M4, 32 GB, Python 3.14.3.
+
+## 2026-11-03 06:34 EST (at db9035e)
+
+Ran `standard-portfolio-offline-2` → [results/2026-11-03-0634-standard-portfolio-offline-2](../results/2026-11-03-0634-standard-portfolio-offline-2) (exit 1, 1s). Notes: offline, so no gh call was made and ruleset-present is unknown. drillpad-workspace: 8 pass, 4 fail, 1 unknown, 1 skip; the failures are an unpinned actions/checkout@v4, no top-level permissions, CODEOWNERS not covering itself, and no dependency-update config. autopilot: 8 pass, 2 fail, 3 unknown, 1 skip (the unknowns are the unparseable redteam-secrets.yml and the ruleset). stencil and launch-scratch are enabled in the portfolio but have no clone, so the run exits 1. Apple M4, 32 GB. These are findings in two repos I did not change.

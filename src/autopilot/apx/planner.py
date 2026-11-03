@@ -96,9 +96,20 @@ def base_commit_time(api: Api, repo: str, default_branch: str) -> str | None:
         return None  # only disables the retry-after-base-moves optimisation; checks still run
 
 
+DEAD_AFTER = dt.timedelta(hours=2)  # same horizon as the ledger's abandon_stale: a run this old was orphaned by a crash
+
+
 def plan_checks(
-    api: Api, repo: str, owner: str, contexts: list[str], app_slug: str = APX_APP_SLUG, base_time: str | None = None
+    api: Api,
+    repo: str,
+    owner: str,
+    contexts: list[str],
+    app_slug: str = APX_APP_SLUG,
+    base_time: str | None = None,
+    now: dt.datetime | None = None,
 ) -> list[Action]:
+    now = now or dt.datetime.now(dt.timezone.utc)
+    cutoff = (now - DEAD_AFTER).strftime("%Y-%m-%dT%H:%M:%SZ")
     out = []
     for pr in api("GET", f"/repos/{repo}/pulls?state=open&per_page=100"):  # type: ignore[union-attr]
         if not _trusted_pr(pr, repo, owner):
@@ -111,7 +122,10 @@ def plan_checks(
         # a FAILED result from before the base branch last moved is stale (e.g. it failed because repo.yaml had no ci:
         # list yet): do not count it, so the check is retried once per base movement. Successes are never retried.
         stale = lambda c: bool(base_time) and c.get("conclusion") == "failure" and (c.get("completed_at") or "9") < base_time  # noqa: E731
-        have = {c["name"] for c in ours if not stale(c)}
+        # a run still `in_progress`/`queued` long after it started was orphaned (apx crashed mid-check): it must not count, or the
+        # PR is never checked again and sits unmergeable forever
+        orphan = lambda c: c.get("status") in ("queued", "in_progress") and (c.get("started_at") or "0") < cutoff  # noqa: E731
+        have = {c["name"] for c in ours if not stale(c) and not orphan(c)}
         missing = [c for c in contexts if c not in have]
         if missing:
             out.append(Action("check-pr", repo, sha, f"PR #{pr['number']} missing {', '.join(missing)}"))
@@ -316,6 +330,7 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
                 owner,
                 meta.get("contexts", ["guard / guard"]),
                 base_time=base_commit_time(api, repo, meta.get("default_branch", "main")),
+                now=now,
             )
             main_state = "off"
             if meta.get("main_check") and meta.get("ci_contexts"):

@@ -320,3 +320,7 @@ Ran `standard-portfolio-offline-2` → [results/2026-11-03-0634-standard-portfol
 ## 2026-11-03 07:44 EST (at 2e1f315)
 
 Ran `standard-portfolio-online` → [results/2026-11-03-0744-standard-portfolio-online](../results/2026-11-03-0744-standard-portfolio-online) (exit 1, 2s). Notes: online run (gh called). ruleset-present is a pass for both repos: autopilot has the ruleset `autopilot-main`, and drillpad-workspace has one too (name not read by the check). autopilot is public on GitHub (private:false) but policy/portfolio.yaml has no public flag for it, so license-present was skipped; the repo has no LICENSE file. drillpad-workspace now shows 2 unpinned actions (checkout@v4, setup-uv@v5). Apple M4, 32 GB.
+
+## 2026-11-03 08:20 EST (at 0c8b5e8)
+
+Ran `standard-portfolio-online-2` → [results/2026-11-03-0820-standard-portfolio-online-2](../results/2026-11-03-0820-standard-portfolio-online-2) (exit 1, 4s). Notes: after the engine started asking GitHub whether a repo is public. autopilot now FAILs license-present (no LICENSE file) and prints a NOTE that the portfolio disagrees with GitHub; drillpad-workspace stays skipped (private). autopilot: 9 pass, 3 fail, 2 unknown; drillpad-workspace unchanged at 9 pass, 4 fail, 1 skip. Apple M4, 32 GB.

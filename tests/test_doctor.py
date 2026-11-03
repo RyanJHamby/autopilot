@@ -1,8 +1,8 @@
 """Characterization tests for `ap doctor` (cmd_doctor).
 
-They pin down what doctor does today, known gaps included, so refactoring it into the standard engine can't change
-behavior by accident. Tests named `test_known_gap_*` record behavior that is wrong on purpose: when the engine fixes
-a gap, that test is the one to flip, deliberately.
+They pin down what doctor does, so refactoring it into the standard engine can't change behavior by accident. Two
+tests were written as `test_known_gap_*`, recording that doctor missed dotted version tags and workflows autopilot
+didn't write; the engine fixed both, and those two were flipped on purpose in the same change as the fix.
 """
 
 import json
@@ -123,21 +123,20 @@ def test_an_unpinned_autopilot_action_fails(repo, monkeypatch, capsys):
     assert "FAIL guard.yml: action not pinned to a SHA" in out
 
 
-def test_known_gap_dotted_version_tags_are_not_flagged(repo, monkeypatch, capsys):
-    """Doctor skips any ref that isn't purely alphanumeric, so `@v4.2.2` passes. It shouldn't."""
+def test_a_dotted_version_tag_is_flagged_as_unpinned(repo, monkeypatch, capsys):
     _unpin_first_action(repo, "@v4.2.2")
     code, out = doctor(repo, monkeypatch, capsys)
-    assert "not pinned" not in out
-    assert code == 0
+    assert code == 1
+    assert "FAIL guard.yml: action not pinned to a SHA" in out
 
 
-def test_known_gap_workflows_not_written_by_autopilot_are_not_pin_checked(repo, monkeypatch, capsys):
+def test_workflows_not_written_by_autopilot_are_pin_checked_too(repo, monkeypatch, capsys):
     (repo / ".github/workflows/ci.yml").write_text(
         "name: ci\non: push\njobs:\n  t:\n    steps:\n      - uses: actions/checkout@main\n"
     )
     code, out = doctor(repo, monkeypatch, capsys)
-    assert "not pinned" not in out
-    assert code == 0
+    assert code == 1
+    assert "FAIL ci.yml: action not pinned to a SHA" in out
 
 
 def test_a_workflow_that_hands_secrets_to_pr_code_fails(repo, monkeypatch, capsys):

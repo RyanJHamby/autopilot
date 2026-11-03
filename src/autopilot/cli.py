@@ -18,6 +18,9 @@ from pathlib import Path
 
 import yaml
 
+from autopilot.standard import engine
+from autopilot.standard.engine import AUTOPILOT_WORKFLOWS, secret_exposed_workflows
+
 ROOT = Path(__file__).resolve().parents[2]
 KIT = ROOT / "kit"
 POLICY = ROOT / "policy"
@@ -124,33 +127,6 @@ def sensitive_findings(repo: Path, *, never_paths: list[str] | None = None, limi
         if len(found) >= limit:
             break
     return found[:limit]
-
-
-AUTOPILOT_WORKFLOWS = {
-    "agent-dispatch.yml",
-    "agent-exec.yml",
-    "guard.yml",
-    "handshake.yml",
-    "automerge.yml",
-    "improve.yml",
-    "audit.yml",
-    "rebase.yml",
-}
-
-
-def secret_exposed_workflows(repo: Path) -> list[str]:
-    """Host workflows that hand repo secrets to code from a PR branch (so an agent PR could read or spend them)
-    and do not exclude agent/* branches. GITHUB_TOKEN does not count."""
-    out: list[str] = []
-    for wf in sorted((repo / ".github/workflows").glob("*.y*ml")):
-        if wf.name in AUTOPILOT_WORKFLOWS:
-            continue
-        text = wf.read_text()
-        uses_secret = any(s != "GITHUB_TOKEN" for s in re.findall(r"secrets\.([A-Za-z0-9_]+)", text))
-        on_pr = re.search(r"^\s*pull_request(_target)?\s*:", text, re.M) is not None
-        if uses_secret and on_pr and "agent/" not in text:
-            out.append(wf.name)
-    return out
 
 
 def setup_steps(repo: Path) -> str:
@@ -612,26 +588,20 @@ def cmd_doctor(ns: argparse.Namespace) -> int:
                 problems += 1
             elif _sha(p.read_bytes()) != sha:
                 print(f"  WARN modified since install: {rel}")
-        for wf in (repo / ".github/workflows").glob("*.yml"):
-            text = wf.read_text()
-            for line in text.splitlines():
-                if "uses:" in line and "@" in line and not line.split("@")[1].split()[0].isalnum():
-                    continue
-                if "uses:" in line and "@" in line:
-                    ref = line.split("@")[1].split()[0]
-                    if len(ref) != 40 and "autopilot" in text.splitlines()[0]:
-                        print(f"  FAIL {wf.name}: action not pinned to a SHA: {line.strip()}")
-                        problems += 1
-        for name in secret_exposed_workflows(repo):
-            print(
-                f"  FAIL {name}: uses repo secrets on pull_request with no agent/* exclusion (an agent PR could read or spend them)"
-            )
-            problems += 1
+        # These rules live in the standard's engine, so doctor and `ap standard check` can't disagree about them.
+        for res in engine.run(
+            engine.Repo(repo, gh=lambda cmd, **kw: subprocess.run(cmd, **kw)),
+            only=["pinned-actions", "secret-exposed-workflows"],
+        ):
+            for finding in res.findings if res.result == "fail" else []:
+                print(f"  FAIL {finding}")
+                problems += 1
         ci = [f for f in (repo / ".github/workflows").glob("*.yml") if f.name not in AUTOPILOT_WORKFLOWS]
         if ci and not any("push" in f.read_text() for f in ci):
             print("  WARN no CI workflow triggers on push; agent pushes will not fire PR checks (add `push:` trigger)")
-        if not (repo / "CLAUDE.md").exists() or "@AGENTS.md" not in (repo / "CLAUDE.md").read_text():
-            print("  WARN CLAUDE.md does not import AGENTS.md")
+        for res in engine.run(engine.Repo(repo), only=["thin-claude-md"]):
+            for finding in res.findings if res.result == "fail" else []:
+                print(f"  WARN {finding}")
         slug = _slug(repo_name(repo), load_portfolio()["owner"])
         rs = subprocess.run(["gh", "api", f"repos/{slug}/rulesets", "--jq", ".[].name"], capture_output=True, text=True)
         if rs.returncode == 0 and "autopilot-main" not in rs.stdout:

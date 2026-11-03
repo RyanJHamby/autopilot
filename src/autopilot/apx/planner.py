@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ import rebase as kit_rebase  # noqa: E402
 import tier as kit_tier  # noqa: E402
 from guard import _matches  # noqa: E402
 
+from . import batch as batches_mod  # noqa: E402
 from .github import Api, GitHubError  # noqa: E402
 from .ledger import Ledger  # noqa: E402
 
@@ -59,6 +61,20 @@ def load_cfg(api: Api, repo: str, default_branch: str) -> dict:
     if hold:
         cfg["hold_until"] = hold
     return cfg
+
+
+def load_batches(api: Api, repo: str, default_branch: str) -> list:
+    """Batch manifests from the DEFAULT branch only (what the owner merged). Any error means no batches: plain gate order."""
+    try:
+        listing = api("GET", f"/repos/{repo}/contents/{batches_mod.BATCH_DIR}?ref={default_branch}")
+        texts = []
+        for f in sorted(listing, key=lambda f: f["name"]):  # type: ignore[union-attr]
+            if f.get("type") == "file" and f["name"].endswith((".yaml", ".yml")):
+                c = api("GET", f"/repos/{repo}/contents/{batches_mod.BATCH_DIR}/{f['name']}?ref={default_branch}")
+                texts.append(base64.b64decode(c["content"]).decode())  # type: ignore[index]
+        return batches_mod.parse_all(texts)
+    except (GitHubError, OSError, KeyError, TypeError, ValueError):
+        return []
 
 
 def _trusted_pr(pr: dict, repo: str, owner: str) -> bool:
@@ -170,7 +186,13 @@ def plan_agent_runs(
         if "pull_request" not in i and _owner_vouches(api, repo, i, owner)
     ]
     issues = [i for i in issues if not gate.skip_merged(i["number"], {ln["name"] for ln in i["labels"]}, merged)]
-    picked = gate.pick_issues(issues, branches + [f"agent/{n}-inflight" for n in inflight], max(remaining, 0))
+    taken = branches + [f"agent/{n}-inflight" for n in inflight]
+    picked = gate.pick_issues(issues, taken, len(issues))
+    batches = load_batches(api, repo, default_branch)
+    if batches:
+        busy = {int(m.group(1)) for b in taken if (m := re.match(r"agent/(\d+)-", b))}
+        picked, _held = batches_mod.order_and_hold(picked, batches, merged, busy, max(remaining, 0))
+    picked = picked[: max(remaining, 0)]
     acts = fixes + [Action("run-agent", repo, str(n), detail) for n in picked]
     room = remaining - len(picked)  # re-runs for conflicted PRs share the same daily cap
     for n in rebase_issues or []:

@@ -1,7 +1,7 @@
 import datetime as dt
 
 from autopilot.apx.github import GitHubError
-from autopilot.apx.update_verify import verify
+from autopilot.apx.update_verify import non_runtime, verify
 
 REPO, BRANCH, RUN, CAND, HEADSHA = "o/r", "main", "aaa", "bbb", "ccc"
 MERGED = dt.datetime(2026, 10, 30, 12, 0, tzinfo=dt.timezone.utc)
@@ -22,6 +22,7 @@ class Fake:
         self.merged_by = kw.get("merged_by", "Owner")
         self.labels = kw.get("labels", [])
         self.runs = kw.get("runs", [{"name": n, "conclusion": "success", "app": {"slug": "autopilot-apx"}} for n in CHECKS])
+        self.files = kw.get("files", [{"filename": "src/autopilot/apx/daemon.py"}])
         self.boom = kw.get("boom")
 
     def __call__(self, method, path, body=None):
@@ -30,7 +31,10 @@ class Fake:
         if path.endswith(f"/git/ref/heads/{BRANCH}"):
             return {"object": {"sha": self.head}}
         if "/compare/" in path:
-            return {"status": self.status, "behind_by": self.behind}
+            cmp = {"status": self.status, "behind_by": self.behind}
+            if self.files is not None:
+                cmp["files"] = self.files
+            return cmp
         if path.endswith(f"/commits/{CAND}"):
             return {"commit": {"verification": {"verified": self.verified}}}
         if path.endswith(f"/commits/{CAND}/pulls"):
@@ -108,3 +112,52 @@ def test_hold_switch_and_already_running_refuse_without_any_network():
 def test_any_read_error_means_no():
     ok, why = run(Fake(boom=GitHubError(502, "/x", "bad gateway")))
     assert not ok and "could not verify" in why
+
+
+LANE = "autopilot-apx[bot]"
+DOCS = [{"filename": "docs/journal.md"}, {"filename": ".github/workflows/ci.yml"}, {"filename": "specs/x.md"}]
+
+
+def test_owner_merge_of_runtime_code_still_adopts():
+    assert run(Fake(files=[{"filename": "src/autopilot/apx/daemon.py"}])) == (True, "ok")
+
+
+def test_lane_merge_of_non_runtime_only_adopts():
+    assert run(Fake(merged_by=LANE, files=DOCS)) == (True, "ok")
+
+
+def test_lane_merge_that_touches_runtime_code_needs_the_owner():
+    ok, why = run(Fake(merged_by=LANE, files=DOCS + [{"filename": "src/autopilot/apx/daemon.py"}]))
+    assert not ok and "needs an owner merge" in why and "src/autopilot/apx/daemon.py" in why
+
+
+def test_lane_merge_renaming_runtime_code_into_docs_needs_the_owner():
+    ok, why = run(Fake(merged_by=LANE, files=[{"filename": "docs/x.py.md", "previous_filename": "src/autopilot/x.py"}]))
+    assert not ok and "needs an owner merge" in why
+
+
+def test_lane_merge_without_a_complete_file_list_needs_the_owner():
+    for files in (None, [{"filename": f"docs/{i}.md"} for i in range(300)]):
+        ok, why = run(Fake(merged_by=LANE, files=files))
+        assert not ok and "needs an owner merge" in why, why
+
+
+def test_lane_rule_still_needs_every_other_rule():
+    ok, why = run(Fake(merged_by=LANE, files=DOCS, labels=["hold"]))
+    assert not ok and "hold" in why
+    ok, why = run(Fake(merged_by=LANE, files=DOCS, runs=[]))
+    assert not ok and "required check" in why
+
+
+def test_other_bots_and_lookalikes_are_not_the_lane():
+    for who in ("apx-bot", "autopilot-apx", "dependabot[bot]", "evil-autopilot-apx[bot]"):
+        ok, why = run(Fake(merged_by=who, files=DOCS))
+        assert not ok and "someone other" in why, who
+
+
+def test_non_runtime_is_an_allowlist():
+    yes = ["docs/a.md", "docs/img/x.png", "specs/s.md", "results/r.json", ".github/workflows/ci.yml", "README.md", "src/autopilot/NOTES.md"]
+    no = ["deploy/apx-retire-host.sh", "tests/test_x.py", "src/autopilot/apx/daemon.py", "kit/runtime/guard.py", "pyproject.toml",
+          "uv.lock", "policy/p.yaml", ".autopilot/repo.yaml", "apps/control-plane/package.json", "docsy/x.py"]
+    assert all(non_runtime(p) for p in yes)
+    assert not any(non_runtime(p) for p in no)

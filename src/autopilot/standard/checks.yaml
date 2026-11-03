@@ -1,0 +1,111 @@
+# The project standard, version 1. Each rule says how it is backed; see autopilot/standard/__init__.py.
+# Nothing here is `enforced` yet: that label waits for a protected CI step that runs the engine.
+# Agents must not edit this file. It belongs in guard.extra_protected (an owner edit).
+
+standard_version: 1
+
+checks:
+  # Audited rules: reported by `ap standard check`, and by `ap doctor` once it delegates here.
+  - id: pinned-actions
+    title: Every action in a workflow is pinned to a commit SHA
+    level: fail
+    label: audited
+    why: A tag can be moved after you reviewed it. A commit SHA can't.
+    fix: Replace the tag with the 40-character commit SHA, and keep the version as a trailing comment.
+
+  - id: workflow-permissions
+    title: Every workflow sets top-level `permissions`
+    level: fail
+    label: audited
+    why: Without it, jobs get the repository's default token scope, which is usually wider than they need.
+    fix: "Add `permissions:` with `contents: read` at the top of the workflow, and widen it per job only where needed."
+
+  - id: no-privileged-triggers
+    title: No workflow uses `pull_request_target`
+    level: fail
+    label: audited
+    why: It runs code from a pull request with the repository's secrets in reach.
+    fix: Use `pull_request`, or move the privileged step into a separate trusted workflow.
+
+  - id: secret-exposed-workflows
+    title: Workflows that use repo secrets on pull requests exclude agent branches
+    level: fail
+    label: audited
+    why: An agent PR could read or spend a secret that a workflow hands to PR code.
+    fix: Exclude `agent/*` branches from the workflow, or stop passing the secret to PR code.
+
+  - id: codeowners-cover-protected-paths
+    title: CODEOWNERS covers every protected path
+    level: fail
+    label: audited
+    why: A protected path with no owner can be changed by whoever opens the pull request.
+    fix: Add a CODEOWNERS entry for each protected path, naming a human.
+
+  - id: no-tracked-secrets
+    title: No secrets file is tracked by git
+    level: fail
+    label: audited
+    why: Git history is hard to erase, and a committed key stays exposed until it is rotated.
+    fix: Remove the file from git, rotate whatever it held, and add it to `.gitignore`.
+
+  - id: thin-claude-md
+    title: CLAUDE.md imports AGENTS.md
+    level: warn
+    label: audited
+    why: Keeping instructions in AGENTS.md lets you switch coding agents without rewriting them.
+    fix: Make CLAUDE.md contain `@AGENTS.md` and nothing else of substance.
+
+  - id: one-check-entrypoint
+    title: There is one command that runs the repo's checks
+    level: warn
+    label: audited
+    why: If local and CI checks differ, a green local run proves little.
+    fix: Add a `check` target to a Makefile, or list the CI commands under `ci:` in `.autopilot/repo.yaml`.
+
+  - id: license-present
+    title: Public repos have a LICENSE
+    level: warn
+    label: audited
+    applies_to: public
+    why: Without a license, nobody else may legally use or build on the code.
+    fix: Add a LICENSE file.
+
+  - id: ruleset-present
+    title: The default branch has a ruleset
+    level: warn
+    label: audited
+    why: Branch rules are what make checks binding. Without them a failing check cannot block a merge.
+    fix: Apply the ruleset with `ap ruleset REPO --apply`. Result is `unknown` if the ruleset can't be read.
+
+  # Advisory rules: judgment. They warn and never fail a run, and nothing here claims they improve outcomes.
+  - id: agents-md-budget
+    title: AGENTS.md is 60 lines or fewer
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: Every always-loaded line costs tokens each session. Whether shorter files help agents is unproven.
+    fix: Move detail into a skill or a note that is only read when needed.
+
+  - id: how-this-was-built
+    title: README has an accurate "How this was built" section
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: Public claims about authorship should match what happened. Accuracy needs a human to judge.
+    fix: Add or update the section to say what AI assistance was used and what was reviewed.
+
+  - id: journal-present
+    title: docs/journal.md exists
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: A dated record of decisions and dead ends is the evidence that the work happened.
+    fix: Run `pow init`, then `pow log` after each decision.
+
+  - id: dependency-updates
+    title: Dependabot or Renovate is configured
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: Automated update PRs keep known-vulnerable versions from lingering, but they add review work.
+    fix: Add `.github/dependabot.yml` or a Renovate config.

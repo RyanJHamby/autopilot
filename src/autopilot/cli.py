@@ -626,6 +626,18 @@ def cmd_standard(ns: argparse.Namespace) -> int:
     return command.cmd_standard(ns, repo_name=repo_name, load_portfolio=load_portfolio, policy_root=ROOT)
 
 
+def cmd_trace(ns: argparse.Namespace) -> int:
+    from autopilot import trace
+
+    return trace.cmd_trace(ns)
+
+
+def cmd_drill(ns: argparse.Namespace) -> int:
+    from autopilot import drill
+
+    return drill.cmd_drill(ns)
+
+
 def cmd_status(ns: argparse.Namespace) -> int:
     pf = load_portfolio()
     print(f"{'repo':28} {'tier':4} {'mode':9} {'runs24h':8} {'agentPRs':8}")
@@ -1896,6 +1908,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--strict", action="store_true", help="a level-fail rule that cannot be answered also fails")
     p.add_argument("--offline", action="store_true", help="never call gh (ruleset-present becomes unknown)")
     p.set_defaults(fn=cmd_standard)
+    p = sub.add_parser("trace", help="does a spec's pytest acceptance actually run and pass? reads JUnit XML (warn-only)")
+    p.add_argument("spec")
+    p.add_argument("--junit", required=True, help="pytest --junitxml output")
+    p.add_argument("--strict", action="store_true", help="exit 1 when a command is failing, skipped or not run")
+    p.set_defaults(fn=cmd_trace)
+    p = sub.add_parser("drill", help="plant known defects in a throwaway fixture and check the controls catch them")
+    p.add_argument("drills", nargs="*", help="drill names (default: all)")
+    p.set_defaults(fn=cmd_drill)
     p = sub.add_parser("scan", help="list an owner's repos with suggested tier/mode (read-only)")
     p.add_argument("--owner")
     p.set_defaults(fn=cmd_scan)

@@ -42,8 +42,14 @@ Quiet hours, once PR "active-hours window" is merged: add `APX_ACTIVE_WINDOW=18:
 
 ## 4. Cut over (a few minutes with no CI; that is fine)
 
-1. On the OLD Mac, preview then stop its jobs: `sudo bash deploy/apx-retire-host.sh`, then `DO=1 sudo bash deploy/apx-retire-host.sh`. It only stops the launchd jobs.
-2. On the NEW Mac: `sudo bash deploy/apx-switch-to-current.sh` (phase 2), then check `PYTHONPATH=/Users/Shared/apx/current/src /usr/bin/python3 -m autopilot.apx.status --print`
+1. On the OLD Mac, preview then stop its jobs: `sudo bash deploy/apx-retire-host.sh`, then `sudo DO=1 bash deploy/apx-retire-host.sh` (the variable goes after `sudo`, because sudo drops variables set before it and the run would only preview again). It only stops the launchd jobs.
+2. On the NEW Mac, install the daemon plist (do not bootstrap it). `deploy/apx-switch-to-current.sh` exits with `missing a plist` unless this file exists, and it starts the job itself:
+   ```
+   sudo cp deploy/launchd/com.autopilot.apx.daemon.plist /Library/LaunchDaemons/com.autopilot.apx.plist
+   sudo chown root:wheel /Library/LaunchDaemons/com.autopilot.apx.plist
+   sudo chmod 644 /Library/LaunchDaemons/com.autopilot.apx.plist
+   ```
+3. On the NEW Mac: `sudo bash deploy/apx-switch-to-current.sh` (phase 2), then check `PYTHONPATH=/Users/Shared/apx/current/src /usr/bin/python3 -m autopilot.apx.status --print`
    shows `ok` after one pass, and the next PR gets its `apx / guard` and `apx / build` checks.
 
 Roll back if the new host misbehaves: stop its two jobs (`sudo launchctl bootout system/com.autopilot.apx` and `.updater`), then on the old Mac

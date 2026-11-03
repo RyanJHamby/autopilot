@@ -1,7 +1,7 @@
 #!/bin/bash
 # Stop apx on THIS Mac after the new host is live (docs/apx-host-move.md, step 6). Only one live host, ever.
 #   sudo bash deploy/apx-retire-host.sh          # previews: changes nothing
-#   DO=1 sudo bash deploy/apx-retire-host.sh     # stops the apx launchd jobs (reversible: `launchctl bootstrap` them again)
+#   sudo DO=1 bash deploy/apx-retire-host.sh     # stops the apx launchd jobs (reversible: `launchctl bootstrap` them again)
 # It never deletes keys, tokens, releases or accounts. Revoking the old App key is a step in the GitHub UI (yours), and removing the
 # old secrets from this disk is a separate command the runbook gives you after you have revoked it.
 set -u

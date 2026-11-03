@@ -316,3 +316,7 @@ Ran `standard-tests` → [results/2026-11-03-0633-standard-tests](../results/202
 ## 2026-11-03 06:34 EST (at db9035e)
 
 Ran `standard-portfolio-offline-2` → [results/2026-11-03-0634-standard-portfolio-offline-2](../results/2026-11-03-0634-standard-portfolio-offline-2) (exit 1, 1s). Notes: offline, so no gh call was made and ruleset-present is unknown. drillpad-workspace: 8 pass, 4 fail, 1 unknown, 1 skip; the failures are an unpinned actions/checkout@v4, no top-level permissions, CODEOWNERS not covering itself, and no dependency-update config. autopilot: 8 pass, 2 fail, 3 unknown, 1 skip (the unknowns are the unparseable redteam-secrets.yml and the ruleset). stencil and launch-scratch are enabled in the portfolio but have no clone, so the run exits 1. Apple M4, 32 GB. These are findings in two repos I did not change.
+
+## 2026-11-03 07:44 EST (at 2e1f315)
+
+Ran `standard-portfolio-online` → [results/2026-11-03-0744-standard-portfolio-online](../results/2026-11-03-0744-standard-portfolio-online) (exit 1, 2s). Notes: online run (gh called). ruleset-present is a pass for both repos: autopilot has the ruleset `autopilot-main`, and drillpad-workspace has one too (name not read by the check). autopilot is public on GitHub (private:false) but policy/portfolio.yaml has no public flag for it, so license-present was skipped; the repo has no LICENSE file. drillpad-workspace now shows 2 unpinned actions (checkout@v4, setup-uv@v5). Apple M4, 32 GB.

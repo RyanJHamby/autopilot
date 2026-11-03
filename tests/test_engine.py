@@ -175,7 +175,7 @@ def test_a_catch_all_covers_everything_and_the_extra_protected_paths_are_require
     cfg = "guard:\n  extra_protected:\n    - src/engine/**\n"
     write(tmp_path, {"CODEOWNERS": FULL_OWNERS, ".autopilot/repo.yaml": cfg})
     result, findings = check("codeowners-cover-protected-paths", tmp_path)
-    assert result == "fail" and findings == ["src/engine/** has no CODEOWNERS entry"]
+    assert result == "fail" and findings == ["src/engine/** is not owned in CODEOWNERS"]
     (tmp_path / "CODEOWNERS").write_text(FULL_OWNERS + "/src/engine/ @me\n")
     assert check("codeowners-cover-protected-paths", tmp_path)[0] == "pass"
     (tmp_path / "CODEOWNERS").write_text("* @me\n")

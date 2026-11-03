@@ -230,7 +230,7 @@ def codeowners_cover(repo: Repo) -> Outcome:
         path = _norm(pattern)
         covered = any(e == "*" or e == path or path.startswith(e + "/") for e in entries if "*" not in e or e == "*")
         if not covered:
-            missing.append(f"{pattern} has no CODEOWNERS entry")
+            missing.append(f"{pattern} is not owned in CODEOWNERS")
     return _verdict(missing)
 
 

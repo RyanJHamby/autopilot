@@ -50,7 +50,9 @@ def make_run_tests(launcher: Launcher, python: str, home: str):
             "PYTHONPATH": f"{path}/src",
             "PYTHONDONTWRITEBYTECODE": "1",
             "HOME": home,
-            "PATH": f"/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:/usr/bin:/bin",
+            # the venv first: tests that shell out to `python3` must get the same interpreter (with PyYAML) as the suite, as `uv run`
+            # gives CI; a bare Homebrew python3 has no PyYAML and failed the first real update (2026-11-02)
+            "PATH": f"{Path(python).parent}:/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:/usr/bin:/bin",
             "CI": "true",
             "LANG": "en_US.UTF-8",
         }

@@ -256,3 +256,10 @@ def test_the_live_update_is_asked_for_the_current_modes_names(monkeypatch, tmp_p
     monkeypatch.setattr(um, "run_update", lambda *a, **k: seen.update(k) or "update: swapped")
     um.main(["--live"])
     assert seen["required_checks"] == ["guard / guard", "test"]
+
+
+def test_the_venv_comes_first_so_python3_in_tests_is_the_suites_interpreter(tmp_path):
+    spy = Spy()
+    um.make_run_tests(spy, "/Users/Shared/apx/venv/bin/python", "/Users/apx-ci")(tmp_path)
+    path = spy.calls[0][1]["env"]["PATH"].split(":")
+    assert path[0] == "/Users/Shared/apx/venv/bin" and "/usr/local/bin" in path[1:]

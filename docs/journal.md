@@ -288,3 +288,7 @@ launch-repo live run 2: stages 1-4 passed live (settings, labels, scaffold merge
 ## 2026-10-27 21:59 EDT (at abcce43)
 
 Secure fabric: red-teamed the compute design (found repo secrets readable from agent-branch workflows, open exec egress), moved model secrets to a main-only Environment (PR #83), built firewall/DNS allowlist renderer + runner controller logic + in-sandbox red-team probe (PR #84). Not run on hardware; Pi 4 identified, RAM/router isolation still unknown. Actions minutes cap blocks all private CI until Nov 1.
+
+## 2026-11-02 21:37 EST (at b64c3dd)
+
+Standard v0, Monday: wrote 14 characterization tests for ap doctor before touching it. They pin two real gaps on purpose: the pin check skips any non-alphanumeric ref, so dotted tags like v4.2.2 are never flagged, and it only inspects workflows whose first line says autopilot. Wrote checks.yaml (14 rules, labels enforced/audited/advisory) and STANDARD.md. The schema test caught my own YAML bug (an unquoted 'contents: read'). Nothing is labeled enforced, and a test says so until a protected CI step runs the engine. Decisions: prototype this week overrides the earlier light-touch plan; waivers will be one central policy/waivers.yaml read from the base ref; tier numbering is flagged, not chosen. Corrected an earlier claim: autopilot does not deny mcp__* outright, it denies specific families and protects .mcp.json.

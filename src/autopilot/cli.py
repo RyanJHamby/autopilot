@@ -887,6 +887,42 @@ def cmd_specs(ns: argparse.Namespace) -> int:
     return 1 if any(r.problems for r in rows) else 0
 
 
+def cmd_queue(ns: argparse.Namespace) -> int:
+    """Read-only batch status from gh, or `add` to scaffold a manifest file locally (no push, no labels, no issues)."""
+    import json
+
+    from autopilot import queue
+    from autopilot.apx import batch as batch_mod
+
+    d = Path(ns.dir)
+    if ns.action == "add":
+        try:
+            path = queue.scaffold(ns.id, ns.items, d)
+        except (batch_mod.BatchError, ValueError, FileExistsError) as e:
+            print(f"cannot add: {e}")
+            return 2
+        print(f"wrote {path}. Open a PR with it; merging that PR is your approval of the batch. Issues still need your agent-ready label.")
+        return 0
+    files = sorted(d.glob("*.y*ml"))
+    if not files:
+        print(f"no batches in {d}")
+        return 0
+    repo = ns.repo
+    prs = json.loads(subprocess.run(["gh", "pr", "list", "-R", repo, "--state", "all", "--limit", "300", "--json", "headRefName,state,mergedAt"], capture_output=True, text=True, check=True).stdout)
+    iss = json.loads(subprocess.run(["gh", "issue", "list", "-R", repo, "--state", "open", "--limit", "300", "--json", "number,labels"], capture_output=True, text=True, check=True).stdout)
+    labels = {i["number"]: {x["name"] for x in i["labels"]} for i in iss}
+    bad = 0
+    for f in files:
+        try:
+            b = batch_mod.parse(f.read_text())
+        except batch_mod.BatchError as e:
+            print(f"{f.name}: INVALID, planner ignores it ({e})")
+            bad += 1
+            continue
+        print(queue.render(b, queue.item_states(b, prs, labels)), end="")
+    return 1 if bad else 0
+
+
 def cmd_digest(ns: argparse.Namespace) -> int:
     """Read-only: markdown summary of the last 24h across enabled repos. Uses gh list/get only; calls no model."""
     import datetime as dt
@@ -1933,6 +1969,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--config", default=".autopilot/repo.yaml")
     p.add_argument("--log", default="", help="print the git history of one spec")
     p.set_defaults(fn=cmd_specs)
+    p = sub.add_parser("queue", help="batch manifests: status per item (read-only), or `add ID 101 102:101` to scaffold a file locally")
+    p.add_argument("action", choices=["status", "add"])
+    p.add_argument("id", nargs="?", default="")
+    p.add_argument("items", nargs="*", help="issue[:dep,dep] ...")
+    p.add_argument("--dir", default=".autopilot/batches")
+    p.add_argument("--repo", default="RyanJHamby/autopilot")
+    p.set_defaults(fn=cmd_queue)
     p = sub.add_parser("digest", help="read-only markdown summary of the last 24h across enabled repos (no model)")
     p.set_defaults(fn=cmd_digest)
     p = sub.add_parser("retro", help="read-only evidence packet: why agent runs/PRs failed to land")

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Phase 1 of the apx safe updater (docs/apx-updater-design.md). ADDITIVE: it changes nothing the running daemon uses.
-#   DRY_RUN=1 sudo bash deploy/apx-updater-setup.sh     # preview
+#   DRY_RUN=1 bash deploy/apx-updater-setup.sh          # preview (prints only, no sudo)
 #   sudo bash deploy/apx-updater-setup.sh               # do it
 # It (1) puts pytest + pyyaml in the shared venv so the updater can test a new tree, (2) stages the CURRENT commit of the manual
 # checkout as the first release and points `current` at it, (3) makes the updater's own copy (never auto-updated), and (4) installs

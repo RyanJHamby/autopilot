@@ -620,6 +620,12 @@ def cmd_doctor(ns: argparse.Namespace) -> int:
     return 1 if problems else 0
 
 
+def cmd_standard(ns: argparse.Namespace) -> int:
+    from autopilot.standard import command
+
+    return command.cmd_standard(ns, repo_name=repo_name, load_portfolio=load_portfolio, policy_root=ROOT)
+
+
 def cmd_status(ns: argparse.Namespace) -> int:
     pf = load_portfolio()
     print(f"{'repo':28} {'tier':4} {'mode':9} {'runs24h':8} {'agentPRs':8}")
@@ -1880,6 +1886,16 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("doctor", help="audit installed repos (local files + gh)")
     p.add_argument("repos", nargs="+")
     p.set_defaults(fn=cmd_doctor)
+    p = sub.add_parser("standard", help="run the project standard (STANDARD.md) against repos")
+    ssub = p.add_subparsers(dest="standard_cmd", required=True)
+    p = ssub.add_parser("check", help="audit repos against the standard; exits 1 on a failing level-fail rule")
+    p.add_argument("repos", nargs="*", help="repo paths")
+    p.add_argument("--portfolio", action="store_true", help="every enabled portfolio repo, found under --root by origin name")
+    p.add_argument("--root", default="~/dev", help="where clones live (default ~/dev)")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--strict", action="store_true", help="a level-fail rule that cannot be answered also fails")
+    p.add_argument("--offline", action="store_true", help="never call gh (ruleset-present becomes unknown)")
+    p.set_defaults(fn=cmd_standard)
     p = sub.add_parser("scan", help="list an owner's repos with suggested tier/mode (read-only)")
     p.add_argument("--owner")
     p.set_defaults(fn=cmd_scan)

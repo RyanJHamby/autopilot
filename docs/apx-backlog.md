@@ -78,3 +78,6 @@ agent's test) can read them. Fix by separating roles, not by hoping.
 `S1 -> S1b -> S2 -> S3 -> C1`  (a few focused days)  ·  `H1 -> H2 -> H3`  (calendar-bound by the VM)  ·  `C2 needs S5 + H2`  ·  `X1 needs C1, C2 and a week`.
 
 First two things to build now, no sudo needed: **S2** (redaction) and the code half of **S1** (the `apx-ci` wrapper, behind a setting that defaults to off).
+
+## Batch manifests (queue step 1)
+`.autopilot/batches/<id>.yaml` on main orders a queue of specs and holds items until their `depends_on` issues have merged or while their `scope` globs overlap work in flight. It never makes an issue eligible: that is still the owner's `agent-ready` label. Merging the manifest PR is the owner's approval of the batch. Invalid manifests are ignored whole.

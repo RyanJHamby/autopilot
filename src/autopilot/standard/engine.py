@@ -62,16 +62,26 @@ class Result:
 class Repo:
     """One checkout plus what the checks need to know about it. `gh` is injected so tests never touch the network."""
 
-    def __init__(self, path: Path, entry: dict | None = None, slug: str | None = None, gh: Callable | None = None):
+    def __init__(
+        self,
+        path: Path,
+        entry: dict | None = None,
+        slug: str | None = None,
+        gh: Callable | None = None,
+        github_public: bool | None = None,
+    ):
         self.path = Path(path)
         self.entry = entry  # this repo's policy/portfolio.yaml entry, or None if it isn't in the portfolio
         self.slug = slug
+        self.github_public = github_public  # what GitHub says, when it could be asked; it wins over the portfolio
         self.gh = gh or subprocess.run
         self._workflows: list[tuple[Path, str, object]] | None = None
 
     @property
     def public(self) -> bool | None:
-        """None when the repo isn't in the portfolio, so whether it is public can't be told."""
+        """What GitHub says if it was asked, else the portfolio's `public` flag. None when neither is known."""
+        if self.github_public is not None:
+            return self.github_public
         return None if self.entry is None else bool(self.entry.get("public", False))
 
     def read(self, rel: str) -> str | None:
@@ -341,6 +351,18 @@ def applies(rule: dict, repo: Repo) -> tuple[bool, str]:
     if repo.public is None:
         return False, f"not in the portfolio, so whether it is {scope} can't be told"
     return (repo.public if scope == "public" else not repo.public), f"rule is for {scope} repos"
+
+
+def github_public(slug: str | None, gh: Callable) -> bool | None:
+    """Whether GitHub says the repo is public. None when it can't be asked or answers something else."""
+    if not slug:
+        return None
+    try:
+        r = gh(["gh", "api", f"repos/{slug}", "--jq", ".private"], capture_output=True, text=True)
+    except OSError:
+        return None
+    answer = r.stdout.strip() if r.returncode == 0 else ""
+    return {"false": True, "true": False}.get(answer)
 
 
 def run(repo: Repo, only: list[str] | None = None, rules: dict | None = None) -> list[Result]:

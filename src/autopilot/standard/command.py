@@ -27,13 +27,23 @@ def find_clone(name: str, root: Path, repo_name) -> Path | None:
     return None
 
 
-def check_one(path: Path, portfolio: dict, repo_name, gh, wvs: list[dict], today: date) -> tuple[str, list[engine.Result]]:
+def check_one(
+    path: Path, portfolio: dict, repo_name, gh, wvs: list[dict], today: date
+) -> tuple[str, list[engine.Result], list[str]]:
+    """Check one repo. GitHub's answer about public/private wins over the portfolio's flag, and a disagreement is a note."""
     name = repo_name(path)
     entry = (portfolio.get("repos") or {}).get(name)
     slug = f"{portfolio['owner']}/{name}" if entry is not None else None
-    results = engine.run(engine.Repo(path, entry=entry, slug=slug, gh=gh))
+    notes = []
+    public = engine.github_public(slug, gh)
+    if public is not None and entry is not None and public != bool(entry.get("public", False)):
+        notes.append(
+            f"{name}: GitHub says {'public' if public else 'private'} but policy/portfolio.yaml says "
+            f"{'public' if entry.get('public', False) else 'not public'}; GitHub's answer was used"
+        )
+    results = engine.run(engine.Repo(path, entry=entry, slug=slug, gh=gh, github_public=public))
     waivers.apply(results, name, wvs, today)
-    return name, results
+    return name, results, notes
 
 
 def render(name: str, path: Path, results: list[engine.Result]) -> str:
@@ -72,7 +82,8 @@ def cmd_standard(ns: argparse.Namespace, *, repo_name, load_portfolio, policy_ro
             errors.append(f"no clone of {label} under {ns.root} (matched by origin remote name)")
             code = 1
             continue
-        name, results = check_one(path, portfolio, repo_name, gh, wvs, today)
+        name, results, repo_notes = check_one(path, portfolio, repo_name, gh, wvs, today)
+        notes += repo_notes
         code = max(code, engine.exit_code(results, strict=ns.strict))
         report.append((name, path, results))
 

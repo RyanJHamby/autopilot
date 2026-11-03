@@ -266,3 +266,48 @@ def test_offline_never_calls_gh(tmp_path, portfolio, monkeypatch):
 def test_a_repo_outside_the_portfolio_is_still_checked_and_license_is_skipped(tmp_path, portfolio, capsys):
     run(tmp_path, str(clone(tmp_path, "stranger", files=CLEAN)))
     assert "skip    license-present" in capsys.readouterr().out
+
+
+# --- GitHub's answer about public/private wins over the portfolio ------------------------------------------------
+
+
+def fake_gh(visibility):
+    """Answers `gh api repos/X --jq .private`; ruleset questions fail."""
+
+    def gh(cmd, **kw):
+        if cmd[3:5] == ["--jq", ".private"] and visibility is not None:
+            return subprocess.CompletedProcess(cmd, 0, f"{visibility}\n", "")
+        return subprocess.CompletedProcess(cmd, 1, "", "")
+
+    return gh
+
+
+def license_result(tmp_path, visibility, entry):
+    d = clone(tmp_path, "r", files=CLEAN)
+    pf = {"owner": "o", "repos": {"r": entry}}
+    _, results, notes = command.check_one(d, pf, cli.repo_name, fake_gh(visibility), [], TODAY)
+    return next(r for r in results if r.id == "license-present"), notes
+
+
+def test_a_repo_github_says_is_public_is_held_to_the_license_rule_even_if_the_portfolio_forgot(tmp_path):
+    result_, notes = license_result(tmp_path, "false", {"enabled": True})
+    assert result_.result == "fail" and "GitHub says public but policy/portfolio.yaml says not public" in notes[0]
+
+
+def test_a_repo_github_says_is_private_skips_the_license_rule_even_if_the_portfolio_says_public(tmp_path):
+    result_, notes = license_result(tmp_path, "true", {"enabled": True, "public": True})
+    assert result_.result == "skip" and "GitHub says private" in notes[0]
+
+
+def test_agreement_between_github_and_the_portfolio_makes_no_note(tmp_path):
+    assert license_result(tmp_path, "false", {"enabled": True, "public": True})[1] == []
+
+
+def test_when_github_cannot_answer_the_portfolio_flag_is_used_and_nothing_is_noted(tmp_path):
+    result_, notes = license_result(tmp_path, None, {"enabled": True, "public": True})
+    assert result_.result == "fail" and notes == []
+
+
+def test_an_unexpected_answer_from_gh_is_ignored():
+    gh = lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, "maybe\n", "")  # noqa: E731
+    assert engine.github_public("o/r", gh) is None and engine.github_public(None, gh) is None

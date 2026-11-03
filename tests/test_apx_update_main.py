@@ -234,3 +234,25 @@ def test_the_sandbox_path_covers_both_homebrew_prefixes_so_an_intel_mac_finds_it
     ):
         text = (Path(__file__).parent.parent / f).read_text()
         assert "/opt/homebrew/bin:/usr/local/bin:" in text, f
+
+
+def test_required_checks_follow_the_mode_apx_posts_in():
+    shadow = settings("apx-ci")
+    assert um.required_checks(shadow) == ["apx / guard", "apx / build"]
+    cut = settings("apx-ci")
+    cut.cutover = frozenset({um.REPO})
+    assert um.required_checks(cut) == ["guard / guard", "test"]
+    auth = settings("apx-ci")
+    auth.authoritative = frozenset({um.REPO})
+    assert um.required_checks(auth) == ["guard / guard", "test"]
+
+
+def test_the_live_update_is_asked_for_the_current_modes_names(monkeypatch, tmp_path):
+    live_world(monkeypatch, tmp_path, lock_free=True)
+    cut = settings("apx-ci")
+    cut.cutover = frozenset({um.REPO})
+    monkeypatch.setattr(um.Settings, "from_env", classmethod(lambda cls, env=None: cut))
+    seen = {}
+    monkeypatch.setattr(um, "run_update", lambda *a, **k: seen.update(k) or "update: swapped")
+    um.main(["--live"])
+    assert seen["required_checks"] == ["guard / guard", "test"]

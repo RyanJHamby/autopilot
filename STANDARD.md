@@ -1,9 +1,9 @@
 # Project standard
 
-Status: **v0 draft, standard version 1.** The rule list and labels exist in
-[`src/autopilot/standard/checks.yaml`](src/autopilot/standard/checks.yaml). The engine that runs them
-(`ap standard check`) is being built this week and isn't here yet, so everything below describes what the rules are,
-not yet what runs.
+Status: **v0 draft, standard version 1.** The rule list and labels are in
+[`src/autopilot/standard/checks.yaml`](src/autopilot/standard/checks.yaml). Run them with `ap standard check REPO`, or
+`ap standard check --portfolio` for every enabled repo. All 14 rules have a check. The engine runs from the CLI on a
+machine; no CI step runs it yet, so nothing blocks a merge.
 
 This file says what a repo should have and how each rule is backed. It makes no claim that following it improves how
 well agents work. Where a rule is judgment, it says so.
@@ -20,8 +20,10 @@ well agents work. Where a rule is judgment, it says so.
 step exists, calling a rule enforced would be false, so none is. A test checks this and has to be removed on purpose
 when the CI step lands.
 
-A result is `pass`, `fail`, or `unknown`. `unknown` means the check couldn't be answered, for example because `gh`
-isn't installed or the ruleset can't be read. It is never counted as a pass.
+A result is `pass`, `fail`, `unknown`, `skip` or `waived`. `unknown` means the check couldn't be answered, for example
+because `gh` isn't installed, the ruleset can't be read, or a workflow file doesn't parse. It is never counted as a pass,
+and `--strict` makes it fail a level-`fail` rule. `skip` means the rule doesn't apply to this repo, and is still printed.
+`waived` is a failure covered by a live waiver, below.
 
 A rule's **level** says what a failing result does to the run: `fail` exits non-zero, `warn` prints. New rules start at
 `warn` until the portfolio is clean, so adding a rule never breaks a repo overnight.
@@ -56,9 +58,14 @@ reading it here would create a second policy file.
 
 ## Waivers
 
-A repo that can't meet a rule yet needs a waiver. Waivers live in one central file, `policy/waivers.yaml`, keyed by
-repo, with an owner and an expiry of at most 30 days. They are read from the base branch, so a pull request can't waive
-its own failure, and an expired waiver fails. *Planned for Wednesday; the file doesn't exist yet.*
+A repo that can't meet a rule yet needs a waiver. Waivers live in one central file, `policy/waivers.yaml` in the
+autopilot checkout, one entry per repo and rule with an `owner`, a `reason`, and `granted` and `expires` dates at most 30
+days apart. They are read from `origin/main`, not the working tree, so a pull request can't waive its own failure. An
+expired waiver stops applying and the rule fails again. An entry that is malformed is ignored and reported, never
+half-applied. If `origin/main` can't be found, no waiver is applied. The file doesn't exist yet: creating it is an owner
+edit (`policy/**` is protected).
+
+Only a `fail` can be waived. An `unknown` has nothing to waive.
 
 ## What is measured and what isn't
 

@@ -5,7 +5,7 @@
 standard_version: 1
 
 checks:
-  # Audited rules: reported by `ap standard check`, and by `ap doctor` once it delegates here.
+  # Audited rules: reported by `ap standard check`. `ap doctor` also runs pinned-actions, secret-exposed-workflows and thin-claude-md.
   - id: pinned-actions
     title: Every action in a workflow is pinned to a commit SHA
     level: fail

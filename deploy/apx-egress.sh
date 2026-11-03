@@ -1,8 +1,8 @@
 #!/bin/bash
 # Keep the apx-ci and apx-agent accounts off your home network (backlog S4, first slice; rules in src/autopilot/apx/pfrules.py).
 #   bash deploy/apx-egress.sh                       # previews the rules and syntax-checks them: changes nothing, no sudo
-#   DO=1 sudo bash deploy/apx-egress.sh             # installs the pf anchor and turns pf on
-#   DO=1 UNDO=1 sudo bash deploy/apx-egress.sh      # removes it again (restores the pf.conf backup)
+#   sudo DO=1 bash deploy/apx-egress.sh             # installs the pf anchor and turns pf on
+#   sudo DO=1 UNDO=1 bash deploy/apx-egress.sh      # removes it again (restores the pf.conf backup)
 # The rules match only those two accounts, so the host's own traffic and the `apx` account are not affected.
 # Not covered (see the module docstring): per-host allowlisting and DNS tunnelling.
 set -u
@@ -23,7 +23,7 @@ if pfctl -n -f "$tmp" >/dev/null 2>&1; then say "rules pass the pf syntax check"
 
 if [ "$DO" != 1 ]; then
   say ""; say "$rules"; say ""
-  say "Preview only. DO=1 sudo bash deploy/apx-egress.sh installs it; then check with deploy/apx-egress-probe.sh."
+  say "Preview only. sudo DO=1 bash deploy/apx-egress.sh installs it; then check with deploy/apx-egress-probe.sh."
   rm -f "$tmp"; exit 0
 fi
 [ "$(id -u)" = 0 ] || { rm -f "$tmp"; say "run with sudo"; exit 1; }

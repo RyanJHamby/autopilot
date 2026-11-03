@@ -600,3 +600,16 @@ def test_load_batches_fails_closed_on_undecodable_content():
         return {"content": "!!!not base64!!!"}
 
     assert planner.load_batches(api, REPO, "main") == []
+
+
+def test_orphaned_in_progress_check_is_rerun_but_a_fresh_one_is_not():
+    old = {"name": "build", "status": "in_progress", "started_at": "2026-10-28T09:00:00Z"}  # 3h before NOW
+    fresh = {"name": "build", "status": "in_progress", "started_at": "2026-10-28T11:30:00Z"}
+    done = {"name": "build", "status": "completed", "conclusion": "success", "started_at": "2026-10-20T00:00:00Z"}
+
+    def acts(c):
+        return go(Fake(open=[pr(1, "agent/5-1", "s1")], checks={"s1": ["guard / guard", c]}))["actions"]
+
+    assert [a.detail for a in acts(old) if a.kind == "check-pr"] == ["PR #1 missing build"]
+    assert not [a for a in acts(fresh) if a.kind == "check-pr"]
+    assert not [a for a in acts(done) if a.kind == "check-pr"]  # old but finished: never retried

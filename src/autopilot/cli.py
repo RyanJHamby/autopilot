@@ -931,7 +931,7 @@ def cmd_digest(ns: argparse.Namespace) -> int:
 
     pf = load_portfolio()
     now = dt.datetime.now(dt.timezone.utc)
-    fields = "number,title,headRefName,state,isDraft,url,mergedAt"
+    fields = "number,title,headRefName,state,isDraft,url,mergedAt,files,additions,deletions,statusCheckRollup"
     summaries, statuses = [], {}
     for name, e in pf["repos"].items():
         if not e.get("enabled"):
@@ -966,7 +966,12 @@ def cmd_digest(ns: argparse.Namespace) -> int:
         statuses[name] = digest.repo_status(e, v.returncode == 0 and v.stdout.strip() == "true", now)
         if p.returncode or r.returncode:
             statuses[name] = "cannot read GitHub" if statuses[name] == "ok" else statuses[name] + " (cannot read GitHub)"
-    print(digest.render(summaries, statuses, now), end="")
+    text = digest.render(summaries, statuses, now)
+    if ns.out:
+        Path(ns.out).write_text(text)
+        print(f"wrote {ns.out}")
+    else:
+        print(text, end="")
     return 0
 
 
@@ -1977,6 +1982,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--repo", default="RyanJHamby/autopilot")
     p.set_defaults(fn=cmd_queue)
     p = sub.add_parser("digest", help="read-only markdown summary of the last 24h across enabled repos (no model)")
+    p.add_argument("--out", default="", help="write to this local file instead of stdout")
     p.set_defaults(fn=cmd_digest)
     p = sub.add_parser("retro", help="read-only evidence packet: why agent runs/PRs failed to land")
     p.add_argument("--days", type=int, default=14)

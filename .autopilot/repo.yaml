@@ -18,6 +18,7 @@ commands:
 ci:
   - "uv sync --quiet"
   - "uv run ruff check ."
+  - "uv run ap standard check . --offline"
   - "uv run pytest -q"
   - {run: "npm ci --ignore-scripts", dir: "apps/control-plane"}
   - {run: "npm run typecheck", dir: "apps/control-plane"}
@@ -44,6 +45,9 @@ guard:
     - apps/control-plane/supabase/**
     - apps/control-plane/github-app/**
     - src/autopilot/picker.py
+    - src/autopilot/standard/**
+    - src/autopilot/trace.py
+    - src/autopilot/drill.py
   comms_allow:             # this repo writes and tests the guard itself, so its journal and guard tests must be able to name the commands the guard forbids
     - docs/journal.md
     - tests/test_guard.py

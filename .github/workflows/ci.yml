@@ -21,6 +21,7 @@ jobs:
           python3 -m pip install --quiet uv
           uv sync --quiet
           uv run ruff check .
+          uv run ap standard check . --offline
           uv run pytest -q
       - name: control-plane
         working-directory: apps/control-plane

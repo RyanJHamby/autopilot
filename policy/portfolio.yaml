@@ -44,7 +44,7 @@ repos:
   RyanJHamby.github.io:    {tier: C, mode: dormant, enabled: false, public: true}
   FlowState:               {tier: C, mode: dormant, enabled: false, public: true}
   lift_app:                {tier: C, mode: dormant, enabled: false}
-  autopilot:             {tier: B, mode: standard, enabled: true}
+  autopilot:             {tier: B, mode: standard, enabled: true, public: true}
   stencil:               {tier: A, mode: standard, enabled: true}
   launch-scratch:        {tier: B, mode: standard, enabled: true}
 

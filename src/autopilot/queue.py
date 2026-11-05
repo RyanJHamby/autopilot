@@ -64,6 +64,23 @@ def render(b: batch_mod.Batch, states: list[tuple[int, str]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def preflight(specs: list[str], prs: list[dict], labels: dict[int, set[str]], retry: bool = False) -> tuple[list[str], list[str]]:
+    """(errors, warnings) for a batch about to be written. An issue that already has a merged agent PR is an error unless `retry`
+    (the planner would skip it anyway, so listing it only misleads), as is an issue that is not open. A missing agent-ready label is a
+    warning: applying it is the owner's act."""
+    merged = {int(m.group(1)) for p in prs if p.get("mergedAt") and (m := _AGENT.match(p.get("headRefName") or ""))}
+    errors, warns = [], []
+    for s in specs:
+        n = int(s.partition(":")[0])
+        if n in merged and not retry:
+            errors.append(f"#{n} already has a merged agent PR (pass --retry if you really want it run again)")
+        elif n not in labels:
+            errors.append(f"#{n} is closed or does not exist")
+        elif "agent-ready" not in labels[n]:
+            warns.append(f"#{n} is not labelled agent-ready yet (yours to apply)")
+    return errors, warns
+
+
 def scaffold(batch_id: str, specs: list[str], directory: Path) -> Path:
     """specs like ["101", "102:101", "103:101,102"] = issue[:deps]. Written locally, validated by the same parser the planner uses."""
     items = []

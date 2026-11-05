@@ -57,3 +57,54 @@ def test_scaffold_refuses_bad_and_existing(tmp_path):
     queue.scaffold("b1", ["1"], tmp_path)
     with pytest.raises(FileExistsError):
         queue.scaffold("b1", ["2"], tmp_path)
+
+
+def _prs(*merged):
+    return [{"headRefName": f"agent/{n}-x", "state": "MERGED", "mergedAt": "t"} for n in merged]
+
+
+def test_preflight_rejects_merged_closed_and_warns_on_unlabelled():
+    labels = {1: {"agent-ready"}, 2: set(), 4: {"agent-ready"}}
+    errs, warns = queue.preflight(["1", "2:1", "3", "4"], _prs(4), labels)
+    assert errs == [
+        "#3 is closed or does not exist",
+        "#4 already has a merged agent PR (pass --retry if you really want it run again)",
+    ]
+    assert warns == ["#2 is not labelled agent-ready yet (yours to apply)"]
+
+
+def test_preflight_retry_allows_merged():
+    assert queue.preflight(["4"], _prs(4), {4: {"agent-ready"}}, retry=True) == ([], [])
+
+
+def test_cli_add_refuses_merged_issue_and_writes_nothing(monkeypatch, tmp_path, capsys):
+    import json
+    import subprocess
+
+    from autopilot import cli
+
+    def fake(args, **kw):
+        out = json.dumps(_prs(5)) if args[1] == "pr" else json.dumps([{"number": 5, "labels": []}, {"number": 6, "labels": []}])
+        return subprocess.CompletedProcess(args, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(cli.subprocess, "run", fake)
+    d = tmp_path / "b"
+    assert cli.main(["queue", "add", "b1", "5", "--dir", str(d)]) == 2
+    assert "merged agent PR" in capsys.readouterr().out and not d.exists()
+    assert cli.main(["queue", "add", "b1", "6", "--dir", str(d)]) == 0
+    assert (d / "b1.yaml").exists()
+
+
+def test_cli_add_fails_closed_when_gh_unreadable_unless_offline(monkeypatch, tmp_path, capsys):
+    import subprocess
+
+    from autopilot import cli
+
+    def boom(args, **kw):
+        raise subprocess.CalledProcessError(1, args)
+
+    monkeypatch.setattr(cli.subprocess, "run", boom)
+    d = tmp_path / "b"
+    assert cli.main(["queue", "add", "b1", "6", "--dir", str(d)]) == 2
+    assert not d.exists()
+    assert cli.main(["queue", "add", "b1", "6", "--dir", str(d), "--offline"]) == 0

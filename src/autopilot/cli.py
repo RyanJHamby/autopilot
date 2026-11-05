@@ -895,7 +895,23 @@ def cmd_queue(ns: argparse.Namespace) -> int:
     from autopilot.apx import batch as batch_mod
 
     d = Path(ns.dir)
+    def fetch() -> tuple[list[dict], dict[int, set[str]]]:
+        prs = json.loads(subprocess.run(["gh", "pr", "list", "-R", ns.repo, "--state", "all", "--limit", "300", "--json", "headRefName,state,mergedAt"], capture_output=True, text=True, check=True).stdout)
+        iss = json.loads(subprocess.run(["gh", "issue", "list", "-R", ns.repo, "--state", "open", "--limit", "300", "--json", "number,labels"], capture_output=True, text=True, check=True).stdout)
+        return prs, {i["number"]: {x["name"] for x in i["labels"]} for i in iss}
+
     if ns.action == "add":
+        if not ns.offline:
+            try:
+                errs, warns = queue.preflight(ns.items, *fetch(), retry=ns.retry)
+            except (subprocess.CalledProcessError, OSError, ValueError) as e:
+                print(f"cannot add: could not read {ns.repo} to check the issues ({e}); pass --offline to skip the check")
+                return 2
+            for w in warns:
+                print(f"warning: {w}")
+            if errs:
+                print("cannot add:\n  " + "\n  ".join(errs))
+                return 2
         try:
             path = queue.scaffold(ns.id, ns.items, d)
         except (batch_mod.BatchError, ValueError, FileExistsError) as e:
@@ -907,10 +923,7 @@ def cmd_queue(ns: argparse.Namespace) -> int:
     if not files:
         print(f"no batches in {d}")
         return 0
-    repo = ns.repo
-    prs = json.loads(subprocess.run(["gh", "pr", "list", "-R", repo, "--state", "all", "--limit", "300", "--json", "headRefName,state,mergedAt"], capture_output=True, text=True, check=True).stdout)
-    iss = json.loads(subprocess.run(["gh", "issue", "list", "-R", repo, "--state", "open", "--limit", "300", "--json", "number,labels"], capture_output=True, text=True, check=True).stdout)
-    labels = {i["number"]: {x["name"] for x in i["labels"]} for i in iss}
+    prs, labels = fetch()
     bad = 0
     for f in files:
         try:
@@ -1975,6 +1988,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("items", nargs="*", help="issue[:dep,dep] ...")
     p.add_argument("--dir", default=".autopilot/batches")
     p.add_argument("--repo", default="RyanJHamby/autopilot")
+    p.add_argument("--retry", action="store_true", help="add: allow issues that already have a merged agent PR")
+    p.add_argument("--offline", action="store_true", help="add: skip the gh check of the listed issues")
     p.set_defaults(fn=cmd_queue)
     p = sub.add_parser("digest", help="read-only markdown summary of the last 24h across enabled repos (no model)")
     p.set_defaults(fn=cmd_digest)

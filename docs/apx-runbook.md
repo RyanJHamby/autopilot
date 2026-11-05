@@ -10,7 +10,8 @@ apx runs model output and PR code. Do not run it as your normal login.
 1. System Settings > Users & Groups > add a **standard** (non-admin) user `apx`. No iCloud, no Apple ID, no keychain items,
    no SSH keys, no `gh` login.
 2. Log in as `apx` only to do the steps below. Home directory permissions stay `700`.
-3. macOS has no network egress firewall per user. Until the Oracle host exists this is a **spike machine**: keep it to
+3. macOS `pf` can restrict by user: `deploy/apx-egress.sh` (preview first; `sudo DO=1 bash deploy/apx-egress.sh` installs it; the variable goes after `sudo`, which drops variables set before it) keeps `apx-ci` and `apx-agent` off your LAN, the router, cloud metadata and IPv6,
+   and `deploy/apx-egress-probe.sh` proves it. It is not a per-host allowlist and does not cover DNS tunnelling yet. Until that is done this is a **spike machine**: keep it to
    throwaway PRs on `autopilot` (see step 5), not your other repos.
 
 ## Move into the apx account (after setup, before any timer)

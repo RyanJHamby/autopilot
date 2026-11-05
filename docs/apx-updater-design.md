@@ -27,9 +27,9 @@ The updater is a separate tiny script (stdlib only, ~100 lines) that lives **out
 ### An update happens only if ALL of these hold (checked via the GitHub API with the apx token, not by trusting the git objects)
 
 1. The candidate is `origin/main`'s head and is a **fast-forward** of `current` (no force-push or rewrite is ever adopted).
-2. The commit is the merge of a PR whose `merged_by` is the owner (`RyanJHamby`). Merges by apx's own lane, by a bot, or by anyone else are ignored.
+2. The commit is the merge of a PR whose `merged_by` is the owner (`RyanJHamby`). Exception (2026-11-02, after autopilot was cut over to apx): a merge by apx's own lane (`autopilot-apx[bot]`) is adopted only if every file changed since the running release is non-runtime (`docs/`, `specs/`, `results/`, `.github/`, `*.md`; `update_verify.non_runtime`), and the compare lists all files (under 300). So code still reaches the host only through the owner's merge, and a lane-merged kit-bump no longer stalls every later update. Merges by any other bot or person are ignored.
 3. GitHub marks the commit **Verified** (web-flow signature).
-4. The required checks on that sha are green: `guard / guard` and `build` posted by the apx App (the same `integration_id` pin the rulesets use).
+4. The required checks on the PR head are green, posted by the apx App: the names apx posts for autopilot in the current mode (`Settings.contexts`: `apx / guard` + `apx / build` in shadow, `guard / guard` + `test` once cut over or authoritative).
 5. The PR is not labelled `hold`, and the file `/Users/Shared/apx/HOLD` does not exist (Ryan's local stop switch).
 6. A **settling delay** (default 15 min) has passed since the merge, so a merge Ryan regrets can be stopped with `touch HOLD` before the host runs it.
 7. The release checkout builds: `python -m compileall`, `pytest -q` as `apx-ci` (no secrets) on the new tree. A red suite means no swap.
@@ -54,7 +54,7 @@ If any condition fails, apx keeps running the current release and writes one lin
 | Failure | Result |
 |---|---|
 | Ryan's account or a merge-bypass is abused to land bad code | Same exposure as today (manual pull would also run it); the 15 min delay and `HOLD` add a window. Not solved, only narrowed. |
-| apx's own merge lane merges to autopilot main | Rule 2 ignores it. (apx is shadow-only on autopilot today; this keeps it safe if that changes.) |
+| apx's own merge lane merges to autopilot main | Adopted only if nothing runtime changed since the running release (rule 2); any code change waits for an owner merge. |
 | Force-push or history rewrite on main | Rule 1 refuses. |
 | New release crashes at import | Canary rolls back within about 3 passes. |
 | New release runs but is subtly wrong (bad planner decision) | Not caught. Mitigation is the existing main-health check and the shadow cross-check, plus `HOLD`. |

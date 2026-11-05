@@ -3,9 +3,15 @@ id: short-kebab-name              # unique slug; becomes label spec:<id>
 goal: One or two sentences. What is true when this is done?
 acceptance:                       # commands that exit 0 only when the work is done (machine-checkable)
   - uv run pytest tests/test_thing.py
+  # If the work changes anything a generator writes (docs indexes, lockfiles, schemas, snapshots, TRACKS.md-style tables), list the
+  # generator AND the repo's freshness test here, or CI will fail on a stale file the acceptance list never checked:
+  # - uv run python scripts/course.py docs
+  # - uv run pytest -q tests/test_course_docs.py tests/test_course_diagrams.py
+  # Before opening the PR, also run the repo's own CI commands (repo.yaml `ci:`), not only the acceptance commands.
 scope:                            # path globs the agent may touch (never .github/.autopilot/.claude/AGENTS.md)
   - src/thing/**
   - tests/**
+  # include every generated file the generator above rewrites, or the agent may not touch it
 non_goals:                        # what NOT to do (reduces scope creep)
   - no new dependencies
 risk_tier: 2                      # 1 docs/tests/deps | 2 feature | 3 auth, data, infra (never auto-merged)

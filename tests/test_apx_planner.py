@@ -30,6 +30,7 @@ class Fake:
         self.pulls = kw.get("pulls", {})  # number -> {"mergeable_state": ..., "labels": [...]}
         self.files = kw.get("files", {})  # number -> [filenames]
         self.main_sha = kw.get("main_sha", "msha")
+        self.batches = kw.get("batches", {})  # file name -> manifest text
         self.writes = []
 
     def __call__(self, method, path, body=None):
@@ -43,6 +44,13 @@ class Fake:
             return {"value": self.vars[name]}
         if "/contents/.autopilot/repo.yaml" in path:
             return {"content": base64.b64encode(self.cfg.encode()).decode()}
+        if "/contents/.autopilot/batches" in path:
+            name = path.split("/batches", 1)[1].split("?")[0].lstrip("/")
+            if not self.batches:
+                raise GitHubError(404, path, "nf")
+            if not name:
+                return [{"name": n, "type": "file"} for n in self.batches]
+            return {"content": base64.b64encode(self.batches[name].encode()).decode()}
         if re.match(r".*/commits/main$", path):
             return {"commit": {"committer": {"date": self.base_time}}}
         m = re.match(r".*/pulls/(\d+)/files", path)
@@ -565,3 +573,43 @@ def test_main_is_not_checked_when_the_repo_does_not_ask_for_it():
     meta = {REPO: {k: v for k, v in MAIN_META[REPO].items() if k != "main_check"}}
     r = planner.plan(Fake(**BUSY), Ledger(), meta, now=NOW)[REPO]
     assert "check-main" not in kind_list(r)
+
+
+def runs(f):
+    return [a.ref for a in go(f)["actions"] if a.kind == "run-agent"]
+
+
+def test_batch_dependency_holds_issue_until_dependency_merged():
+    m = {"b1.yaml": "id: b1\nitems:\n  - issue: 4\n  - issue: 5\n    depends_on: [4]\n"}
+    f = Fake(issues=[issue(5), issue(4)], batches=m)
+    assert runs(f) == ["4"]  # 5 waits for 4 even though the daily cap has room
+    closed = [{"head": {"ref": "agent/4-x"}, "merged_at": "2026-10-27T00:00:00Z"}]
+    assert "5" in runs(Fake(issues=[issue(5)], closed=closed, batches=m))
+
+
+def test_batch_manifest_order_wins_and_bad_manifest_is_ignored():
+    m = {"b1.yaml": "id: b1\nitems: [{issue: 5}, {issue: 4}]"}
+    assert runs(Fake(issues=[issue(4), issue(5)], batches=m))[:2] == ["5", "4"]
+    assert runs(Fake(issues=[issue(4), issue(5)], batches={"x.yaml": "junk"}))[:2] == ["4", "5"]
+
+
+def test_load_batches_fails_closed_on_undecodable_content():
+    def api(method, path, body=None):
+        if path.endswith("?ref=main") and path.rsplit("/", 1)[1].startswith("batches"):
+            return [{"name": "a.yaml", "type": "file"}]
+        return {"content": "!!!not base64!!!"}
+
+    assert planner.load_batches(api, REPO, "main") == []
+
+
+def test_orphaned_in_progress_check_is_rerun_but_a_fresh_one_is_not():
+    old = {"name": "build", "status": "in_progress", "started_at": "2026-10-28T09:00:00Z"}  # 3h before NOW
+    fresh = {"name": "build", "status": "in_progress", "started_at": "2026-10-28T11:30:00Z"}
+    done = {"name": "build", "status": "completed", "conclusion": "success", "started_at": "2026-10-20T00:00:00Z"}
+
+    def acts(c):
+        return go(Fake(open=[pr(1, "agent/5-1", "s1")], checks={"s1": ["guard / guard", c]}))["actions"]
+
+    assert [a.detail for a in acts(old) if a.kind == "check-pr"] == ["PR #1 missing build"]
+    assert not [a for a in acts(fresh) if a.kind == "check-pr"]
+    assert not [a for a in acts(done) if a.kind == "check-pr"]  # old but finished: never retried

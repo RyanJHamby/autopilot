@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import datetime as dt
+import sys
+from pathlib import Path
 
 from autopilot import picker
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "kit" / "runtime"))
+from guard import _matches  # noqa: E402
+from tier import PROTECTED_TIER2  # noqa: E402
+
+LARGE = 400  # changed lines
 
 NOT_FAILURES = ("success", "skipped", "cancelled", "", None)
 
@@ -25,6 +33,23 @@ def summarize(repo: str, prs: list[dict], runs: list[dict], now: dt.datetime) ->
     }
 
 
+def risk(p: dict) -> tuple[int, str]:
+    """(rank, why): lower rank = look first. Missing fields (an older gh payload) just mean no signal, never a lower risk."""
+    hit = next((f["path"] for f in p.get("files") or [] if _matches(f["path"], PROTECTED_TIER2)), None)
+    if hit:
+        return 0, f"protected path {hit}"
+    if any(
+        (c.get("conclusion") or c.get("state")) in ("FAILURE", "ERROR", "TIMED_OUT") for c in p.get("statusCheckRollup") or []
+    ):
+        return 1, "a check is failing"
+    size = (p.get("additions") or 0) + (p.get("deletions") or 0)
+    if size > LARGE:
+        return 2, f"large ({size} lines)"
+    if any(c.get("status") in ("IN_PROGRESS", "QUEUED", "PENDING") for c in p.get("statusCheckRollup") or []):
+        return 3, "checks still running"
+    return 4, f"{size} lines, checks ok" if p.get("statusCheckRollup") else "no checks yet"
+
+
 def repo_status(entry: dict, paused: bool, now: dt.datetime) -> str:
     if entry.get("mode") == "dormant":
         return "dormant"
@@ -41,9 +66,15 @@ def render(summaries: list[dict], statuses: dict[str, str], now: dt.datetime) ->
     def prs(key: str) -> list[str]:
         return [f"- {s['repo']} #{p['number']} {p['title']} ({p['url']})" for s in summaries for p in s[key]]
 
+    def waiting() -> list[str]:
+        rows = sorted(
+            ((risk(p), s["repo"], p) for s in summaries for p in s["waiting"]), key=lambda r: (r[0][0], r[1], r[2]["number"])
+        )
+        return [f"- {repo} #{p['number']} {p['title']}: {why} ({p['url']})" for (_, why), repo, p in rows]
+
     failed = [f"- {s['repo']} run {r['databaseId']} ({r['conclusion']})" for s in summaries for r in s["failed"]]
     stopped = [f"- {n}: {st}" for n, st in statuses.items() if st != "ok"]
     out = [f"# Autopilot digest {now.strftime('%Y-%m-%d')}", "", "Last 24 hours.", ""]
-    out += _section("Merged", prs("merged")) + _section("Waiting on you", prs("waiting"))
+    out += _section("Merged", prs("merged")) + _section("Waiting on you", waiting())
     out += _section("Failed runs", failed) + _section("Paused or held", stopped)
     return "\n".join(out).rstrip("\n") + "\n"

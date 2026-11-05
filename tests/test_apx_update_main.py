@@ -220,3 +220,46 @@ def test_setup_makes_the_venv_readable_by_the_test_account_after_installing():
     install = next(i for i, ln in enumerate(t) if "uv pip install" in ln)
     fix = next(i for i, ln in enumerate(t) if "chmod -R go+rX" in ln and "venv" in ln)
     assert fix > install  # uv installs 0700 under the orchestrator's umask; apx-ci could not import pytest's dependencies
+
+
+def test_the_sandbox_path_covers_both_homebrew_prefixes_so_an_intel_mac_finds_its_tools():
+    from pathlib import Path
+
+    for f in (
+        "src/autopilot/apx/update_main.py",
+        "src/autopilot/apx/sandbox.py",
+        "deploy/launchd/com.autopilot.apx.daemon.plist",
+        "deploy/launchd/com.autopilot.apx.updater.plist",
+        "deploy/apx-install-mac.sh",
+    ):
+        text = (Path(__file__).parent.parent / f).read_text()
+        assert "/opt/homebrew/bin:/usr/local/bin:" in text, f
+
+
+def test_required_checks_follow_the_mode_apx_posts_in():
+    shadow = settings("apx-ci")
+    assert um.required_checks(shadow) == ["apx / guard", "apx / build"]
+    cut = settings("apx-ci")
+    cut.cutover = frozenset({um.REPO})
+    assert um.required_checks(cut) == ["guard / guard", "test"]
+    auth = settings("apx-ci")
+    auth.authoritative = frozenset({um.REPO})
+    assert um.required_checks(auth) == ["guard / guard", "test"]
+
+
+def test_the_live_update_is_asked_for_the_current_modes_names(monkeypatch, tmp_path):
+    live_world(monkeypatch, tmp_path, lock_free=True)
+    cut = settings("apx-ci")
+    cut.cutover = frozenset({um.REPO})
+    monkeypatch.setattr(um.Settings, "from_env", classmethod(lambda cls, env=None: cut))
+    seen = {}
+    monkeypatch.setattr(um, "run_update", lambda *a, **k: seen.update(k) or "update: swapped")
+    um.main(["--live"])
+    assert seen["required_checks"] == ["guard / guard", "test"]
+
+
+def test_the_venv_comes_first_so_python3_in_tests_is_the_suites_interpreter(tmp_path):
+    spy = Spy()
+    um.make_run_tests(spy, "/Users/Shared/apx/venv/bin/python", "/Users/apx-ci")(tmp_path)
+    path = spy.calls[0][1]["env"]["PATH"].split(":")
+    assert path[0] == "/Users/Shared/apx/venv/bin" and "/usr/local/bin" in path[1:]

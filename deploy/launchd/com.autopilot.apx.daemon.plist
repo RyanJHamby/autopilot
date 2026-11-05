@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- apx timer as a system LaunchDaemon that runs AS the unprivileged apx account (no login session needed).
      Install ONLY after the doctor passes as apx and a shadow comparison looks right:
-       sudo cp deploy/launchd/com.autopilot.apx.daemon.plist /Library/LaunchDaemons/
+       sudo cp deploy/launchd/com.autopilot.apx.daemon.plist /Library/LaunchDaemons/com.autopilot.apx.plist
        sudo chown root:wheel /Library/LaunchDaemons/com.autopilot.apx.plist
        sudo chmod 644 /Library/LaunchDaemons/com.autopilot.apx.plist
        sudo launchctl bootstrap system /Library/LaunchDaemons/com.autopilot.apx.plist
@@ -24,7 +24,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key><string>/Users/apx</string>
-    <key>PATH</key><string>/Users/apx/.local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>/Users/apx/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>StartInterval</key><integer>120</integer>
   <key>RunAtLoad</key><false/>

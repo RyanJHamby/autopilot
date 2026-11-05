@@ -26,7 +26,13 @@ from .update import run_update
 
 REPO = "RyanJHamby/autopilot"
 SETTLE_MIN = 45  # a swap needs the canary's 30 minutes plus margin inside the active window
-CHECKS = ("apx / guard", "apx / build")  # the shadow names autopilot gets from apx; Actions' own checks are not trusted here
+
+
+def required_checks(s: Settings) -> list[str]:
+    """The two names apx posts on autopilot PRs in the CURRENT mode (shadow: apx / guard + apx / build; cut over or authoritative:
+    the ruleset's guard / guard + test). Only these, posted by the apx App, are trusted; Actions' own checks never are."""
+    c = s.contexts(REPO)
+    return [c["guard"], c["ci"]]
 
 
 def make_stage(token: str):
@@ -44,7 +50,9 @@ def make_run_tests(launcher: Launcher, python: str, home: str):
             "PYTHONPATH": f"{path}/src",
             "PYTHONDONTWRITEBYTECODE": "1",
             "HOME": home,
-            "PATH": f"/opt/homebrew/bin:{home}/.local/bin:/usr/bin:/bin",
+            # the venv first: tests that shell out to `python3` must get the same interpreter (with PyYAML) as the suite, as `uv run`
+            # gives CI; a bare Homebrew python3 has no PyYAML and failed the first real update (2026-11-02)
+            "PATH": f"{Path(python).parent}:/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:/usr/bin:/bin",
             "CI": "true",
             "LANG": "en_US.UTF-8",
         }
@@ -99,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
                             repo=REPO,
                             default_branch="main",
                             owner=s.owner,
-                            required_checks=list(CHECKS),
+                            required_checks=required_checks(s),
                             candidate=head,
                             status=status,
                             can_swap=not s.active_window or window.minutes_left(s.active_window, now) >= SETTLE_MIN,

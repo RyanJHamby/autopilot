@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ import rebase as kit_rebase  # noqa: E402
 import tier as kit_tier  # noqa: E402
 from guard import _matches  # noqa: E402
 
+from . import batch as batches_mod  # noqa: E402
 from .github import Api, GitHubError  # noqa: E402
 from .ledger import Ledger  # noqa: E402
 
@@ -61,6 +63,20 @@ def load_cfg(api: Api, repo: str, default_branch: str) -> dict:
     return cfg
 
 
+def load_batches(api: Api, repo: str, default_branch: str) -> list:
+    """Batch manifests from the DEFAULT branch only (what the owner merged). Any error means no batches: plain gate order."""
+    try:
+        listing = api("GET", f"/repos/{repo}/contents/{batches_mod.BATCH_DIR}?ref={default_branch}")
+        texts = []
+        for f in sorted(listing, key=lambda f: f["name"]):  # type: ignore[union-attr]
+            if f.get("type") == "file" and f["name"].endswith((".yaml", ".yml")):
+                c = api("GET", f"/repos/{repo}/contents/{batches_mod.BATCH_DIR}/{f['name']}?ref={default_branch}")
+                texts.append(base64.b64decode(c["content"]).decode())  # type: ignore[index]
+        return batches_mod.parse_all(texts)
+    except (GitHubError, OSError, KeyError, TypeError, ValueError):
+        return []
+
+
 def _trusted_pr(pr: dict, repo: str, owner: str) -> bool:
     head = pr.get("head") or {}
     if (head.get("repo") or {}).get("full_name") != repo:
@@ -80,9 +96,20 @@ def base_commit_time(api: Api, repo: str, default_branch: str) -> str | None:
         return None  # only disables the retry-after-base-moves optimisation; checks still run
 
 
+DEAD_AFTER = dt.timedelta(hours=2)  # same horizon as the ledger's abandon_stale: a run this old was orphaned by a crash
+
+
 def plan_checks(
-    api: Api, repo: str, owner: str, contexts: list[str], app_slug: str = APX_APP_SLUG, base_time: str | None = None
+    api: Api,
+    repo: str,
+    owner: str,
+    contexts: list[str],
+    app_slug: str = APX_APP_SLUG,
+    base_time: str | None = None,
+    now: dt.datetime | None = None,
 ) -> list[Action]:
+    now = now or dt.datetime.now(dt.timezone.utc)
+    cutoff = (now - DEAD_AFTER).strftime("%Y-%m-%dT%H:%M:%SZ")
     out = []
     for pr in api("GET", f"/repos/{repo}/pulls?state=open&per_page=100"):  # type: ignore[union-attr]
         if not _trusted_pr(pr, repo, owner):
@@ -95,7 +122,10 @@ def plan_checks(
         # a FAILED result from before the base branch last moved is stale (e.g. it failed because repo.yaml had no ci:
         # list yet): do not count it, so the check is retried once per base movement. Successes are never retried.
         stale = lambda c: bool(base_time) and c.get("conclusion") == "failure" and (c.get("completed_at") or "9") < base_time  # noqa: E731
-        have = {c["name"] for c in ours if not stale(c)}
+        # a run still `in_progress`/`queued` long after it started was orphaned (apx crashed mid-check): it must not count, or the
+        # PR is never checked again and sits unmergeable forever
+        orphan = lambda c: c.get("status") in ("queued", "in_progress") and (c.get("started_at") or "0") < cutoff  # noqa: E731
+        have = {c["name"] for c in ours if not stale(c) and not orphan(c)}
         missing = [c for c in contexts if c not in have]
         if missing:
             out.append(Action("check-pr", repo, sha, f"PR #{pr['number']} missing {', '.join(missing)}"))
@@ -170,7 +200,13 @@ def plan_agent_runs(
         if "pull_request" not in i and _owner_vouches(api, repo, i, owner)
     ]
     issues = [i for i in issues if not gate.skip_merged(i["number"], {ln["name"] for ln in i["labels"]}, merged)]
-    picked = gate.pick_issues(issues, branches + [f"agent/{n}-inflight" for n in inflight], max(remaining, 0))
+    taken = branches + [f"agent/{n}-inflight" for n in inflight]
+    picked = gate.pick_issues(issues, taken, len(issues))
+    batches = load_batches(api, repo, default_branch)
+    if batches:
+        busy = {int(m.group(1)) for b in taken if (m := re.match(r"agent/(\d+)-", b))}
+        picked, _held = batches_mod.order_and_hold(picked, batches, merged, busy, max(remaining, 0))
+    picked = picked[: max(remaining, 0)]
     acts = fixes + [Action("run-agent", repo, str(n), detail) for n in picked]
     room = remaining - len(picked)  # re-runs for conflicted PRs share the same daily cap
     for n in rebase_issues or []:
@@ -294,6 +330,7 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
                 owner,
                 meta.get("contexts", ["guard / guard"]),
                 base_time=base_commit_time(api, repo, meta.get("default_branch", "main")),
+                now=now,
             )
             main_state = "off"
             if meta.get("main_check") and meta.get("ci_contexts"):

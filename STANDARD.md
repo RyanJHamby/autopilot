@@ -3,7 +3,7 @@
 Status: **v0 draft, standard version 1.** The rule list and labels are in
 [`src/autopilot/standard/checks.yaml`](src/autopilot/standard/checks.yaml). Run them with `ap standard check REPO`, or
 `ap standard check --portfolio` for every enabled repo. All 14 rules have a check. The engine runs from the CLI on a
-machine; no CI step runs it yet, so nothing blocks a merge.
+machine and, offline, from a CI step in `ci.yml`.
 
 This file says what a repo should have and how each rule is backed. It makes no claim that following it improves how
 well agents work. Where a rule is judgment, it says so.
@@ -16,9 +16,11 @@ well agents work. Where a rule is judgment, it says so.
 | `audited` | `ap standard check` reports it when someone runs it | Yes, but nothing blocks a merge |
 | `advisory` | Judgment, not enforced anywhere | No, it only warns |
 
-**Nothing is `enforced` yet.** That label is reserved for a rule that a protected CI step actually runs. Until that
-step exists, calling a rule enforced would be false, so none is. A test checks this and has to be removed on purpose
-when the CI step lands.
+Six rules are `enforced`: the `fail`-level ones. They are enforced by the `ci.yml` step
+`uv run ap standard check . --offline`, which exits non-zero when one of them fails. That step runs offline, so it
+never asks GitHub anything. Two limits: nothing has yet run on GitHub Actions, so "enforced" is the design until a real
+pull request shows the step blocking; and whether the step is a *required* status check depends on the ruleset, which
+is an owner setting. A test checks that the CI step exists whenever any rule claims `enforced`.
 
 A result is `pass`, `fail`, `unknown`, `skip` or `waived`. `unknown` means the check couldn't be answered, for example
 because `gh` isn't installed, the ruleset can't be read, or a workflow file doesn't parse. It is never counted as a pass,
@@ -32,12 +34,12 @@ A rule's **level** says what a failing result does to the run: `fail` exits non-
 
 | Rule | Level | Label | Applies to |
 |---|---|---|---|
-| `pinned-actions` | fail | audited | all |
-| `workflow-permissions` | fail | audited | all |
-| `no-privileged-triggers` | fail | audited | all |
-| `secret-exposed-workflows` | fail | audited | all |
-| `codeowners-cover-protected-paths` | fail | audited | all |
-| `no-tracked-secrets` | fail | audited | all |
+| `pinned-actions` | fail | enforced | all |
+| `workflow-permissions` | fail | enforced | all |
+| `no-privileged-triggers` | fail | enforced | all |
+| `secret-exposed-workflows` | fail | enforced | all |
+| `codeowners-cover-protected-paths` | fail | enforced | all |
+| `no-tracked-secrets` | fail | enforced | all |
 | `thin-claude-md` | warn | audited | all |
 | `one-check-entrypoint` | warn | audited | all |
 | `license-present` | warn | audited | public repos |
@@ -79,7 +81,8 @@ Only a `fail` can be waived. An `unknown` has nothing to waive.
 
 1. **Tier numbering.** `specs/_TEMPLATE.md` numbers risk tiers 1, 2, 3 while `kit/runtime/tier.py` uses 0, 1, 2. This
    standard doesn't choose.
-2. **Enforcement.** Making any rule `enforced` needs an owner edit to `.github/workflows/ci.yml` and `.autopilot/repo.yaml`.
+2. **Required check.** Make the CI job a required status check in the `autopilot-main` ruleset, or the step can fail
+   without blocking the merge.
 3. **Rulesets on your plan.** Whether rulesets and code owners bind on private repos depends on the GitHub plan, which
    hasn't been checked. Run `gh api user --jq .plan.name`.
 

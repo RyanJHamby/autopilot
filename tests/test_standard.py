@@ -68,10 +68,21 @@ def test_every_advisory_rule_can_only_warn():
             assert check["level"] == "warn", check["id"]
 
 
-def test_nothing_claims_enforcement_before_ci_runs_the_engine():
-    """Remove this test, on purpose, in the same change that adds the protected CI step."""
-    labels = {c["id"]: c["label"] for c in standard.load_checks()["checks"]}
-    assert "enforced" not in labels.values(), [i for i, label in labels.items() if label == "enforced"]
+def test_every_enforced_rule_names_a_ci_step_that_exists():
+    """`enforced` is a claim about ci.yml. If the step is removed or renamed, the claim must go with it."""
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    enforced = [c for c in standard.load_checks()["checks"] if c["label"] == "enforced"]
+    assert enforced, "expected the fail-level rules to be enforced"
+    for check in enforced:
+        step = check["enforced_by"].split("`")[1]
+        assert step in ci, f"{check['id']} claims `{step}` but ci.yml has no such step"
+
+
+def test_every_fail_level_rule_is_enforced():
+    """A fail-level rule that only reports would be a promise nothing keeps."""
+    for check in standard.load_checks()["checks"]:
+        if check["level"] == "fail":
+            assert check["label"] == "enforced", check["id"]
 
 
 def rules_table():

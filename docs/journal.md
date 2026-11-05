@@ -324,3 +324,7 @@ Ran `standard-portfolio-online` → [results/2026-11-03-0744-standard-portfolio-
 ## 2026-11-03 08:20 EST (at 0c8b5e8)
 
 Ran `standard-portfolio-online-2` → [results/2026-11-03-0820-standard-portfolio-online-2](../results/2026-11-03-0820-standard-portfolio-online-2) (exit 1, 4s). Notes: after the engine started asking GitHub whether a repo is public. autopilot now FAILs license-present (no LICENSE file) and prints a NOTE that the portfolio disagrees with GitHub; drillpad-workspace stays skipped (private). autopilot: 9 pass, 3 fail, 2 unknown; drillpad-workspace unchanged at 9 pass, 4 fail, 1 skip. Apple M4, 32 GB.
+
+## 2026-11-05 08:25 EST (at 0f8ea2b)
+
+Owner edits applied via a script I wrote (ci.yml step, repo.yaml, CODEOWNERS, waivers.yaml, portfolio public flag, quoted redteam run:). ap standard check on autopilot offline: 11 pass, 2 fail (license, dependabot, both warn-level), 1 unknown (ruleset, offline). Flipped the 6 fail-level rules to enforced; replaced the no-enforcement test with one that the CI step exists. Not yet run on GitHub Actions; required-check status in the ruleset is still unset.

@@ -1,6 +1,6 @@
 # The project standard, version 1. Each rule says how it is backed; see autopilot/standard/__init__.py.
-# Nothing here is `enforced` yet: that label waits for a protected CI step that runs the engine.
-# Agents must not edit this file. It belongs in guard.extra_protected (an owner edit).
+# `enforced` means the ci.yml step `uv run ap standard check . --offline` blocks a merge on that rule's failure.
+# Agents must not edit this file. It is in guard.extra_protected.
 
 standard_version: 1
 
@@ -9,42 +9,48 @@ checks:
   - id: pinned-actions
     title: Every action in a workflow is pinned to a commit SHA
     level: fail
-    label: audited
+    label: enforced
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
     why: A tag can be moved after you reviewed it. A commit SHA can't.
     fix: Replace the tag with the 40-character commit SHA, and keep the version as a trailing comment.
 
   - id: workflow-permissions
     title: Every workflow sets top-level `permissions`
     level: fail
-    label: audited
+    label: enforced
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
     why: Without it, jobs get the repository's default token scope, which is usually wider than they need.
     fix: "Add `permissions:` with `contents: read` at the top of the workflow, and widen it per job only where needed."
 
   - id: no-privileged-triggers
     title: No workflow uses `pull_request_target`
     level: fail
-    label: audited
+    label: enforced
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
     why: It runs code from a pull request with the repository's secrets in reach.
     fix: Use `pull_request`, or move the privileged step into a separate trusted workflow.
 
   - id: secret-exposed-workflows
     title: Workflows that use repo secrets on pull requests exclude agent branches
     level: fail
-    label: audited
+    label: enforced
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
     why: An agent PR could read or spend a secret that a workflow hands to PR code.
     fix: Exclude `agent/*` branches from the workflow, or stop passing the secret to PR code.
 
   - id: codeowners-cover-protected-paths
     title: CODEOWNERS covers every protected path
     level: fail
-    label: audited
+    label: enforced
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
     why: A protected path with no owner can be changed by whoever opens the pull request.
     fix: Add a CODEOWNERS entry for each protected path, naming a human.
 
   - id: no-tracked-secrets
     title: No secrets file is tracked by git
     level: fail
-    label: audited
+    label: enforced
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
     why: Git history is hard to erase, and a committed key stays exposed until it is rotated.
     fix: Remove the file from git, rotate whatever it held, and add it to `.gitignore`.
 

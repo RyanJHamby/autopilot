@@ -12,7 +12,7 @@ You drop a spec in `specs/*.md`. Run `ap handshake specs/<file>.md`. The system 
 |---|---|---|
 | id | yes | kebab-case slug, 3-49 chars |
 | goal | yes | what is true when done (>= 20 chars) |
-| acceptance | yes | list of commands that exit 0 when done (pytest, make, npm test, cargo, ...) |
+| acceptance | yes | list of commands that exit 0 when done (pytest, make, npm test, cargo, ...). If the work changes a generated file, include the generator and its freshness test, and put the generated file in scope |
 | scope | yes | path globs the agent may touch; no `**`; never protected paths |
 | non_goals | no (recommended) | what not to do |
 | risk_tier | no (2) | 1 auto-merge on green; 2 skim (auto-merge only in yolo); 3 PR only, you review |

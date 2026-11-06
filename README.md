@@ -32,6 +32,9 @@ and a spec "handshake", with hard guardrails against any outbound or admin actio
 ap init ~/dev/<repo> [--dry-run]      # scaffold on branch autopilot/init; never pushes
 ap handshake specs/foo.md             # ACCEPTED / NEEDS-WORK / REJECTED + what the system will do
 ap doctor ~/dev/<repo>...             # audit files, SHA pins, ruleset, secret
+ap standard check [REPO...] [--portfolio] [--json] [--strict] [--offline]   # run STANDARD.md's 14 rules; exit 1 on a failing level-fail rule
+ap trace specs/foo.md --junit junit.xml   # did the spec's pytest acceptance really run and pass? (warn-only)
+ap drill                              # plant known defects in a throwaway fixture; check the controls catch them
 ap status                             # runs (24h) and agent PRs per repo
 ap ruleset <repo> [--apply]           # branch ruleset: PR + code owners + signed + merge-commit only + guard
 ap enable|pause|resume [repo] [--apply]   # repo variables; dry run unless --apply

@@ -1,0 +1,6 @@
+  green           baseline-green  clean fixture passes
+  caught          hollow-link-skipped  acceptance exits 0; trace says skipped
+  limit           hollow-link-no-assertion  acceptance exits 0; trace says green (no assertion is invisible to it)
+  caught          guard-protected-paths  flagged ['.github/workflows/x.yml', 'policy/waivers.yaml']
+  caught          guard-ignores-humans  the same diff from a human is not blocked
+  caught          guard-test-deletion  flagged ['test-deletion']

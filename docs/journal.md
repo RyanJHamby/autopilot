@@ -336,3 +336,11 @@ Ran `standard-portfolio-online-2` → [results/2026-11-03-0820-standard-portfoli
 ## 2026-11-05 08:25 EST (at 0f8ea2b)
 
 Owner edits applied via a script I wrote (ci.yml step, repo.yaml, CODEOWNERS, waivers.yaml, portfolio public flag, quoted redteam run:). ap standard check on autopilot offline: 11 pass, 2 fail (license, dependabot, both warn-level), 1 unknown (ruleset, offline). Flipped the 6 fail-level rules to enforced; replaced the no-enforcement test with one that the CI step exists. Not yet run on GitHub Actions; required-check status in the ruleset is still unset.
+
+## 2026-11-06 18:18 EST (at b383af7)
+
+Closing the standard v0 thread. PR #183 merged (b383af7); main CI run 42310360742 passed and printed the standard's result on GitHub Actions (11 pass, 2 fail, 1 unknown; all six enforced rules pass), matching the Mac. redteam-secrets is manual-only and parses now but has never run. Open on purpose: make the CI job a required check in the ruleset and prove it blocks with a throwaway PR (owner setting); choose a LICENSE. Deferred: dependency-updates config, GitHub plan question, tier numbering, cloning stencil and launch-scratch, kb MCP server, the unpushed permissions-log branch.
+
+## 2026-11-06 19:02 EST (at 9435692)
+
+Proved enforcement end to end: throwaway PR #188 unpinned actions/checkout; CI failed on FAIL pinned-actions (run 42311571422), merge BLOCKED, and the ruleset's required checks include test and guard / guard with 0 required reviews. Closed unmerged. Found a limit: CI's shallow checkout has no origin/main, so waivers are never applied in CI; harmless while waivers.yaml is empty, needs a ci.yml fetch before the first waiver.

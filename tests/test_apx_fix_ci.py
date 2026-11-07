@@ -188,6 +188,8 @@ def test_a_failed_or_crashed_fix_flags_the_pr_for_the_owner_and_still_closes_the
         led, api = Ledger(), Api()
         log = ex.execute(api, led, d, [act()], contexts={}, head_refs={}, dry_run=False)
         assert word in log[0]
+        if word == "failure":
+            assert log[0].endswith("failure: no")  # the reason reaches the log line
         assert labels(api)[0][1] == f"/repos/{REPO}/issues/7/labels"  # the PR number, not the issue number
         assert led.inflight_issues(REPO) == set() and led.fix_attempts(REPO, 4) == 1
 

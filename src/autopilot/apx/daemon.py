@@ -18,13 +18,15 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
+import gate  # noqa: E402
 import runner as kit_runner  # noqa: E402
 
-from . import cilane, claude_runner, committer, gitops, guardlane, mergelane, report, status  # noqa: E402
+from . import cilane, claude_runner, committer, gitops, guardlane, mergelane, report, status, window  # noqa: E402
 from .app_auth import TokenCache  # noqa: E402
 from .executor import Deps, IssueResult, execute  # noqa: E402
 from .github import Api, GitHubError, make_api  # noqa: E402
@@ -33,6 +35,7 @@ from .planner import ALLOWED_REPOS, Action, load_cfg, plan  # noqa: E402
 from .redact import redact, register  # noqa: E402
 from .runas import Launcher  # noqa: E402
 from .sandbox import SandboxLanes, run_agent_in_sandbox  # noqa: E402
+from .usage import repo_usage, usage_line  # noqa: E402
 
 
 class ConfigError(RuntimeError):
@@ -82,6 +85,12 @@ class Settings:
     agent_user: str = ""
     agent_work: str = ""  # default /Users/<agent_user>/work
     agent_binary: str = ""  # default /Users/<agent_user>/.local/bin/claude
+    active_window: Optional[window.Window] = None  # None = always on; outside it a pass (and an update) does nothing
+
+    def code_dir(self) -> str:
+        """The code the sandbox and the version label use: the updater's `current` release once it exists, else the manual checkout."""
+        cur = os.path.join(self.shared_dir, "current")
+        return cur if os.path.islink(cur) else os.path.join(self.shared_dir, "autopilot")
 
     @classmethod
     def from_env(cls, env: dict | None = None) -> "Settings":
@@ -112,7 +121,12 @@ class Settings:
                 agent_user=e.get("APX_AGENT_USER", ""),
                 agent_work=e.get("APX_AGENT_WORK", ""),
                 agent_binary=e.get("APX_AGENT_BINARY", ""),
+                active_window=window.parse(
+                    e.get("APX_ACTIVE_WINDOW", ""), e.get("APX_ACTIVE_TZ", ""), e.get("APX_ACTIVE_WEEKENDS", "1")
+                ),
             )
+        except ValueError as ex:
+            raise ConfigError(str(ex)) from None
         except KeyError as ex:
             raise ConfigError(f"missing setting {ex}") from None
         bad = set(s.installations) - ALLOWED_REPOS
@@ -223,7 +237,7 @@ def work_on_issue(
                 r,
                 tok,
                 python=f"{s.shared_dir}/venv/bin/python",
-                code_dir=f"{s.shared_dir}/autopilot",
+                code_dir=s.code_dir(),
                 home=f"/Users/{s.agent_user}",
             )
         )
@@ -329,7 +343,7 @@ def fix_pr(
             r,
             tok,
             python=f"{s.shared_dir}/venv/bin/python",
-            code_dir=f"{s.shared_dir}/autopilot",
+            code_dir=s.code_dir(),
             home=f"/Users/{s.agent_user}",
         )
     )
@@ -381,15 +395,18 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_t
     kit_root = Path(s.shared_dir) / "kit" if s.ci_user else s.work_dir / "kit"
     kit = guardlane.fetch_kit(s.kit_repo, s.kit_ref, kit_root / s.kit_ref)
     if s.ci_user:
+        if read_token_for is None:
+            # PR code runs in this lane; the full installation token (checks:write, contents:write) must never reach it
+            raise ConfigError("a CI account is configured but no read-only token source was provided")
         lanes = SandboxLanes(
             Launcher(s.ci_user),
             base_branch=s.default_branch,
             kit_dir=str(kit),
             work_root=s.ci_work,
             python=f"{s.shared_dir}/venv/bin/python",
-            code_dir=f"{s.shared_dir}/autopilot",
+            code_dir=s.code_dir(),
             home=f"/Users/{s.ci_user}",
-            token_for=token_for,
+            token_for=read_token_for,
             steps_for=lambda repo: [list(x) for x in cilane.parse_ci_steps(load_cfg(api, repo, s.default_branch))],
             toolchain_links=list(s.ci_toolchain_links),
         )
@@ -524,6 +541,16 @@ def _register_known_secrets(s: Settings) -> None:
             pass
 
 
+def usage_lines(ledger: Ledger, repos) -> list[str]:
+    """One usage line per repo for the status file. The cap is the gate's default for tier A: a repo's own cap lives in repo.yaml,
+    which is fetched over the network during planning, so a tier B/C repo's remaining count here is approximate."""
+    try:
+        cap = int(gate.DEFAULTS["runs_per_day"]["A"])
+        return [usage_line(repo_usage(ledger, r, cap=cap)) for r in sorted(repos)]
+    except Exception as e:  # noqa: BLE001 - a meter must never break a pass
+        return [f"usage meter unavailable: {type(e).__name__}"]
+
+
 def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     _register_known_secrets(s)
     gitops.prune_work(s.work_dir)
@@ -540,12 +567,14 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
             "merge": s.full_loop(r),
             "agents": s.agents_allowed(r),
             "ci_contexts": [s.contexts(r)["ci"]],
+            "main_check": s.full_loop(r) or r in s.authoritative,  # repos whose required checks come from apx also watch main
         }
         for r in s.installations
     }
     planned = plan(api, ledger, repos, s.owner)
     actions: list[Action] = [a for r in planned.values() for a in r["actions"]]
     log = [f"{repo}: {len(r['actions'])} action(s) - {r['note']}" for repo, r in planned.items()]
+    log += usage_lines(ledger, s.installations)
     if not really_live:
         return log + execute(api, ledger, None, actions, contexts={}, head_refs={}, dry_run=True)  # type: ignore[arg-type]
     details = {f"{a.repo}#{a.ref}": a.detail for a in actions if a.kind == "run-agent"}
@@ -614,7 +643,12 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as e:
         print(f"apx config error: {e}", file=sys.stderr)
         return 2
-    version = status.code_version(f"{st.shared_dir}/autopilot")
+    version = status.code_version(st.code_dir())
+    if st.active_window and not st.active_window.is_open(dt.datetime.now(dt.timezone.utc)):
+        line = window.idle_line(st.active_window)
+        print(line)
+        status.write_status(status_path, [line], live=ns.live, version=version, idle=True)  # a fresh heartbeat: idle is not dead
+        return 0
     try:
         lines = run_once(st, live=ns.live)
     except Exception as e:  # noqa: BLE001 - record that the pass died so the owner's watcher can say so, then fail loudly

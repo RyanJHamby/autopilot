@@ -103,3 +103,62 @@ def test_cmd_digest_is_read_only_and_calls_no_model(monkeypatch, capsys):
     assert "a #7 Hello" in out
     assert all(c[0] == "gh" and c[1] in ("pr", "run", "variable") and c[2] in ("list", "get") for c in calls)
     assert not any("off" in " ".join(c) for c in calls)
+
+
+def rich(n, files=(), checks=(), add=0, dele=0, title="t"):
+    return {
+        **pr(n, title=title),
+        "files": [{"path": f} for f in files],
+        "statusCheckRollup": [dict(c) for c in checks],
+        "additions": add,
+        "deletions": dele,
+    }
+
+
+OK = {"conclusion": "SUCCESS", "status": "COMPLETED"}
+RED = {"conclusion": "FAILURE", "status": "COMPLETED"}
+
+
+def test_risk_ranks_protected_then_red_then_large_then_running_then_small():
+    assert digest.risk(rich(1, files=[".github/workflows/x.yml"], checks=[OK]))[0] == 0
+    assert digest.risk(rich(1, files=["supabase/migrations/1.sql"]))[0] == 0
+    assert digest.risk(rich(1, files=["a.py"], checks=[RED]))[0] == 1
+    assert digest.risk(rich(1, files=["a.py"], checks=[OK], add=300, dele=101))[0] == 2
+    assert digest.risk(rich(1, files=["a.py"], checks=[{"status": "IN_PROGRESS"}]))[0] == 3
+    assert digest.risk(rich(1, files=["a.py"], checks=[OK], add=10))[0] == 4
+
+
+def test_risk_with_missing_fields_is_not_the_lowest_risk_signal():
+    assert digest.risk(pr(1)) == (4, "no checks yet")
+
+
+def test_waiting_list_is_riskiest_first_across_repos():
+    a = digest.summarize(
+        "a",
+        [rich(1, files=["x.py"], checks=[OK], title="small"), rich(2, files=["docs/x.md"], checks=[RED], title="red")],
+        [],
+        NOW,
+    )
+    b = digest.summarize("b", [rich(3, files=[".claude/settings.json"], checks=[OK], title="prot")], [], NOW)
+    out = digest.render([a, b], {}, NOW)
+    assert out.index("b #3") < out.index("a #2") < out.index("a #1")
+    assert "protected path .claude/settings.json" in out and "a check is failing" in out
+
+
+def test_digest_out_writes_only_the_given_file(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(
+        cli, "load_portfolio", lambda: {"owner": "o", "defaults": {}, "repos": {"a": {"enabled": True, "mode": "standard"}}}
+    )
+    seen = []
+
+    def fake(a, **k):
+        seen.append(a)
+        return subprocess.CompletedProcess(a, 0, stdout="[]" if a[1] != "variable" else "false", stderr="")
+
+    monkeypatch.setattr(cli.subprocess, "run", fake)
+    f = tmp_path / "d.md"
+    assert cli.main(["digest", "--out", str(f)]) == 0
+    assert f.read_text().startswith("# Autopilot digest")
+    pr_list = next(a for a in seen if a[1] == "pr")
+    assert all(k in pr_list[pr_list.index("--json") + 1] for k in ("files", "additions", "deletions", "statusCheckRollup"))
+    assert "# Autopilot digest" not in capsys.readouterr().out

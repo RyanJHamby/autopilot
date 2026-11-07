@@ -1,0 +1,35 @@
+== drillpad-workspace  (/Users/ryanhamby/dev/drillpad)
+  FAIL    pinned-actions  [audited, fail-level]  ci.yml: action not pinned to a SHA: - uses: actions/checkout@v4
+                          ci.yml: action not pinned to a SHA: - uses: astral-sh/setup-uv@v5
+  FAIL    workflow-permissions  [audited, fail-level]  ci.yml: no top-level `permissions`
+  ok      no-privileged-triggers  [audited, fail-level]
+  ok      secret-exposed-workflows  [audited, fail-level]
+  FAIL    codeowners-cover-protected-paths  [audited, fail-level]  CODEOWNERS is not owned in CODEOWNERS
+  ok      no-tracked-secrets  [audited, fail-level]
+  ok      thin-claude-md  [audited, warn-level]
+  ok      one-check-entrypoint  [audited, warn-level]
+  skip    license-present  [audited, warn-level]  rule is for public repos
+  ok      ruleset-present  [audited, warn-level]
+  ok      agents-md-budget  [advisory, warn-level]
+  ok      how-this-was-built  [advisory, warn-level]
+  ok      journal-present  [advisory, warn-level]
+  FAIL    dependency-updates  [advisory, warn-level]  no Dependabot or Renovate config
+  9 pass, 4 fail, 1 skip
+== autopilot  (/Users/ryanhamby/dev/autopilot)
+  ok      pinned-actions  [audited, fail-level]
+  ?       workflow-permissions  [audited, fail-level]  redteam-secrets.yml: not a readable workflow
+  ?       no-privileged-triggers  [audited, fail-level]  redteam-secrets.yml: not a readable workflow
+  ok      secret-exposed-workflows  [audited, fail-level]
+  FAIL    codeowners-cover-protected-paths  [audited, fail-level]  CODEOWNERS is not owned in CODEOWNERS
+  ok      no-tracked-secrets  [audited, fail-level]
+  ok      thin-claude-md  [audited, warn-level]
+  ok      one-check-entrypoint  [audited, warn-level]
+  skip    license-present  [audited, warn-level]  rule is for public repos
+  ok      ruleset-present  [audited, warn-level]
+  ok      agents-md-budget  [advisory, warn-level]
+  ok      how-this-was-built  [advisory, warn-level]
+  ok      journal-present  [advisory, warn-level]
+  FAIL    dependency-updates  [advisory, warn-level]  no Dependabot or Renovate config
+  9 pass, 2 fail, 2 unknown, 1 skip
+ERROR no clone of stencil under ~/dev (matched by origin remote name)
+ERROR no clone of launch-scratch under ~/dev (matched by origin remote name)

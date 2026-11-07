@@ -86,6 +86,25 @@ def run_check_pr(
     return res
 
 
+def run_check_main(api: Api, deps: Deps, action: Action, *, ci_ctx: str, head_ref: str, public: bool = True) -> bool | None:
+    """Run the repo's CI on the default branch head and post it under the CI check name. True/False is the CI result; None means the
+    lane could not run at all (nothing is posted, so a lane problem never makes main look red)."""
+    repo, sha = action.repo, action.ref
+    post_pending(api, repo, sha, ci_ctx)
+    try:
+        co = deps.checkout(repo, sha)
+        deps.guard(co, head_ref)  # the sandbox runs guard and CI as one job; main against itself has an empty diff
+        c_ok, c_out = deps.ci(co)
+    except Exception:  # noqa: BLE001
+        post_check(api, repo, sha, ci_ctx, False, "main check could not run (lane crashed); nothing to fix in the repo")
+        return None
+    if not c_ok and c_out.startswith("not run:"):
+        post_check(api, repo, sha, ci_ctx, False, "main check could not run: " + c_out[:200])
+        return None
+    post_check(api, repo, sha, ci_ctx, c_ok, strip_output_blocks(c_out) if public else c_out)
+    return c_ok
+
+
 def _flag_needs_human(api: Api, repo: str, issue: int) -> None:
     try:
         api("POST", f"/repos/{repo}/issues/{issue}/labels", {"labels": ["needs-human"]})
@@ -135,12 +154,14 @@ def run_fix(api: Api, ledger: Ledger, deps: Deps, action: Action) -> str:
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     run_id = ledger.start(repo, issue, kind="fix", ref=sha)
     conclusion, model, turns = "failure", None, None
+    why = ""
     try:
         r = deps.fix_ci(repo, issue, run_id, int(pr_number), sha, action.detail)
         model, turns = r.model, r.turns
         if r.ok:
             conclusion = "success"
         else:
+            why = " ".join((r.problems or "no reason given").split())[:160]
             # the PR is an issue too: the label stops further retries and tells the owner
             _flag_needs_human(api, repo, int(pr_number))
     except Exception:
@@ -153,7 +174,7 @@ def run_fix(api: Api, ledger: Ledger, deps: Deps, action: Action) -> str:
                 deps.report(repo, issue, model, turns, conclusion, started)
             except Exception:  # noqa: BLE001 - reporting must never mask the run's own outcome
                 pass
-    return conclusion
+    return f"{conclusion}: {why}" if why else conclusion
 
 
 def execute(
@@ -190,6 +211,21 @@ def execute(
                 log.append(f"check-pr {a.repo} {a.ref[:7]} {r}")
             except Exception as e:  # noqa: BLE001 - e.g. a network error posting a check; the next pass retries this PR
                 log.append(f"check-pr {a.repo} {a.ref[:7]} failed: {type(e).__name__}")
+        elif a.kind == "check-main":
+            try:
+                r = run_check_main(
+                    api,
+                    deps,
+                    a,
+                    ci_ctx=contexts[a.repo]["ci"],
+                    head_ref=a.detail.split()[0],
+                    public=a.repo not in (private_repos or frozenset()),
+                )
+                log.append(
+                    f"check-main {a.repo} {a.ref[:7]} {'green' if r else 'failed (main is red)' if r is False else 'could not run'}"
+                )
+            except Exception as e:  # noqa: BLE001
+                log.append(f"check-main {a.repo} {a.ref[:7]} crashed: {type(e).__name__}")
         elif a.kind == "run-agent":
             try:
                 log.append(f"run-agent {a.repo} #{a.ref} {run_agent(api, ledger, deps, a)}")
@@ -199,7 +235,7 @@ def execute(
             try:
                 log.append(f"fix-ci {a.repo} {a.ref[:12]} {run_fix(api, ledger, deps, a)}")
             except Exception as e:  # noqa: BLE001 - one bad PR must not stop the loop
-                log.append(f"fix-ci {a.repo} {a.ref[:12]} crashed: {type(e).__name__}")
+                log.append(f"fix-ci {a.repo} {a.ref[:12]} crashed: {type(e).__name__}: {' '.join(str(e).split())[:160]}")
         elif a.kind == "automerge":
             if deps.automerge is None:
                 log.append(f"automerge {a.repo} {a.ref}: lane not enabled")

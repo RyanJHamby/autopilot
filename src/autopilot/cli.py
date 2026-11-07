@@ -18,6 +18,9 @@ from pathlib import Path
 
 import yaml
 
+from autopilot.standard import engine
+from autopilot.standard.engine import AUTOPILOT_WORKFLOWS, secret_exposed_workflows
+
 ROOT = Path(__file__).resolve().parents[2]
 KIT = ROOT / "kit"
 POLICY = ROOT / "policy"
@@ -124,33 +127,6 @@ def sensitive_findings(repo: Path, *, never_paths: list[str] | None = None, limi
         if len(found) >= limit:
             break
     return found[:limit]
-
-
-AUTOPILOT_WORKFLOWS = {
-    "agent-dispatch.yml",
-    "agent-exec.yml",
-    "guard.yml",
-    "handshake.yml",
-    "automerge.yml",
-    "improve.yml",
-    "audit.yml",
-    "rebase.yml",
-}
-
-
-def secret_exposed_workflows(repo: Path) -> list[str]:
-    """Host workflows that hand repo secrets to code from a PR branch (so an agent PR could read or spend them)
-    and do not exclude agent/* branches. GITHUB_TOKEN does not count."""
-    out: list[str] = []
-    for wf in sorted((repo / ".github/workflows").glob("*.y*ml")):
-        if wf.name in AUTOPILOT_WORKFLOWS:
-            continue
-        text = wf.read_text()
-        uses_secret = any(s != "GITHUB_TOKEN" for s in re.findall(r"secrets\.([A-Za-z0-9_]+)", text))
-        on_pr = re.search(r"^\s*pull_request(_target)?\s*:", text, re.M) is not None
-        if uses_secret and on_pr and "agent/" not in text:
-            out.append(wf.name)
-    return out
 
 
 def setup_steps(repo: Path) -> str:
@@ -612,26 +588,20 @@ def cmd_doctor(ns: argparse.Namespace) -> int:
                 problems += 1
             elif _sha(p.read_bytes()) != sha:
                 print(f"  WARN modified since install: {rel}")
-        for wf in (repo / ".github/workflows").glob("*.yml"):
-            text = wf.read_text()
-            for line in text.splitlines():
-                if "uses:" in line and "@" in line and not line.split("@")[1].split()[0].isalnum():
-                    continue
-                if "uses:" in line and "@" in line:
-                    ref = line.split("@")[1].split()[0]
-                    if len(ref) != 40 and "autopilot" in text.splitlines()[0]:
-                        print(f"  FAIL {wf.name}: action not pinned to a SHA: {line.strip()}")
-                        problems += 1
-        for name in secret_exposed_workflows(repo):
-            print(
-                f"  FAIL {name}: uses repo secrets on pull_request with no agent/* exclusion (an agent PR could read or spend them)"
-            )
-            problems += 1
+        # These rules live in the standard's engine, so doctor and `ap standard check` can't disagree about them.
+        for res in engine.run(
+            engine.Repo(repo, gh=lambda cmd, **kw: subprocess.run(cmd, **kw)),
+            only=["pinned-actions", "secret-exposed-workflows"],
+        ):
+            for finding in res.findings if res.result == "fail" else []:
+                print(f"  FAIL {finding}")
+                problems += 1
         ci = [f for f in (repo / ".github/workflows").glob("*.yml") if f.name not in AUTOPILOT_WORKFLOWS]
         if ci and not any("push" in f.read_text() for f in ci):
             print("  WARN no CI workflow triggers on push; agent pushes will not fire PR checks (add `push:` trigger)")
-        if not (repo / "CLAUDE.md").exists() or "@AGENTS.md" not in (repo / "CLAUDE.md").read_text():
-            print("  WARN CLAUDE.md does not import AGENTS.md")
+        for res in engine.run(engine.Repo(repo), only=["thin-claude-md"]):
+            for finding in res.findings if res.result == "fail" else []:
+                print(f"  WARN {finding}")
         slug = _slug(repo_name(repo), load_portfolio()["owner"])
         rs = subprocess.run(["gh", "api", f"repos/{slug}/rulesets", "--jq", ".[].name"], capture_output=True, text=True)
         if rs.returncode == 0 and "autopilot-main" not in rs.stdout:
@@ -648,6 +618,24 @@ def cmd_doctor(ns: argparse.Namespace) -> int:
         "  - Claude GitHub App installed on this repo.\n"
     )
     return 1 if problems else 0
+
+
+def cmd_standard(ns: argparse.Namespace) -> int:
+    from autopilot.standard import command
+
+    return command.cmd_standard(ns, repo_name=repo_name, load_portfolio=load_portfolio, policy_root=ROOT)
+
+
+def cmd_trace(ns: argparse.Namespace) -> int:
+    from autopilot import trace
+
+    return trace.cmd_trace(ns)
+
+
+def cmd_drill(ns: argparse.Namespace) -> int:
+    from autopilot import drill
+
+    return drill.cmd_drill(ns)
 
 
 def cmd_status(ns: argparse.Namespace) -> int:
@@ -887,6 +875,55 @@ def cmd_specs(ns: argparse.Namespace) -> int:
     return 1 if any(r.problems for r in rows) else 0
 
 
+def cmd_queue(ns: argparse.Namespace) -> int:
+    """Read-only batch status from gh, or `add` to scaffold a manifest file locally (no push, no labels, no issues)."""
+    import json
+
+    from autopilot import queue
+    from autopilot.apx import batch as batch_mod
+
+    d = Path(ns.dir)
+    def fetch() -> tuple[list[dict], dict[int, set[str]]]:
+        prs = json.loads(subprocess.run(["gh", "pr", "list", "-R", ns.repo, "--state", "all", "--limit", "300", "--json", "headRefName,state,mergedAt"], capture_output=True, text=True, check=True).stdout)
+        iss = json.loads(subprocess.run(["gh", "issue", "list", "-R", ns.repo, "--state", "open", "--limit", "300", "--json", "number,labels"], capture_output=True, text=True, check=True).stdout)
+        return prs, {i["number"]: {x["name"] for x in i["labels"]} for i in iss}
+
+    if ns.action == "add":
+        if not ns.offline:
+            try:
+                errs, warns = queue.preflight(ns.items, *fetch(), retry=ns.retry)
+            except (subprocess.CalledProcessError, OSError, ValueError) as e:
+                print(f"cannot add: could not read {ns.repo} to check the issues ({e}); pass --offline to skip the check")
+                return 2
+            for w in warns:
+                print(f"warning: {w}")
+            if errs:
+                print("cannot add:\n  " + "\n  ".join(errs))
+                return 2
+        try:
+            path = queue.scaffold(ns.id, ns.items, d)
+        except (batch_mod.BatchError, ValueError, FileExistsError) as e:
+            print(f"cannot add: {e}")
+            return 2
+        print(f"wrote {path}. Open a PR with it; merging that PR is your approval of the batch. Issues still need your agent-ready label.")
+        return 0
+    files = sorted(d.glob("*.y*ml"))
+    if not files:
+        print(f"no batches in {d}")
+        return 0
+    prs, labels = fetch()
+    bad = 0
+    for f in files:
+        try:
+            b = batch_mod.parse(f.read_text())
+        except batch_mod.BatchError as e:
+            print(f"{f.name}: INVALID, planner ignores it ({e})")
+            bad += 1
+            continue
+        print(queue.render(b, queue.item_states(b, prs, labels)), end="")
+    return 1 if bad else 0
+
+
 def cmd_digest(ns: argparse.Namespace) -> int:
     """Read-only: markdown summary of the last 24h across enabled repos. Uses gh list/get only; calls no model."""
     import datetime as dt
@@ -895,7 +932,7 @@ def cmd_digest(ns: argparse.Namespace) -> int:
 
     pf = load_portfolio()
     now = dt.datetime.now(dt.timezone.utc)
-    fields = "number,title,headRefName,state,isDraft,url,mergedAt"
+    fields = "number,title,headRefName,state,isDraft,url,mergedAt,files,additions,deletions,statusCheckRollup"
     summaries, statuses = [], {}
     for name, e in pf["repos"].items():
         if not e.get("enabled"):
@@ -930,7 +967,12 @@ def cmd_digest(ns: argparse.Namespace) -> int:
         statuses[name] = digest.repo_status(e, v.returncode == 0 and v.stdout.strip() == "true", now)
         if p.returncode or r.returncode:
             statuses[name] = "cannot read GitHub" if statuses[name] == "ok" else statuses[name] + " (cannot read GitHub)"
-    print(digest.render(summaries, statuses, now), end="")
+    text = digest.render(summaries, statuses, now)
+    if ns.out:
+        Path(ns.out).write_text(text)
+        print(f"wrote {ns.out}")
+    else:
+        print(text, end="")
     return 0
 
 
@@ -1910,6 +1952,24 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("doctor", help="audit installed repos (local files + gh)")
     p.add_argument("repos", nargs="+")
     p.set_defaults(fn=cmd_doctor)
+    p = sub.add_parser("standard", help="run the project standard (STANDARD.md) against repos")
+    ssub = p.add_subparsers(dest="standard_cmd", required=True)
+    p = ssub.add_parser("check", help="audit repos against the standard; exits 1 on a failing level-fail rule")
+    p.add_argument("repos", nargs="*", help="repo paths")
+    p.add_argument("--portfolio", action="store_true", help="every enabled portfolio repo, found under --root by origin name")
+    p.add_argument("--root", default="~/dev", help="where clones live (default ~/dev)")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--strict", action="store_true", help="a level-fail rule that cannot be answered also fails")
+    p.add_argument("--offline", action="store_true", help="never call gh (ruleset-present becomes unknown)")
+    p.set_defaults(fn=cmd_standard)
+    p = sub.add_parser("trace", help="does a spec's pytest acceptance actually run and pass? reads JUnit XML (warn-only)")
+    p.add_argument("spec")
+    p.add_argument("--junit", required=True, help="pytest --junitxml output")
+    p.add_argument("--strict", action="store_true", help="exit 1 when a command is failing, skipped or not run")
+    p.set_defaults(fn=cmd_trace)
+    p = sub.add_parser("drill", help="plant known defects in a throwaway fixture and check the controls catch them")
+    p.add_argument("drills", nargs="*", help="drill names (default: all)")
+    p.set_defaults(fn=cmd_drill)
     p = sub.add_parser("scan", help="list an owner's repos with suggested tier/mode (read-only)")
     p.add_argument("--owner")
     p.set_defaults(fn=cmd_scan)
@@ -1933,7 +1993,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--config", default=".autopilot/repo.yaml")
     p.add_argument("--log", default="", help="print the git history of one spec")
     p.set_defaults(fn=cmd_specs)
+    p = sub.add_parser("queue", help="batch manifests: status per item (read-only), or `add ID 101 102:101` to scaffold a file locally")
+    p.add_argument("action", choices=["status", "add"])
+    p.add_argument("id", nargs="?", default="")
+    p.add_argument("items", nargs="*", help="issue[:dep,dep] ...")
+    p.add_argument("--dir", default=".autopilot/batches")
+    p.add_argument("--repo", default="RyanJHamby/autopilot")
+    p.add_argument("--retry", action="store_true", help="add: allow issues that already have a merged agent PR")
+    p.add_argument("--offline", action="store_true", help="add: skip the gh check of the listed issues")
+    p.set_defaults(fn=cmd_queue)
     p = sub.add_parser("digest", help="read-only markdown summary of the last 24h across enabled repos (no model)")
+    p.add_argument("--out", default="", help="write to this local file instead of stdout")
     p.set_defaults(fn=cmd_digest)
     p = sub.add_parser("retro", help="read-only evidence packet: why agent runs/PRs failed to land")
     p.add_argument("--days", type=int, default=14)

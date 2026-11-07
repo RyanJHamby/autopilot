@@ -10,7 +10,8 @@ apx runs model output and PR code. Do not run it as your normal login.
 1. System Settings > Users & Groups > add a **standard** (non-admin) user `apx`. No iCloud, no Apple ID, no keychain items,
    no SSH keys, no `gh` login.
 2. Log in as `apx` only to do the steps below. Home directory permissions stay `700`.
-3. macOS has no network egress firewall per user. Until the Oracle host exists this is a **spike machine**: keep it to
+3. macOS `pf` can restrict by user: `deploy/apx-egress.sh` (preview first; `sudo DO=1 bash deploy/apx-egress.sh` installs it; the variable goes after `sudo`, which drops variables set before it) keeps `apx-ci` and `apx-agent` off your LAN, the router, cloud metadata and IPv6,
+   and `deploy/apx-egress-probe.sh` proves it. It is not a per-host allowlist and does not cover DNS tunnelling yet. Until that is done this is a **spike machine**: keep it to
    throwaway PRs on `autopilot` (see step 5), not your other repos.
 
 ## Move into the apx account (after setup, before any timer)
@@ -231,3 +232,11 @@ To get a local macOS notification when apx stops (no pass for 15 minutes) or a p
     launchctl load ~/Library/LaunchAgents/com.autopilot.apx.watch.plist
 
 You are told once per distinct problem and once when it clears. Phone push needs the control-plane webhook secret (backlog O3).
+
+## Active hours (optional)
+
+Add `APX_ACTIVE_WINDOW=18:00-08:30` to apx.env (zone `APX_ACTIVE_TZ`, default `America/New_York`; weekends open all day unless
+`APX_ACTIVE_WEEKENDS=0`). Outside the window both the daemon and the updater do nothing: no GitHub polling, no CI, no agent run, no swap.
+The status file still gets a fresh heartbeat marked `idle`, so the owner's watcher does not call it dead, and the updater's canary never
+counts an idle heartbeat as proof. A swap needs at least 45 minutes of window left. Unset means always on; a malformed value stops the
+daemon with a config error (it never falls back to always on). Checks on PRs opened during closed hours wait until the window opens.

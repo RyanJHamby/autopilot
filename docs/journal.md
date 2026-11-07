@@ -288,3 +288,59 @@ launch-repo live run 2: stages 1-4 passed live (settings, labels, scaffold merge
 ## 2026-10-27 21:59 EDT (at abcce43)
 
 Secure fabric: red-teamed the compute design (found repo secrets readable from agent-branch workflows, open exec egress), moved model secrets to a main-only Environment (PR #83), built firewall/DNS allowlist renderer + runner controller logic + in-sandbox red-team probe (PR #84). Not run on hardware; Pi 4 identified, RAM/router isolation still unknown. Actions minutes cap blocks all private CI until Nov 1.
+
+## 2026-11-02 19:58 EST (at 59fd45f)
+
+apx host move (backlog H3, Mac to Mac) onto the 2019 Intel MacBook Pro: new App key and model token made on the new host, apx / apx-ci / apx-agent accounts created, doctor green, updater phase 1 then phase 2 (live). Failures and fixes: Homebrew was years stale and Intel now builds from source, so the toolchain upgrade is still running; the host's CI went red twice from old tools, not from main (Homebrew git 2.25 has no `git init -b`, Node 18 lacks `util.styleText` that vitest needs), fixed by falling back to Apple git 2.39.5 and installing Node 22.23.3 LTS. The retire script was run on the NEW Mac by mistake, so both hosts were briefly live and then only the old one; no duplicate agent runs or merges found, old host now stopped. Three deploy-doc bugs that caused these retries are captured as spec apx-deploy-docs (PR #171) for the first apx-run agent task. Decided: cut autopilot over to apx (APX_CUTOVER) and disable the Actions agent-dispatch, automerge and rebase workflows so they cannot race it.
+
+## 2026-11-02 21:37 EST (at b64c3dd)
+
+Standard v0, Monday: wrote 14 characterization tests for ap doctor before touching it. They pin two real gaps on purpose: the pin check skips any non-alphanumeric ref, so dotted tags like v4.2.2 are never flagged, and it only inspects workflows whose first line says autopilot. Wrote checks.yaml (14 rules, labels enforced/audited/advisory) and STANDARD.md. The schema test caught my own YAML bug (an unquoted 'contents: read'). Nothing is labeled enforced, and a test says so until a protected CI step runs the engine. Decisions: prototype this week overrides the earlier light-touch plan; waivers will be one central policy/waivers.yaml read from the base ref; tier numbering is flagged, not chosen. Corrected an earlier claim: autopilot does not deny mcp__* outright, it denies specific families and protects .mcp.json.
+
+## 2026-11-02 22:15 EST (at ee17e87)
+
+First end-to-end run on the new apx host: issue #174 (spec apx-deploy-docs) -> agent run as apx-agent -> PR #175 opened by apx with a Verified commit -> guard green, CI red on the agent's own over-literal test. The owner merged #175 red via the ruleset's admin bypass, which turned main red and paused agent work; #178 fixed the doc wording and also the same variable-placed-before-sudo bug in the new apx-egress script, which the agent's test caught. Deploy blockers found and fixed: the updater hardcoded the shadow check names (#177, which also lets apx-lane merges deploy only when nothing runtime changed; code stays owner-merged), and the updater's test run resolved a bare `python3` to Homebrew's interpreter without PyYAML (#179, venv first on PATH). The last blocker is process, not code: #179 was merged before apx had checked it, so the updater, which only trusts apx's own check runs, cannot adopt it. Decided: pin autopilot's required checks to the apx App (`autopilot.apx.pin`) and remove the admin bypass, so a merge cannot land before apx has checked it or while it is red.
+
+## 2026-11-03 06:27 EST (at f9ae30e)
+
+Tue: built the standard engine (14 checks, 58 fixture tests, 8 hand mutations all caught except one that exposed a missing test, now added) and made ap doctor delegate pin, secret-exposure and CLAUDE.md checks to it, flipping the two known_gap tests. Wed work done early: ap standard check, --portfolio matched by origin name (drillpad is a clone of drillpad-workspace; my earlier 'not cloned' claim was wrong), base-ref waivers. Dogfood on autopilot found two real problems I cannot fix from here (protected paths): .github/workflows/redteam-secrets.yml is not valid YAML (an unquoted 'LEAK: ...' in a run line), so the red-team probe cannot run; and CODEOWNERS has no entry for the CODEOWNERS file itself. Also no dependabot config (advisory).
+
+## 2026-11-03 06:32 EST (at e2dfd92)
+
+Thu: built ap trace and ap drill. Deviation from plan: autopilot specs have no AC-n ids (acceptance is a list of commands), and adding ids means editing the protected specs/_TEMPLATE.md, so trace maps each pytest acceptance command to the tests it names in JUnit XML instead. It catches an all-skipped acceptance (exit 0) and a link to tests that never ran; it cannot catch a test with no assertion, and the drill records that as a limit. Drills use a throwaway fixture rather than a clone of a real repo, so they are hermetic and fast. Drills: baseline-green, hollow-link (skipped caught, no-assertion limit), guard-on-diff (protected paths, human not blocked, test deletion).
+
+## 2026-11-03 06:33 EST (at 8edf3fb)
+
+Ran `standard-portfolio-offline` → [results/2026-11-03-0633-standard-portfolio-offline](../results/2026-11-03-0633-standard-portfolio-offline) (exit 1, 1s). Notes: first run, before I reworded one CODEOWNERS message; superseded by the -2 run below. Apple M4, 32 GB (from env.txt).
+
+## 2026-11-03 06:33 EST (at 8edf3fb)
+
+Ran `standard-drills` → [results/2026-11-03-0633-standard-drills](../results/2026-11-03-0633-standard-drills) (exit 0, 1s). Notes: 6 drill results, all as expected: 1 green, 4 caught, 1 limit (a test with no assertion is invisible to trace). Apple M4, 32 GB.
+
+## 2026-11-03 06:34 EST (at 8edf3fb)
+
+Ran `standard-tests` → [results/2026-11-03-0633-standard-tests](../results/2026-11-03-0633-standard-tests) (exit 0, 47s). Notes: 1034 tests pass. Apple M4, 32 GB, Python 3.14.3.
+
+## 2026-11-03 06:34 EST (at db9035e)
+
+Ran `standard-portfolio-offline-2` → [results/2026-11-03-0634-standard-portfolio-offline-2](../results/2026-11-03-0634-standard-portfolio-offline-2) (exit 1, 1s). Notes: offline, so no gh call was made and ruleset-present is unknown. drillpad-workspace: 8 pass, 4 fail, 1 unknown, 1 skip; the failures are an unpinned actions/checkout@v4, no top-level permissions, CODEOWNERS not covering itself, and no dependency-update config. autopilot: 8 pass, 2 fail, 3 unknown, 1 skip (the unknowns are the unparseable redteam-secrets.yml and the ruleset). stencil and launch-scratch are enabled in the portfolio but have no clone, so the run exits 1. Apple M4, 32 GB. These are findings in two repos I did not change.
+
+## 2026-11-03 07:44 EST (at 2e1f315)
+
+Ran `standard-portfolio-online` → [results/2026-11-03-0744-standard-portfolio-online](../results/2026-11-03-0744-standard-portfolio-online) (exit 1, 2s). Notes: online run (gh called). ruleset-present is a pass for both repos: autopilot has the ruleset `autopilot-main`, and drillpad-workspace has one too (name not read by the check). autopilot is public on GitHub (private:false) but policy/portfolio.yaml has no public flag for it, so license-present was skipped; the repo has no LICENSE file. drillpad-workspace now shows 2 unpinned actions (checkout@v4, setup-uv@v5). Apple M4, 32 GB.
+
+## 2026-11-03 08:20 EST (at 0c8b5e8)
+
+Ran `standard-portfolio-online-2` → [results/2026-11-03-0820-standard-portfolio-online-2](../results/2026-11-03-0820-standard-portfolio-online-2) (exit 1, 4s). Notes: after the engine started asking GitHub whether a repo is public. autopilot now FAILs license-present (no LICENSE file) and prints a NOTE that the portfolio disagrees with GitHub; drillpad-workspace stays skipped (private). autopilot: 9 pass, 3 fail, 2 unknown; drillpad-workspace unchanged at 9 pass, 4 fail, 1 skip. Apple M4, 32 GB.
+
+## 2026-11-05 08:25 EST (at 0f8ea2b)
+
+Owner edits applied via a script I wrote (ci.yml step, repo.yaml, CODEOWNERS, waivers.yaml, portfolio public flag, quoted redteam run:). ap standard check on autopilot offline: 11 pass, 2 fail (license, dependabot, both warn-level), 1 unknown (ruleset, offline). Flipped the 6 fail-level rules to enforced; replaced the no-enforcement test with one that the CI step exists. Not yet run on GitHub Actions; required-check status in the ruleset is still unset.
+
+## 2026-11-06 18:18 EST (at b383af7)
+
+Closing the standard v0 thread. PR #183 merged (b383af7); main CI run 42310360742 passed and printed the standard's result on GitHub Actions (11 pass, 2 fail, 1 unknown; all six enforced rules pass), matching the Mac. redteam-secrets is manual-only and parses now but has never run. Open on purpose: make the CI job a required check in the ruleset and prove it blocks with a throwaway PR (owner setting); choose a LICENSE. Deferred: dependency-updates config, GitHub plan question, tier numbering, cloning stencil and launch-scratch, kb MCP server, the unpushed permissions-log branch.
+
+## 2026-11-06 19:02 EST (at 9435692)
+
+Proved enforcement end to end: throwaway PR #188 unpinned actions/checkout; CI failed on FAIL pinned-actions (run 42311571422), merge BLOCKED, and the ruleset's required checks include test and guard / guard with 0 required reviews. Closed unmerged. Found a limit: CI's shallow checkout has no origin/main, so waivers are never applied in CI; harmless while waivers.yaml is empty, needs a ci.yml fetch before the first waiver.

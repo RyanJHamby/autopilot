@@ -154,12 +154,14 @@ def run_fix(api: Api, ledger: Ledger, deps: Deps, action: Action) -> str:
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     run_id = ledger.start(repo, issue, kind="fix", ref=sha)
     conclusion, model, turns = "failure", None, None
+    why = ""
     try:
         r = deps.fix_ci(repo, issue, run_id, int(pr_number), sha, action.detail)
         model, turns = r.model, r.turns
         if r.ok:
             conclusion = "success"
         else:
+            why = " ".join((r.problems or "no reason given").split())[:160]
             # the PR is an issue too: the label stops further retries and tells the owner
             _flag_needs_human(api, repo, int(pr_number))
     except Exception:
@@ -172,7 +174,7 @@ def run_fix(api: Api, ledger: Ledger, deps: Deps, action: Action) -> str:
                 deps.report(repo, issue, model, turns, conclusion, started)
             except Exception:  # noqa: BLE001 - reporting must never mask the run's own outcome
                 pass
-    return conclusion
+    return f"{conclusion}: {why}" if why else conclusion
 
 
 def execute(
@@ -233,7 +235,7 @@ def execute(
             try:
                 log.append(f"fix-ci {a.repo} {a.ref[:12]} {run_fix(api, ledger, deps, a)}")
             except Exception as e:  # noqa: BLE001 - one bad PR must not stop the loop
-                log.append(f"fix-ci {a.repo} {a.ref[:12]} crashed: {type(e).__name__}")
+                log.append(f"fix-ci {a.repo} {a.ref[:12]} crashed: {type(e).__name__}: {' '.join(str(e).split())[:160]}")
         elif a.kind == "automerge":
             if deps.automerge is None:
                 log.append(f"automerge {a.repo} {a.ref}: lane not enabled")

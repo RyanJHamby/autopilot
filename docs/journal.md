@@ -344,3 +344,15 @@ Closing the standard v0 thread. PR #183 merged (b383af7); main CI run 4231036074
 ## 2026-11-06 19:02 EST (at 9435692)
 
 Proved enforcement end to end: throwaway PR #188 unpinned actions/checkout; CI failed on FAIL pinned-actions (run 42311571422), merge BLOCKED, and the ruleset's required checks include test and guard / guard with 0 required reviews. Closed unmerged. Found a limit: CI's shallow checkout has no origin/main, so waivers are never applied in CI; harmless while waivers.yaml is empty, needs a ci.yml fetch before the first waiver.
+
+## 2026-11-07 09:14 EST (at 1f7f045)
+
+Ran `scaffold-dry-run-3-repos` → [results/2026-11-07-0914-scaffold-dry-run-3-repos](../results/2026-11-07-0914-scaffold-dry-run-3-repos) (exit 0, 1s). Notes: first dry run of `ap standard fix`, before it printed where the public/private answer came from. Superseded by the -2 run. Nothing was written into any of the three repos. Apple M4, 32 GB.
+
+## 2026-11-07 09:15 EST (at 1f7f045)
+
+Ran `scaffold-dry-run-3-repos-2` → [results/2026-11-07-0915-scaffold-dry-run-3-repos-2](../results/2026-11-07-0915-scaffold-dry-run-3-repos-2) (exit 0, 1s). Notes: dry run on three real repos, nothing written. RyanJHamby.github.io: 7 create, 1 exists, 2 skip. fillcast: 4 create, 3 exists, 3 skip. tokenomics-bench: 5 create, 4 exists, 1 skip. Visibility came from GitHub for all three. fillcast and tokenomics-bench are public on GitHub but have no `public` flag in policy/portfolio.yaml (the tool prints that the portfolio disagrees and uses GitHub's answer), which is a finding in the portfolio and an owner edit. Existing LICENSE, .gitignore, issue templates and the Makefile were reported as `exists` and never touched. Apple M4, 32 GB.
+
+## 2026-11-07 09:15 EST (at 1f7f045)
+
+Scaffolder slice 1 built (ap standard fix: dry run default, never overwrites, no commit; 53 tests; 3 hand mutations caught). Deviations from the plan: (1) dropped the refusal on sensitive-looking material that I copied from ap init, because that check flags any file named journal.md and so would refuse every pow repo; it protects cloud agents, not local scaffolding. Kept the restricted data_class refusal. (2) Context7 MCP was not available in this session, so I read PyPI and GitHub docs directly: trusted publishing needs id-token: write on the job, environment pypi, pypa/gh-action-pypi-publish@release/v1; Dependabot values uv and github-actions confirmed. (3) gh api is denied to me, so I cannot look up action SHAs and will not invent them: CI and release templates wait for SHAs Ryan fetches. Added output that states where each repo's public/private answer came from, after the dry run planned SECURITY.md for fillcast and tokenomics-bench and I could not ask GitHub myself.

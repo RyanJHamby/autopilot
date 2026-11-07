@@ -1,0 +1,37 @@
+== RyanJHamby.github.io  (/Users/ryanhamby/dev/RyanJHamby.github.io)
+  create   LICENSE  [license-present]  missing
+  create   SECURITY.md  [security-policy]  missing
+  create   CONTRIBUTING.md  [contributing-present]  missing
+  create   .github/dependabot.yml  [dependency-updates]  missing
+  exists   .gitignore  [gitignore-present]  already there; never overwritten
+  create   .github/CODEOWNERS  [codeowners-cover-protected-paths]  missing
+  create   .github/pull_request_template.md  [templates-present]  missing
+  create   .github/ISSUE_TEMPLATE/bug.md  [templates-present]  missing
+  skip     CHANGELOG.md  [convention]  kind is unset, not a package
+  skip     Makefile  [one-check-entrypoint]  no known ecosystem to write a check command for
+  7 create, 1 exists, 2 skip
+== fillcast  (/Users/ryanhamby/dev/fillcast)
+  exists   LICENSE  [license-present]  already there; never overwritten
+  create   SECURITY.md  [security-policy]  missing
+  create   CONTRIBUTING.md  [contributing-present]  missing
+  skip     .github/dependabot.yml  [dependency-updates]  no manifests or workflows to keep updated
+  exists   .gitignore  [gitignore-present]  already there; never overwritten
+  create   .github/CODEOWNERS  [codeowners-cover-protected-paths]  missing
+  create   .github/pull_request_template.md  [templates-present]  missing
+  exists   .github/ISSUE_TEMPLATE/bug.md  [templates-present]  already there; never overwritten
+  skip     CHANGELOG.md  [convention]  kind is unset, not a package
+  skip     Makefile  [one-check-entrypoint]  no known ecosystem to write a check command for
+  4 create, 3 exists, 3 skip
+== tokenomics-bench  (/Users/ryanhamby/dev/tokenomics-bench)
+  exists   LICENSE  [license-present]  already there; never overwritten
+  create   SECURITY.md  [security-policy]  missing
+  create   CONTRIBUTING.md  [contributing-present]  missing
+  create   .github/dependabot.yml  [dependency-updates]  missing
+  exists   .gitignore  [gitignore-present]  already there; never overwritten
+  create   .github/CODEOWNERS  [codeowners-cover-protected-paths]  missing
+  create   .github/pull_request_template.md  [templates-present]  missing
+  exists   .github/ISSUE_TEMPLATE/bug.md  [templates-present]  already there; never overwritten
+  skip     CHANGELOG.md  [convention]  kind is unset, not a package
+  exists   Makefile  [one-check-entrypoint]  already there; never overwritten
+  5 create, 4 exists, 1 skip
+dry run: nothing was written. Re-run with --apply to write on a new branch.

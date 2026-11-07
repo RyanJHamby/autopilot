@@ -14,8 +14,13 @@ applied by Ryan running a script I wrote.
 The six `fail`-level rules are labeled `enforced`, by the `ci.yml` step `uv run ap standard check . --offline`.
 `test_every_enforced_rule_names_a_ci_step_that_exists` fails if that step is removed. Merged in PR #183 (`b383af7`).
 Observed on GitHub Actions, run 42310360742 on main (2026-11-06): the step ran and printed the same result as the Mac,
-11 pass, 2 fail, 1 unknown, with all six enforced rules passing. Not yet observed: the step blocking a bad change. It
-blocks a merge only if the CI job is a required check in the `autopilot-main` ruleset, which is an owner setting.
+11 pass, 2 fail, 1 unknown, with all six enforced rules passing.
+Blocking observed (2026-11-06): throwaway PR #188 unpinned `actions/checkout`; CI failed on `FAIL pinned-actions` (run
+42311571422), the merge state was `BLOCKED`, and `gh api repos/RyanJHamby/autopilot/rules/branches/main` lists `test`
+and `guard / guard` as required status checks with 0 required reviews. The PR was closed unmerged.
+Known limit: CI's checkout is shallow, so `origin/main` is absent there and waivers are never applied in CI
+(`NOTE origin/main not found`). No effect while `waivers.yaml` is empty; the first granted waiver would not turn CI green
+until `ci.yml` fetches main (`fetch-depth: 0` or `git fetch origin main`), which is an owner edit.
 `redteam-secrets.yml` is manual-only (`workflow_dispatch`); it parses now but has never run.
 
 ## Done in the owner session (2026-11-05)
@@ -26,11 +31,11 @@ and `drill.py`, CODEOWNERS entries, `policy/waivers.yaml` (`waivers: []`), `publ
 
 ## Your list (every item needs your account or a decision)
 **Matters:**
-0. Make the CI job a required status check in the `autopilot-main` ruleset. Without that, "enforced" is not true. To
-   prove it, open a throwaway PR that unpins one action and confirm the merge is blocked, then close it.
+0. ~~Required check~~ Done and proven 2026-11-06 (see above).
 1. Add a `LICENSE` to `autopilot` (public repo; `license-present` fails). The choice is yours.
 
 **Deferred on purpose, none blocking:**
+1b. Before granting the first waiver: make `ci.yml` fetch `origin/main` (see the known limit above).
 2. Add a Dependabot or Renovate config if you want `dependency-updates` to pass (advisory, warn only).
 3. Clone `stencil` and `launch-scratch` if you want `--portfolio` to exit 0 (both are enabled in `portfolio.yaml`).
 4. Run `gh api user --jq .plan.name` and `gh api repos/RyanJHamby/autopilot/rulesets`, then re-run `ap standard check --portfolio` without `--offline`. Until then `ruleset-present` is unknown, and rulesets on a private repo may not bind on your plan.

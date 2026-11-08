@@ -137,12 +137,14 @@ def cmd_converge(
         for o in ops:
             if o.kind in ("create", "update", "close"):
                 print(f"  {verb}{o.kind} issue on {o.repo}: {o.title or o.note}")
+            elif o.kind == "disabled":
+                print(f"  no issue on {o.repo}: {o.note}")
         if outside:
             print(f"{outside} older repo(s) outside the portfolio were not audited; pass --all to include them")
         if not getattr(ns, "apply", False) and any(o.kind in ("create", "update", "close") for o in ops):
             print("dry run: no issue was filed. Re-run with --apply to file them.")
     if getattr(ns, "apply", False):
-        counts = {k: sum(o.kind == k for o in ops) for k in ("create", "update", "close", "unchanged")}
+        counts = {k: sum(o.kind == k for o in ops) for k in ("create", "update", "close", "unchanged", "disabled")}
         bad = write_status(
             status_path,
             {

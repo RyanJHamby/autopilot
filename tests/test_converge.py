@@ -241,7 +241,7 @@ OLD = "2024-01-01T00:00:00Z"
 FRESH = "2026-11-06T00:00:00Z"
 
 
-def with_issues(base, store=None, *, list_rc=0, write_rc=0):
+def with_issues(base, store=None, *, list_rc=0, write_rc=0, list_err="boom"):
     """Wrap fake_run with a tiny issue tracker: `store` maps 'owner/repo' to its open standard-gap issues."""
     store = {} if store is None else store
     calls = []
@@ -254,7 +254,7 @@ def with_issues(base, store=None, *, list_rc=0, write_rc=0):
             calls.append(list(cmd))
             slug = cmd[cmd.index("-R") + 1]
             if cmd[2] == "list":
-                return cp(cmd, 1, "", "boom") if list_rc else cp(cmd, 0, json.dumps(store.get(slug, [])))
+                return cp(cmd, 1, "", list_err) if list_rc else cp(cmd, 0, json.dumps(store.get(slug, [])))
             if write_rc:
                 return cp(cmd, write_rc, "", "issues are disabled")
             if cmd[2] == "create":
@@ -436,3 +436,65 @@ def test_the_launchd_job_is_weekly_files_nothing_at_install_and_stores_no_secret
     assert plist["RunAtLoad"] is False  # installing it must not file anything
     assert "EnvironmentVariables" not in plist  # no token or key: it uses the owner's own gh login
     assert "--all" not in command_line  # the schedule never widens its scope
+
+
+# --- repos with issues disabled, and public repos ------------------------------------------------------------------------
+
+DISABLED_MSG = "the 'Ryan/mine' repository has disabled issues"
+
+
+def test_a_repo_with_issues_disabled_is_a_note_not_an_error(tmp_path, capsys, status_file):
+    clone(tmp_path, "mine")
+    code, run = converge(
+        tmp_path, [row("mine")], portfolio(repos={"mine": {}}), flags={"apply": True}, list_rc=1, list_err=DISABLED_MSG
+    )
+    out = capsys.readouterr().out
+    assert code == 0 and "no issue on mine: issues are disabled" in out and "ERROR" not in out
+    assert writes(run) == []
+    assert json.loads(status_file.read_text())["ok"] is True
+
+
+def test_a_different_lookup_failure_is_still_an_error(tmp_path, capsys):
+    clone(tmp_path, "mine")
+    code, run = converge(
+        tmp_path, [row("mine")], portfolio(repos={"mine": {}}), flags={"apply": True}, list_rc=1, list_err="rate limited"
+    )
+    assert code == 1 and writes(run) == []
+
+
+SECRET = "no-tracked-secrets: keys/prod.pem is tracked by git"
+WORKFLOW = "secret-exposed-workflows: deploy.yml uses repo secrets on pull_request with no agent/* exclusion"
+
+
+def audit_with(public, *gaps):
+    return core.Audit("mine", public=public, gaps=list(gaps), fixable=["SECURITY.md"], in_portfolio=True)
+
+
+def test_a_public_issue_never_names_a_security_weakness():
+    text = issues.body(audit_with(True, "license-present: no LICENSE file", SECRET, WORKFLOW), "Ryan")
+    assert "prod.pem" not in text and "deploy.yml" not in text and "agent/*" not in text
+    assert "2 security-related gap(s) are not listed here because this repository is public" in text
+    assert "license-present: no LICENSE file" in text  # ordinary gaps are still listed
+
+
+def test_a_private_issue_lists_the_security_findings_in_full():
+    text = issues.body(audit_with(False, SECRET), "Ryan")
+    assert "keys/prod.pem" in text and "not listed here" not in text
+
+
+def test_an_unknown_visibility_is_treated_as_public_so_the_safe_mistake_is_saying_too_little():
+    text = issues.body(audit_with(None, SECRET), "Ryan")
+    assert "prod.pem" not in text and "1 security-related gap(s) are not listed here" in text
+
+
+def test_the_redacted_text_is_what_is_actually_sent_to_github(tmp_path):
+    import subprocess as sp
+
+    path = clone(tmp_path, "mine", {"keys/prod.pem": "placeholder, not a key\n"})
+    sp.run(["git", "-C", str(path), "init", "-q"], check=True, capture_output=True)
+    sp.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
+    _, run = converge(tmp_path, [row("mine")], portfolio(repos={"mine": {}}), flags={"apply": True})
+    create = next((c for c in writes(run) if c[:3] == ["gh", "issue", "create"]), None)
+    assert create is not None
+    body = create[create.index("--body") + 1]
+    assert "prod.pem" not in body and "security-related gap(s) are not listed here" in body  # the rule did fire

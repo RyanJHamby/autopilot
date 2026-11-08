@@ -101,7 +101,7 @@ OS, language and tool versions.
 """
 
 CODEOWNERS = """# Everything needs a human owner. Narrow this list as the repo grows.
-* @@owner@@
+* @@handle@@
 """
 
 CHANGELOG = """# Changelog

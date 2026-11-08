@@ -209,7 +209,7 @@ def test_json_output_is_parseable_and_names_every_rule(tmp_path, portfolio, caps
     good = clone(tmp_path, "good", files=CLEAN)
     run(tmp_path, str(good), "--json")
     data = json.loads(capsys.readouterr().out)
-    assert [len(r["results"]) for r in data["repos"]] == [14] and data["errors"] == []
+    assert [len(r["results"]) for r in data["repos"]] == [18] and data["errors"] == []
 
 
 def test_a_live_waiver_makes_a_failing_repo_pass_end_to_end(tmp_path, portfolio, monkeypatch, capsys):

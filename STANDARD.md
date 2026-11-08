@@ -48,6 +48,10 @@ A rule's **level** says what a failing result does to the run: `fail` exits non-
 | `how-this-was-built` | warn | advisory | all |
 | `journal-present` | warn | advisory | all |
 | `dependency-updates` | warn | advisory | all |
+| `gitignore-present` | warn | advisory | all |
+| `templates-present` | warn | advisory | all |
+| `security-policy` | warn | advisory | public repos |
+| `contributing-present` | warn | advisory | public repos |
 
 Each rule's reason and fix are in `checks.yaml`, which is the single source. A test fails if this table and that file
 disagree.

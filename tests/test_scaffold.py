@@ -501,3 +501,13 @@ def test_a_second_run_on_a_scaffolded_skeleton_creates_nothing(tmp_path):
     core.write(root, core.plan(root, c))
     again = core.read_ctx(root, "my-lib", "Ryan", True, holder="Ryan Hamby", kind="library")
     assert [a.path for a in core.plan(root, again) if a.status == "create"] == []
+
+
+def test_codeowners_names_the_owner_with_an_at_sign(tmp_path):
+    """A bare `* name` is not a valid owner on GitHub. The placeholder regex once swallowed the literal `@`."""
+    root = make(tmp_path)
+    text = by_path(core.plan(root, ctx(owner="RyanJHamby")))[".github/CODEOWNERS"].content
+    rules = [line for line in text.splitlines() if line.strip() and not line.startswith("#")]
+    assert rules == ["* @RyanJHamby"]
+    for line in rules:
+        assert all(owner.startswith("@") for owner in line.split()[1:])

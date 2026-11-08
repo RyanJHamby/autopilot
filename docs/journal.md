@@ -368,3 +368,7 @@ owner patch script for the four new warn rules + holder + public flags tested on
 ## 2026-11-08 11:42 EST (at 2419e77)
 
 scaffold: empty-directory skeleton (pyproject with TODO blanks, src/<pkg>, py.typed, smoke test, README) and an advisory layout note for populated repos. Checked by hand: scaffolded a scratch dir, uv build produced sdist+wheel with LICENSE and py.typed, make check passed (ruff + 1 test). Not verified: the generated ci.yml/release.yml on GitHub, hatchling>=1.27 on other uv versions (only uv 0.12.16 tried). Layout is a scaffolder note, not a standard rule: a rule would need another owner edit.
+
+## 2026-11-08 12:35 EST (at 42ea406)
+
+scaffold bug: every CODEOWNERS I scaffolded said '* RyanJHamby' with no @. The template '* @@owner@@' had its literal @ swallowed by the placeholder regex @@(\w+)@@. Shipped in RyanJHamby.github.io #36 and fillcast #1 (merged) and tokenomics-bench #6 (open); my PR text wrongly said '* @RyanJHamby' and that the owner became required reviewer. Not caught because the standard's codeowners rule only tests path coverage and my tests never read the rendered text. Fixed with a handle token plus a regression test; mutation-checked (bug back = test red). Lesson: open the rendered file, not just the plan.

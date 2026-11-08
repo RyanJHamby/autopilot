@@ -236,7 +236,7 @@ ITEMS: list[Item] = [
     Item(
         ".github/CODEOWNERS",
         "codeowners-cover-protected-paths",
-        lambda c: t.fill(t.CODEOWNERS, owner=c.owner),
+        lambda c: t.fill(t.CODEOWNERS, handle=f"@{c.owner}"),
         _unmanaged,
         ("CODEOWNERS", "docs/CODEOWNERS"),
     ),

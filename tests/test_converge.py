@@ -14,6 +14,14 @@ from autopilot.converge import command, core
 TODAY = date(2026, 11, 8)
 
 
+@pytest.fixture(autouse=True)
+def status_file(tmp_path_factory, monkeypatch):
+    """No test may write to the real ~/.autopilot/converge/last.json."""
+    path = tmp_path_factory.mktemp("status") / "last.json"
+    monkeypatch.setattr(command, "STATUS", path)
+    return path
+
+
 def row(name, **kw):
     base = {
         "name": name,
@@ -377,3 +385,54 @@ def test_the_issue_body_ignores_line_ending_differences_from_github():
 def test_the_title_counts_gaps_and_pluralises():
     assert issues.title(core.Audit("a", gaps=["x"])) == "standard: 1 gap"
     assert issues.title(core.Audit("a", gaps=["x", "y"])) == "standard: 2 gaps"
+
+
+# --- status file ---------------------------------------------------------------------------------------------------------
+
+
+def test_apply_records_how_the_run_went(tmp_path, status_file):
+    clone(tmp_path, "mine")
+    converge(tmp_path, [row("mine")], portfolio(repos={"mine": {}}), flags={"apply": True})
+    data = json.loads(status_file.read_text())
+    assert data["ok"] is True and data["exit"] == 0 and data["audited"] == 1 and data["with_gaps"] == 1
+    assert data["issues"]["create"] == 1 and data["errors"] == [] and data["time"]
+
+
+def test_a_dry_run_writes_no_status_file(tmp_path, status_file):
+    clone(tmp_path, "mine")
+    converge(tmp_path, [row("mine")], portfolio(repos={"mine": {}}))
+    assert not status_file.exists()
+
+
+def test_a_failed_listing_is_recorded_as_not_ok_so_a_silent_failure_is_visible(tmp_path, status_file):
+    command.cmd_converge(
+        ns(tmp_path, apply=True), repo_name=lambda p: p.name, load_portfolio=portfolio, run=fake_run([], list_rc=1), today=TODAY
+    )
+    data = json.loads(status_file.read_text())
+    assert data["ok"] is False and data["exit"] == 1 and "cannot list repos" in data["errors"][0]
+
+
+def test_an_unwritable_status_file_warns_but_does_not_fail_the_run(tmp_path, capsys, monkeypatch):
+    clone(tmp_path, "mine")
+    blocker = tmp_path / "file"
+    blocker.write_text("x")
+    monkeypatch.setattr(command, "STATUS", blocker / "sub" / "last.json")  # a parent that is a file: mkdir fails
+    code, _ = converge(tmp_path, [row("mine")], portfolio(repos={"mine": {}}), flags={"apply": True})
+    assert code == 0 and "WARNING could not write the status file" in capsys.readouterr().out
+
+
+# --- the launchd job -----------------------------------------------------------------------------------------------------
+
+PLIST = Path(__file__).resolve().parent.parent / "deploy/launchd/com.autopilot.standard.converge.plist"
+
+
+def test_the_launchd_job_is_weekly_files_nothing_at_install_and_stores_no_secret():
+    import plistlib
+
+    plist = plistlib.loads(PLIST.read_bytes())
+    command_line = plist["ProgramArguments"][-1]
+    assert "ap standard converge --apply" in command_line and "REPO_DIR" in command_line
+    assert plist["StartCalendarInterval"] == {"Weekday": 1, "Hour": 9, "Minute": 0}
+    assert plist["RunAtLoad"] is False  # installing it must not file anything
+    assert "EnvironmentVariables" not in plist  # no token or key: it uses the owner's own gh login
+    assert "--all" not in command_line  # the schedule never widens its scope

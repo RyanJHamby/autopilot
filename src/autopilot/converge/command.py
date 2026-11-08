@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from autopilot.converge import core, issues
@@ -40,12 +40,36 @@ def render(audits: list[core.Audit], skipped: list[tuple[str, str]], errors: lis
     return "\n".join(lines)
 
 
+STATUS = Path.home() / ".autopilot" / "converge" / "last.json"
+
+
+def write_status(path: Path, payload: dict) -> str:
+    """Record how the last scheduled run went, so a silent failure is visible. A write failure is reported, never fatal."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"time": datetime.now().astimezone().isoformat(timespec="seconds"), **payload}, indent=2) + "\n"
+        )
+    except OSError as e:
+        return f"could not write the status file {path}: {e}"
+    return ""
+
+
 def in_scope(r: core.Listed, portfolio: dict, today: date) -> bool:
     """Repos the job audits by default: anything in the portfolio, and anything created recently."""
     return r.name in (portfolio.get("repos") or {}) or core.is_new(r.created_at, today)
 
 
-def cmd_converge(ns: argparse.Namespace, *, repo_name, load_portfolio, run=subprocess.run, today: date | None = None) -> int:
+def cmd_converge(
+    ns: argparse.Namespace,
+    *,
+    repo_name,
+    load_portfolio,
+    run=subprocess.run,
+    today: date | None = None,
+    status_path: Path | None = None,
+) -> int:
+    status_path = status_path or STATUS  # resolved at call time so tests can redirect it
     portfolio = load_portfolio()
     owner = ns.owner or portfolio["owner"]
     today = today or date.today()
@@ -53,6 +77,8 @@ def cmd_converge(ns: argparse.Namespace, *, repo_name, load_portfolio, run=subpr
         listed = core.list_repos(owner, run=run)
     except core.ListError as e:
         print(f"ERROR cannot list {owner}'s repos: {e}")
+        if getattr(ns, "apply", False):
+            write_status(status_path, {"ok": False, "exit": 1, "errors": [f"cannot list repos: {e}"]})
         return 1
 
     show_all = bool(getattr(ns, "all", False))
@@ -115,4 +141,19 @@ def cmd_converge(ns: argparse.Namespace, *, repo_name, load_portfolio, run=subpr
             print(f"{outside} older repo(s) outside the portfolio were not audited; pass --all to include them")
         if not getattr(ns, "apply", False) and any(o.kind in ("create", "update", "close") for o in ops):
             print("dry run: no issue was filed. Re-run with --apply to file them.")
+    if getattr(ns, "apply", False):
+        counts = {k: sum(o.kind == k for o in ops) for k in ("create", "update", "close", "unchanged")}
+        bad = write_status(
+            status_path,
+            {
+                "ok": not errors,
+                "exit": 1 if errors else 0,
+                "audited": len(audits),
+                "with_gaps": sum(bool(a.gaps) and not a.skipped for a in audits),
+                "issues": counts,
+                "errors": errors,
+            },
+        )
+        if bad:
+            print(f"WARNING {bad}")
     return 1 if errors else 0

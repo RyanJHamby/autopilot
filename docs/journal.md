@@ -380,3 +380,7 @@ converge phase 1: ap standard converge lists the owner's repos from GitHub (limi
 ## 2026-11-08 13:54 EST (at 795d617)
 
 Ran `converge-dry-run-all-repos` (exit 0, 72s, Apple M4). The capture is kept local and NOT committed: it lists every private repo name on the account and this repo is public. Result in aggregate: 62 repos on GitHub, 8 skipped (profile, 2 forks, 5 in `excluded:`), 54 audited, 52 with gaps, 2 conformant. Most are old repos not in the portfolio. The new-repo signal worked: the three repos created in the last 14 days were listed first. Decision: issue filing must not cover every repo (about 50 issues into old repos is spam), so it will be limited to portfolio repos and new repos.
+
+## 2026-11-08 14:02 EST (at 833cb68)
+
+converge phase 2: --apply files one standard-gap issue per repo with gaps, edits it in place on later runs, closes it when the repo conforms. Scope is now portfolio plus repos created in the last 14 days; --all only widens the report, never the issues, and old repos are not cloned by default (the first real run read ~50 old private repos for no benefit). A failed issue lookup is an error and files nothing: launch.py's _issue_titles treats a failed list as 'no issues', which would duplicate. 13 new tests, 4 mutations caught (dry run writes, broken dedupe, failed lookup as none, scope filter dropped). Test bug on the way: gh label create and gh issue create both end in create. Slip: I ran ruff format on all of cli.py and reformatted unrelated code; reverted and re-applied my 2 lines.

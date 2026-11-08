@@ -57,7 +57,8 @@ def portfolio(**kw):
 
 
 def ns(root, **kw):
-    return argparse.Namespace(owner=None, root=str(root), json=False, **kw)
+    """`all=True` by default so the older tests cover the whole list; scope tests pass all=False."""
+    return argparse.Namespace(**{"owner": None, "root": str(root), "json": False, "all": True, "apply": False, **kw})
 
 
 def clone(root: Path, name: str, files: dict[str, str] | None = None) -> Path:
@@ -222,3 +223,157 @@ def test_json_output_has_audits_skipped_and_errors(tmp_path, capsys):
     data = json.loads(capsys.readouterr().out)
     assert [a["name"] for a in data["audits"]] == ["proj"]
     assert data["skipped"] == [{"repo": "f", "why": "fork"}] and data["errors"] == []
+
+
+# --- scope and issue filing ----------------------------------------------------------------------------------------------
+
+from autopilot.converge import issues  # noqa: E402
+
+OLD = "2024-01-01T00:00:00Z"
+FRESH = "2026-11-06T00:00:00Z"
+
+
+def with_issues(base, store=None, *, list_rc=0, write_rc=0):
+    """Wrap fake_run with a tiny issue tracker: `store` maps 'owner/repo' to its open standard-gap issues."""
+    store = {} if store is None else store
+    calls = []
+
+    def run(cmd, **kw):
+        if cmd[:2] == ["gh", "label"]:
+            calls.append(list(cmd))
+            return cp(cmd)
+        if cmd[:2] == ["gh", "issue"]:
+            calls.append(list(cmd))
+            slug = cmd[cmd.index("-R") + 1]
+            if cmd[2] == "list":
+                return cp(cmd, 1, "", "boom") if list_rc else cp(cmd, 0, json.dumps(store.get(slug, [])))
+            if write_rc:
+                return cp(cmd, write_rc, "", "issues are disabled")
+            if cmd[2] == "create":
+                store.setdefault(slug, []).append(
+                    {"number": 7, "title": cmd[cmd.index("--title") + 1], "body": cmd[cmd.index("--body") + 1]}
+                )
+            if cmd[2] == "edit":
+                issue = store[slug][0]
+                issue["title"], issue["body"] = cmd[cmd.index("--title") + 1], cmd[cmd.index("--body") + 1]
+            if cmd[2] == "close":
+                store[slug] = []
+            return cp(cmd)
+        return base(cmd, **kw)
+
+    run.calls, run.store, run.base = calls, store, base
+    return run
+
+
+def converge(root, listing, pf, *, flags=None, store=None, **kw):
+    base = fake_run(listing)
+    run = with_issues(base, store, **kw)
+    code = command.cmd_converge(
+        ns(root, **(flags or {})), repo_name=lambda p: p.name, load_portfolio=lambda: pf, run=run, today=TODAY
+    )
+    return code, run
+
+
+def writes(run, verb=None):
+    return [
+        c for c in run.calls if c[:2] in (["gh", "issue"], ["gh", "label"]) and c[2] != "list" and (verb is None or c[2] == verb)
+    ]
+
+
+def test_by_default_only_portfolio_and_new_repos_are_audited_and_old_ones_are_never_cloned(tmp_path, capsys):
+    pf = portfolio(repos={"mine": {}})
+    listing = [row("mine", createdAt=OLD), row("old-thing", createdAt=OLD), row("fresh", createdAt=FRESH)]
+    for n in ("mine", "old-thing", "fresh"):
+        clone(tmp_path, n)
+    code, run = converge(tmp_path, listing, pf, flags={"all": False})
+    out = capsys.readouterr().out
+    assert "mine" in out and "fresh" in out and "old-thing" not in out
+    assert "1 older repo(s) outside the portfolio were not audited" in out
+    assert not any(c[:3] == ["gh", "repo", "clone"] for c in run.calls)
+
+
+def test_all_includes_old_repos_in_the_report(tmp_path, capsys):
+    clone(tmp_path, "old-thing")
+    converge(tmp_path, [row("old-thing", createdAt=OLD)], portfolio(), flags={"all": True})
+    assert "old-thing" in capsys.readouterr().out
+
+
+def test_dry_run_says_what_it_would_file_and_files_nothing(tmp_path, capsys):
+    clone(tmp_path, "mine")
+    code, run = converge(tmp_path, [row("mine")], portfolio(repos={"mine": {}}), flags={"all": False})
+    out = capsys.readouterr().out
+    assert "would create issue on mine: standard:" in out and "dry run: no issue was filed" in out
+    assert writes(run) == []
+
+
+def test_apply_creates_the_label_then_one_issue_with_the_gaps_and_the_command(tmp_path, capsys):
+    clone(tmp_path, "mine")
+    code, run = converge(tmp_path, [row("mine")], portfolio(repos={"mine": {}}), flags={"apply": True})
+    kinds = [c[:3] for c in writes(run)]
+    assert kinds == [["gh", "label", "create"], ["gh", "issue", "create"]]
+    create = next(c for c in writes(run) if c[:3] == ["gh", "issue", "create"])
+    assert "--label" in create and create[create.index("--label") + 1] == "standard-gap"
+    body = create[create.index("--body") + 1]
+    assert "## Gaps" in body and "ap standard fix --apply" in body and "Ryan/mine" in body
+    assert code == 0
+
+
+def test_a_second_run_with_the_same_gaps_writes_nothing(tmp_path, capsys):
+    clone(tmp_path, "mine")
+    pf = portfolio(repos={"mine": {}})
+    _, first = converge(tmp_path, [row("mine")], pf, flags={"apply": True})
+    _, second = converge(tmp_path, [row("mine")], pf, flags={"apply": True}, store=first.store)
+    assert writes(second) == [] and len(first.store["Ryan/mine"]) == 1
+
+
+def test_changed_gaps_edit_the_existing_issue_instead_of_filing_another(tmp_path, capsys):
+    path = clone(tmp_path, "mine")
+    pf = portfolio(repos={"mine": {}})
+    _, first = converge(tmp_path, [row("mine")], pf, flags={"apply": True})
+    (path / "LICENSE").write_text("x")  # a gap closes
+    _, second = converge(tmp_path, [row("mine")], pf, flags={"apply": True}, store=first.store)
+    assert [c[2] for c in writes(second)] == ["edit"] and len(second.store["Ryan/mine"]) == 1
+
+
+def test_a_failed_issue_lookup_files_nothing_and_exits_nonzero(tmp_path, capsys):
+    clone(tmp_path, "mine")
+    code, run = converge(tmp_path, [row("mine")], portfolio(repos={"mine": {}}), flags={"apply": True}, list_rc=1)
+    assert writes(run) == [] and code == 1 and "could not look up existing issues" in capsys.readouterr().out
+
+
+def test_a_failed_issue_write_is_reported(tmp_path, capsys):
+    clone(tmp_path, "mine")
+    code, _ = converge(tmp_path, [row("mine")], portfolio(repos={"mine": {}}), flags={"apply": True}, write_rc=1)
+    assert code == 1 and "issue create failed" in capsys.readouterr().out
+
+
+def test_all_with_apply_still_files_issues_only_for_portfolio_and_new_repos(tmp_path, capsys):
+    clone(tmp_path, "old-thing")
+    _, run = converge(tmp_path, [row("old-thing", createdAt=OLD)], portfolio(), flags={"all": True, "apply": True})
+    assert writes(run) == []
+
+
+def test_a_repo_that_now_conforms_gets_its_issue_closed():
+    a = core.Audit("mine", gaps=[], in_portfolio=True)
+    op = issues.plan(
+        a, "Ryan", with_issues(fake_run([]), {"Ryan/mine": [{"number": 3, "title": "standard: 2 gaps", "body": "x"}]})
+    )
+    assert (op.kind, op.number) == ("close", 3)
+    assert issues.plan(a, "Ryan", with_issues(fake_run([]), {})).kind == "none"
+
+
+def test_a_skipped_audit_files_nothing():
+    a = core.Audit("p", skipped="pawl-scaffolded repo", in_portfolio=True)
+    assert issues.plan(a, "Ryan", with_issues(fake_run([]), {})).kind == "none"
+
+
+def test_the_issue_body_ignores_line_ending_differences_from_github():
+    a = core.Audit("mine", gaps=["license-present: no LICENSE file"], fixable=["LICENSE"], in_portfolio=True)
+    body = issues.body(a, "Ryan")
+    store = {"Ryan/mine": [{"number": 1, "title": issues.title(a), "body": body.replace("\n", "\r\n")}]}
+    assert issues.plan(a, "Ryan", with_issues(fake_run([]), store)).kind == "unchanged"
+
+
+def test_the_title_counts_gaps_and_pluralises():
+    assert issues.title(core.Audit("a", gaps=["x"])) == "standard: 1 gap"
+    assert issues.title(core.Audit("a", gaps=["x", "y"])) == "standard: 2 gaps"

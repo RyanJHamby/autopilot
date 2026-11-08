@@ -233,7 +233,7 @@ def test_one_check_entrypoint_accepts_a_make_target_or_a_ci_list_and_nothing_els
     other = tmp_path / "o"
     assert check("one-check-entrypoint", write(other, {".autopilot/repo.yaml": "ci:\n  - uv run pytest\n"}))[0] == "pass"
     empty = tmp_path / "e"
-    assert check("one-check-entrypoint", write(empty, {".autopilot/repo.yaml": "ci: []\n"}))[0] == "fail"
+    assert check("one-check-entrypoint", write(empty, {".autopilot/repo.yaml": "ci: []\n", "pyproject.toml": ""}))[0] == "fail"
 
 
 def test_license_applies_only_to_public_repos_and_needs_a_file(tmp_path):
@@ -282,7 +282,7 @@ def test_how_this_was_built_looks_for_the_heading_only(tmp_path):
 def test_journal_and_dependency_updates(tmp_path):
     assert check("journal-present", tmp_path)[0] == "fail"
     assert check("journal-present", write(tmp_path, {"docs/journal.md": ""}))[0] == "pass"
-    assert check("dependency-updates", tmp_path)[0] == "fail"
+    assert check("dependency-updates", write(tmp_path / "d", {"pyproject.toml": ""}))[0] == "fail"
     assert check("dependency-updates", write(tmp_path, {".github/dependabot.yml": "version: 2\n"}))[0] == "pass"
 
 

@@ -274,10 +274,24 @@ def thin_claude_md(repo: Repo) -> Outcome:
     return _ok()
 
 
+_MANIFESTS = ("uv.lock", "pyproject.toml", "requirements.txt", "package.json", "Cargo.toml", "go.mod", "Dockerfile")
+
+
+def _has_manifest(repo: Repo) -> bool:
+    return any((repo.path / n).is_file() for n in _MANIFESTS)
+
+
+def _has_workflows(repo: Repo) -> bool:
+    wf = repo.path / ".github/workflows"
+    return wf.is_dir() and any(wf.glob("*.y*ml"))
+
+
 def one_check_entrypoint(repo: Repo) -> Outcome:
     makefile = repo.read("Makefile") or ""
     if re.search(r"^check\s*:", makefile, re.M) or repo.repo_cfg().get("ci"):
         return _ok()
+    if not (_has_manifest(repo) or _has_workflows(repo) or (repo.path / "Makefile").is_file()):
+        return "skip", ["no manifests, workflows or Makefile: nothing to run"]
     return "fail", ["no `check` target in a Makefile and no `ci:` list in .autopilot/repo.yaml"]
 
 
@@ -322,7 +336,11 @@ def journal_present(repo: Repo) -> Outcome:
 
 def dependency_updates(repo: Repo) -> Outcome:
     names = (".github/dependabot.yml", ".github/dependabot.yaml", "renovate.json", ".renovaterc", ".github/renovate.json")
-    return _ok() if any((repo.path / n).is_file() for n in names) else ("fail", ["no Dependabot or Renovate config"])
+    if any((repo.path / n).is_file() for n in names):
+        return _ok()
+    if not (_has_manifest(repo) or _has_workflows(repo)):
+        return "skip", ["no manifests or workflows: nothing to keep updated"]
+    return "fail", ["no Dependabot or Renovate config"]
 
 
 def _first_file(repo: Repo, names: tuple[str, ...], what: str) -> Outcome:

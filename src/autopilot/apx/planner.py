@@ -22,6 +22,7 @@ import tier as kit_tier  # noqa: E402
 from guard import _matches  # noqa: E402
 
 from . import batch as batches_mod  # noqa: E402
+from . import intake  # noqa: E402
 from .github import Api, GitHubError  # noqa: E402
 from .ledger import Ledger  # noqa: E402
 
@@ -195,11 +196,15 @@ def plan_agent_runs(
             "number": i["number"],
             "createdAt": i["created_at"],
             "labels": [{"name": ln["name"]} for ln in i.get("labels", [])],
+            "body": i.get("body") or "",
         }
         for i in raw  # type: ignore[union-attr]
         if "pull_request" not in i and _owner_vouches(api, repo, i, owner)
     ]
     issues = [i for i in issues if not gate.skip_merged(i["number"], {ln["name"] for ln in i["labels"]}, merged)]
+    # intake lint: no runnable acceptance command, no run (the main token saver); the issue is held, never touched
+    held_intake = {i["number"]: p for i in issues if (p := intake.problem(i["body"]))}
+    issues = [i for i in issues if i["number"] not in held_intake]
     taken = branches + [f"agent/{n}-inflight" for n in inflight]
     picked = gate.pick_issues(issues, taken, len(issues))
     batches = load_batches(api, repo, default_branch)
@@ -215,7 +220,10 @@ def plan_agent_runs(
         if str(n) not in {a.ref for a in acts}:
             acts.append(Action("run-agent", repo, str(n), detail + " rebase=1"))
             room -= 1
-    return acts, "ok"
+    note = "ok"
+    if held_intake:
+        note += "; held at intake: " + ", ".join(f"#{n} ({why})" for n, why in sorted(held_intake.items()))
+    return acts, note
 
 
 MAX_CI_FIXES = 2

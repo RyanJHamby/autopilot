@@ -76,12 +76,16 @@ class Fake:
         raise AssertionError(path)
 
 
-def issue(n, user="RyanJHamby", labels=("agent-ready",)):
+SPEC_BODY = "## Goal\nx\n\n## Acceptance\n- [ ] `uv run pytest tests/test_x.py`\n\n## Scope\n- `src/x.py`\n"
+
+
+def issue(n, user="RyanJHamby", labels=("agent-ready",), body=SPEC_BODY):
     return {
         "number": n,
         "created_at": f"2026-10-2{n % 9}T00:00:00Z",
         "user": {"login": user},
         "labels": [{"name": x} for x in labels],
+        "body": body,
     }
 
 
@@ -613,3 +617,13 @@ def test_orphaned_in_progress_check_is_rerun_but_a_fresh_one_is_not():
     assert [a.detail for a in acts(old) if a.kind == "check-pr"] == ["PR #1 missing build"]
     assert not [a for a in acts(fresh) if a.kind == "check-pr"]
     assert not [a for a in acts(done) if a.kind == "check-pr"]  # old but finished: never retried
+
+
+def test_issue_without_a_runnable_acceptance_command_is_held_and_named():
+    hand_written = issue(4, body="Fix the lesson, no acceptance section")
+    bad_cmd = issue(5, body="## Acceptance\n- [ ] `looks fine to me`\n")
+    f = Fake(issues=[hand_written, bad_cmd, issue(6)])
+    r = go(f)
+    assert [a.ref for a in r["actions"] if a.kind == "run-agent"] == ["6"]
+    assert "held at intake" in r["note"] and "#4" in r["note"] and "#5" in r["note"] and "#6" not in r["note"]
+    assert f.writes == []  # held, never labelled or commented

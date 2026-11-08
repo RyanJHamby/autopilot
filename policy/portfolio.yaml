@@ -4,6 +4,7 @@
 # comms is always "none" in v1; there is no code path that raises it.
 
 owner: RyanJHamby
+holder: Ryan Hamby   # copyright holder written into LICENSE
 
 defaults:
   models:           # aliases, never pinned ids
@@ -32,9 +33,9 @@ defaults:
 repos:
   # --- wave 1 (only drillpad-workspace and stencil are active; the rest are on hold by the owner, 2026-10-16) ---
   drillpad-workspace:      {tier: A, mode: standard, enabled: true}
-  fillcast:                {tier: A, mode: standard, enabled: false, needs_repo: true}
+  fillcast:                {tier: A, mode: standard, enabled: false, needs_repo: true, public: true}
   order-book-engine:       {tier: A, mode: standard, enabled: false}
-  tokenomics-bench:        {tier: B, mode: standard, enabled: false}
+  tokenomics-bench:        {tier: B, mode: standard, enabled: false, public: true}
   stock-screener:          {tier: B, mode: standard, enabled: false}
   drillpad:                {tier: B, mode: standard, enabled: false, public: true}
 

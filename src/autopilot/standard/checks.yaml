@@ -115,3 +115,37 @@ checks:
     evidence: judgment
     why: Automated update PRs keep known-vulnerable versions from lingering, but they add review work.
     fix: Add `.github/dependabot.yml` or a Renovate config.
+
+  - id: gitignore-present
+    title: A .gitignore exists
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: Without one, build output, virtualenvs and .env files end up in commits.
+    fix: Run `ap standard fix REPO` to scaffold one for the detected ecosystems.
+
+  - id: templates-present
+    title: A pull request template and an issue template exist
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: A template says what a change needs to show before a reviewer reads it. Whether that helps is unproven.
+    fix: Run `ap standard fix REPO`, or add `.github/pull_request_template.md` and `.github/ISSUE_TEMPLATE/`.
+
+  - id: security-policy
+    title: Public repos have a SECURITY.md
+    level: warn
+    label: advisory
+    applies_to: public
+    evidence: judgment
+    why: It tells a stranger where to report a vulnerability privately instead of in a public issue.
+    fix: Add SECURITY.md, or run `ap standard fix REPO`.
+
+  - id: contributing-present
+    title: Public repos have a CONTRIBUTING.md
+    level: warn
+    label: advisory
+    applies_to: public
+    evidence: judgment
+    why: It states what a contributor must run and show. Whether it changes contribution quality is unproven.
+    fix: Add CONTRIBUTING.md, or run `ap standard fix REPO`.

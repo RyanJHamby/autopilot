@@ -325,6 +325,30 @@ def dependency_updates(repo: Repo) -> Outcome:
     return _ok() if any((repo.path / n).is_file() for n in names) else ("fail", ["no Dependabot or Renovate config"])
 
 
+def _first_file(repo: Repo, names: tuple[str, ...], what: str) -> Outcome:
+    return _ok() if any((repo.path / n).is_file() for n in names) else ("fail", [f"no {what}"])
+
+
+def gitignore_present(repo: Repo) -> Outcome:
+    return _first_file(repo, (".gitignore",), ".gitignore")
+
+
+def templates_present(repo: Repo) -> Outcome:
+    names = (".github/pull_request_template.md", "pull_request_template.md", "docs/pull_request_template.md")
+    pr = any((repo.path / n).is_file() for n in names)
+    issues = (repo.path / ".github/ISSUE_TEMPLATE").is_dir() or (repo.path / ".github/ISSUE_TEMPLATE.md").is_file()
+    missing = [n for n, ok in (("pull request template", pr), ("issue template", issues)) if not ok]
+    return ("fail", [f"no {n}" for n in missing]) if missing else _ok()
+
+
+def security_policy(repo: Repo) -> Outcome:
+    return _first_file(repo, ("SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"), "SECURITY.md")
+
+
+def contributing_present(repo: Repo) -> Outcome:
+    return _first_file(repo, ("CONTRIBUTING.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"), "CONTRIBUTING.md")
+
+
 CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "pinned-actions": pinned_actions,
     "workflow-permissions": workflow_permissions,
@@ -340,6 +364,10 @@ CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "how-this-was-built": how_this_was_built,
     "journal-present": journal_present,
     "dependency-updates": dependency_updates,
+    "gitignore-present": gitignore_present,
+    "templates-present": templates_present,
+    "security-policy": security_policy,
+    "contributing-present": contributing_present,
 }
 
 

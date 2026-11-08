@@ -14,7 +14,7 @@ from autopilot.scaffold import templates as t
 
 # Rules the scaffolder serves that are not in checks.yaml yet: adding a rule needs an owner edit (src/autopilot/standard/**
 # is protected). Moving an id out of this set and into checks.yaml is part of that owner change.
-PROPOSED_RULES = {"gitignore-present", "templates-present", "security-policy", "contributing-present"}
+PROPOSED_RULES = {"gitignore-present", "templates-present", "security-policy", "contributing-present", "commands-documented"}
 
 KINDS = ("library", "cli", "app", "site", "notes", "research", "fork")
 PACKAGE_KINDS = ("library", "cli")  # kinds that publish a package and so get a changelog
@@ -32,6 +32,7 @@ class Ctx:
     has_workflows: bool = False
     has_check: bool = False  # a Makefile `check:` target or a `ci:` list already exists
     autopilot_managed: bool = False  # `ap init` owns CODEOWNERS, templates and workflows here
+    has_commands: bool = False  # AGENTS.md already has a `## Commands` section
     pawl: bool = False
     restricted: bool = False
     empty: bool = False  # nothing in the directory but .git: the only case where a skeleton is written
@@ -79,6 +80,8 @@ def read_ctx(path: Path, name: str, owner: str, public: bool | None, **extra) ->
     wf = path / ".github/workflows"
     makefile = path / "Makefile"
     has_check = makefile.is_file() and bool(re.search(r"^check\s*:", makefile.read_text(errors="replace"), re.M))
+    agents = path / "AGENTS.md"
+    has_commands = agents.is_file() and bool(re.search(r"^## Commands\b", agents.read_text(errors="replace"), re.M))
     empty = not any(p.name != ".git" for p in path.iterdir())
     kind = extra.get("kind")
     return Ctx(
@@ -91,6 +94,7 @@ def read_ctx(path: Path, name: str, owner: str, public: bool | None, **extra) ->
         has_workflows=wf.is_dir() and any(wf.glob("*.y*ml")),
         has_check=has_check or _has_ci_list(path),
         autopilot_managed=(path / ".autopilot/manifest.json").is_file(),
+        has_commands=has_commands,
         pawl=(path / "policy/lanes.toml").is_file(),
         **extra,
     )
@@ -154,6 +158,14 @@ def _makefile(ctx: Ctx) -> tuple[str, str] | None:
     return None
 
 
+def _justfile(ctx: Ctx) -> tuple[str, str] | None:
+    if ctx.has_commands:
+        return "skip", "AGENTS.md already has a ## Commands section"
+    if not any(e in t.JUSTFILE for e in ctx.ecosystems):
+        return "skip", "no known ecosystem to write commands for"
+    return None
+
+
 def _uv_only(ctx: Ctx) -> tuple[str, str] | None:
     return None if "uv" in ctx.ecosystems else ("skip", "only uv projects have a workflow template so far")
 
@@ -209,6 +221,10 @@ def _make_check(ctx: Ctx) -> str:
     return t.MAKEFILE[next(e for e in ctx.ecosystems if e in t.MAKEFILE)]
 
 
+def _just_commands(ctx: Ctx) -> str:
+    return t.JUSTFILE[next(e for e in ctx.ecosystems if e in t.JUSTFILE)]
+
+
 ITEMS: list[Item] = [
     Item(
         "LICENSE",
@@ -250,6 +266,7 @@ ITEMS: list[Item] = [
     Item(".github/ISSUE_TEMPLATE/bug.md", "templates-present", lambda c: t.ISSUE_BUG, _unmanaged, (".github/ISSUE_TEMPLATE/*",)),
     Item("CHANGELOG.md", None, lambda c: t.CHANGELOG, _changelog),
     Item("Makefile", "one-check-entrypoint", _make_check, _makefile),
+    Item("justfile", "commands-documented", _just_commands, _justfile, ("Justfile",)),
     # Any existing workflow counts as CI: a second competing ci.yml is worse than none.
     Item(".github/workflows/ci.yml", "pinned-actions", lambda c: t.CI_UV, _ci, (".github/workflows/*.y*ml",)),
     Item(

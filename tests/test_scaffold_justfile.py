@@ -9,9 +9,6 @@ import pytest
 
 from autopilot.scaffold import core
 
-# Spec scaffold-justfile: this marker keeps main green until the work lands. The implementing agent removes it (and only it).
-pytestmark = pytest.mark.xfail(strict=True, reason="spec scaffold-justfile not implemented yet")
-
 ECOSYSTEMS = ["uv", "pip", "npm", "cargo", "gomod"]
 
 

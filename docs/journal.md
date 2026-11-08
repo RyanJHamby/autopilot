@@ -356,3 +356,11 @@ Ran `scaffold-dry-run-3-repos-2` → [results/2026-11-07-0915-scaffold-dry-run-3
 ## 2026-11-07 09:15 EST (at 1f7f045)
 
 Scaffolder slice 1 built (ap standard fix: dry run default, never overwrites, no commit; 53 tests; 3 hand mutations caught). Deviations from the plan: (1) dropped the refusal on sensitive-looking material that I copied from ap init, because that check flags any file named journal.md and so would refuse every pow repo; it protects cloud agents, not local scaffolding. Kept the restricted data_class refusal. (2) Context7 MCP was not available in this session, so I read PyPI and GitHub docs directly: trusted publishing needs id-token: write on the job, environment pypi, pypa/gh-action-pypi-publish@release/v1; Dependabot values uv and github-actions confirmed. (3) gh api is denied to me, so I cannot look up action SHAs and will not invent them: CI and release templates wait for SHAs Ryan fetches. Added output that states where each repo's public/private answer came from, after the dry run planned SECURITY.md for fillcast and tokenomics-bench and I could not ask GitHub myself.
+
+## 2026-11-08 10:46 EST (at e1b1142)
+
+scaffold: git ls-remote works for me (gh api does not), so I fetched the four action SHAs myself instead of asking Ryan. Added ci.yml and release.yml templates; tests assert every uses: is a 40-hex SHA and id-token: write is on the publish job only. Not verified: that the workflows run on GitHub, and that PyPI accepts the publish (needs the owner-side trusted-publisher setup).
+
+## 2026-11-08 10:55 EST (at e1b1142)
+
+owner patch script for the four new warn rules + holder + public flags tested on a git-archive copy: applies, is idempotent, 1162 tests pass, ruff clean. Not applied to the real repo (protected paths). Also wrote docs/pypi-release-checklist.md; pyproject template deferred: a metadata template needs a package name and layout, which are per-repo owner decisions.

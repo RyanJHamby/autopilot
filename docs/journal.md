@@ -372,3 +372,11 @@ scaffold: empty-directory skeleton (pyproject with TODO blanks, src/<pkg>, py.ty
 ## 2026-11-08 12:35 EST (at 42ea406)
 
 scaffold bug: every CODEOWNERS I scaffolded said '* RyanJHamby' with no @. The template '* @@owner@@' had its literal @ swallowed by the placeholder regex @@(\w+)@@. Shipped in RyanJHamby.github.io #36 and fillcast #1 (merged) and tokenomics-bench #6 (open); my PR text wrongly said '* @RyanJHamby' and that the owner became required reviewer. Not caught because the standard's codeowners rule only tests path coverage and my tests never read the rendered text. Fixed with a handle token plus a regression test; mutation-checked (bug back = test red). Lesson: open the rendered file, not just the plan.
+
+## 2026-11-08 13:43 EST (at a3944af)
+
+converge phase 1: ap standard converge lists the owner's repos from GitHub (limit 1000, errors if the list hits the limit or gh fails), gates forks/archived/profile/excluded/template/restricted, audits each from a local clone or a shallow throwaway clone, reads only. 25 tests, mutation-checked (fork gate, limit check, failed-list-as-empty each caught). Real run over all repos was denied by the auto-mode classifier (it clones private repos); handed to Ryan to run himself. Not verified against real GitHub yet.
+
+## 2026-11-08 13:54 EST (at 795d617)
+
+Ran `converge-dry-run-all-repos` (exit 0, 72s, Apple M4). The capture is kept local and NOT committed: it lists every private repo name on the account and this repo is public. Result in aggregate: 62 repos on GitHub, 8 skipped (profile, 2 forks, 5 in `excluded:`), 54 audited, 52 with gaps, 2 conformant. Most are old repos not in the portfolio. The new-repo signal worked: the three repos created in the last 14 days were listed first. Decision: issue filing must not cover every repo (about 50 issues into old repos is spam), so it will be limited to portfolio repos and new repos.

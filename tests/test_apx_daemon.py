@@ -413,6 +413,7 @@ def test_run_once_in_shadow_mode_never_plans_an_agent_run(tmp_path, monkeypatch)
                         "created_at": "2026-10-20T00:00:00Z",
                         "user": {"login": "RyanJHamby"},
                         "labels": [{"name": "agent-ready"}],
+                        "body": "## Acceptance\n- [ ] `uv run pytest tests/test_x.py`\n",
                     }
                 ]
             if path.endswith("/git/ref/heads/main"):
@@ -548,6 +549,7 @@ def test_run_once_plans_agent_runs_and_merges_only_for_the_cutover_repo(tmp_path
                         "created_at": "2026-10-20T00:00:00Z",
                         "user": {"login": "RyanJHamby"},
                         "labels": [{"name": "agent-ready"}],
+                        "body": "## Acceptance\n- [ ] `uv run pytest tests/test_x.py`\n",
                     }
                 ]
             if path.endswith("/git/ref/heads/main"):
@@ -666,6 +668,7 @@ def _gate_factory():
                         "created_at": "2026-10-20T00:00:00Z",
                         "user": {"login": "RyanJHamby"},
                         "labels": [{"name": "agent-ready"}],
+                        "body": "## Acceptance\n- [ ] `uv run pytest tests/test_x.py`\n",
                     }
                 ]
             if path.endswith("/git/ref/heads/main"):

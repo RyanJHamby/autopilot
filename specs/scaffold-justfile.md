@@ -1,5 +1,7 @@
 ---
 id: scaffold-justfile
+status: ready
+issue: 210
 goal: "`ap standard fix` offers a stub `justfile` (rule id `commands-documented`) to any repo that has neither a justfile nor an AGENTS.md `## Commands` section, so every repo has run/test commands a catalog can index."
 acceptance:
   - uv run pytest tests/test_scaffold_justfile.py
@@ -44,3 +46,4 @@ Owner follow-up (not for the agent): add `commands-documented` as a `warn` rule 
 
 ## Log
 - 2026-11-08 draft; failing test written first (12 fail without the xfail marker: no justfile item exists)
+- 2026-11-08 ready, issue #210

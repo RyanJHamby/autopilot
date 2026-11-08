@@ -424,3 +424,80 @@ def test_ci_and_release_are_gated_by_ecosystem_kind_and_visibility(tmp_path):
 def test_any_existing_workflow_counts_as_ci(tmp_path):
     root = make(tmp_path, {".github/workflows/test.yml": "name: t\n"})
     assert statuses(root, ctx(ecosystems=["uv"]))[".github/workflows/ci.yml"] == "exists"
+
+
+# --- skeleton and layout -------------------------------------------------------------------------------------------------
+
+
+def new_package(tmp_path: Path, kind: str = "library", name: str = "my-lib", **kw) -> tuple[Path, core.Ctx]:
+    root = make(tmp_path, {}, name=name)
+    c = core.read_ctx(root, name, "Ryan", True, holder="Ryan Hamby", kind=kind, **kw)
+    return root, c
+
+
+def test_an_empty_directory_gets_a_skeleton_for_a_package_kind(tmp_path):
+    root, c = new_package(tmp_path)
+    s = statuses(root, c)
+    for path in ("pyproject.toml", "README.md", "src/my_lib/__init__.py", "src/my_lib/py.typed", "tests/test_smoke.py"):
+        assert s[path] == "create", path
+    assert s["Makefile"] == s[".github/workflows/ci.yml"] == s[".github/workflows/release.yml"] == "create"
+
+
+def test_the_skeleton_is_never_written_into_a_populated_repo(tmp_path):
+    root = make(tmp_path, {"main.py": "print(1)\n"})
+    c = core.read_ctx(root, "proj", "Ryan", True, holder="H", kind="library")
+    assert not c.empty
+    assert not any(p.startswith("src/") or p in ("pyproject.toml", "README.md") for p in statuses(root, c))
+
+
+def test_a_git_only_directory_counts_as_empty_but_a_non_package_kind_gets_no_skeleton(tmp_path):
+    root = make(tmp_path)
+    (root / ".git").mkdir()
+    assert core.read_ctx(root, "proj", "Ryan", True, kind="cli").empty
+    assert "pyproject.toml" not in statuses(root, core.read_ctx(root, "proj", "Ryan", True, holder="H", kind="notes"))
+
+
+def test_a_private_skeleton_names_no_license_and_a_missing_holder_names_no_author(tmp_path):
+    text = t.pyproject("p", "p", "o", None, False, False)
+    assert "license" not in text and "authors" not in text
+    assert 'license = "MIT"' in t.pyproject("p", "p", "o", "H", True, False)
+
+
+def test_a_cli_skeleton_declares_an_entry_point(tmp_path):
+    import tomllib
+
+    root, c = new_package(tmp_path, kind="cli", name="my-tool")
+    core.write(root, core.plan(root, c))
+    meta = tomllib.loads((root / "pyproject.toml").read_text())
+    assert meta["project"]["scripts"] == {"my-tool": "my_tool:main"}
+    assert "def main" in (root / "src/my_tool/__init__.py").read_text()
+
+
+def test_layout_notes_report_drift_and_change_nothing(tmp_path):
+    root = make(tmp_path, {"pyproject.toml": "[project]\n", "test_a.py": "def test_a(): pass\n"})
+    before = sorted(p.name for p in root.rglob("*"))
+    notes = core.layout_notes(root, core.read_ctx(root, "proj", "Ryan", True, kind="library"))
+    assert any("tests" in n for n in notes) and any("src/" in n for n in notes)
+    assert sorted(p.name for p in root.rglob("*")) == before
+    assert core.layout_notes(root, core.read_ctx(root, "proj", "Ryan", True, kind="app")) == []
+
+
+def test_a_scaffolded_skeleton_passes_the_standard_rules_it_serves(tmp_path):
+    root, c = new_package(tmp_path)
+    core.write(root, core.plan(root, c))
+    ids = {x["id"] for x in standard.load_checks()["checks"]}
+    served = sorted({i.rule for i in core.ITEMS + core.SKELETON if i.rule in ids})
+    assert {"license-present", "pinned-actions", "one-check-entrypoint", "gitignore-present"} <= set(served)
+    failing = [
+        (r.id, r.findings)
+        for r in engine.run(engine.Repo(root, github_public=True), only=served)
+        if r.result not in ("pass", "skip")
+    ]
+    assert failing == []
+
+
+def test_a_second_run_on_a_scaffolded_skeleton_creates_nothing(tmp_path):
+    root, c = new_package(tmp_path)
+    core.write(root, core.plan(root, c))
+    again = core.read_ctx(root, "my-lib", "Ryan", True, holder="Ryan Hamby", kind="library")
+    assert [a.path for a in core.plan(root, again) if a.status == "create"] == []

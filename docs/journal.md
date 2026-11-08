@@ -376,3 +376,7 @@ scaffold bug: every CODEOWNERS I scaffolded said '* RyanJHamby' with no @. The t
 ## 2026-11-08 13:43 EST (at a3944af)
 
 converge phase 1: ap standard converge lists the owner's repos from GitHub (limit 1000, errors if the list hits the limit or gh fails), gates forks/archived/profile/excluded/template/restricted, audits each from a local clone or a shallow throwaway clone, reads only. 25 tests, mutation-checked (fork gate, limit check, failed-list-as-empty each caught). Real run over all repos was denied by the auto-mode classifier (it clones private repos); handed to Ryan to run himself. Not verified against real GitHub yet.
+
+## 2026-11-08 13:54 EST (at 795d617)
+
+Ran `converge-dry-run-all-repos` (exit 0, 72s, Apple M4). The capture is kept local and NOT committed: it lists every private repo name on the account and this repo is public. Result in aggregate: 62 repos on GitHub, 8 skipped (profile, 2 forks, 5 in `excluded:`), 54 audited, 52 with gaps, 2 conformant. Most are old repos not in the portfolio. The new-repo signal worked: the three repos created in the last 14 days were listed first. Decision: issue filing must not cover every repo (about 50 issues into old repos is spam), so it will be limited to portfolio repos and new repos.

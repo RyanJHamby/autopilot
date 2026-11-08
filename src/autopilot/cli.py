@@ -1989,6 +1989,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--root", default="~/dev", help="where clones live; repos without one are audited from a shallow throwaway clone")
     p.add_argument("--all", action="store_true", help="also audit older repos outside the portfolio (default: portfolio plus new)")
     p.add_argument("--apply", action="store_true", help="file or update one `standard-gap` issue per repo with gaps; close it when the repo conforms")
+    p.add_argument("--only", action="append", metavar="REPO", help="audit (and with --apply, file for) just this repo; repeatable")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_standard_converge)
     p = sub.add_parser("trace", help="does a spec's pytest acceptance actually run and pass? reads JUnit XML (warn-only)")

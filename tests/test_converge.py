@@ -498,3 +498,51 @@ def test_the_redacted_text_is_what_is_actually_sent_to_github(tmp_path):
     assert create is not None
     body = create[create.index("--body") + 1]
     assert "prod.pem" not in body and "security-related gap(s) are not listed here" in body  # the rule did fire
+
+
+# --- --only --------------------------------------------------------------------------------------------------------------
+
+
+def two_repos(tmp_path):
+    for n in ("mine", "other"):
+        clone(tmp_path, n)
+    return portfolio(repos={"mine": {}, "other": {}}), [row("mine"), row("other")]
+
+
+def test_only_audits_and_reports_just_the_named_repo(tmp_path, capsys):
+    pf, listing = two_repos(tmp_path)
+    code, run = converge(tmp_path, listing, pf, flags={"all": False, "only": ["mine"]})
+    out = capsys.readouterr().out
+    assert code == 0 and "mine" in out and "other" not in out and "older repo(s)" not in out
+
+
+def test_only_with_apply_files_exactly_one_issue_in_the_named_repo(tmp_path, capsys):
+    pf, listing = two_repos(tmp_path)
+    _, run = converge(tmp_path, listing, pf, flags={"all": False, "only": ["mine"], "apply": True})
+    creates = [c for c in writes(run) if c[:3] == ["gh", "issue", "create"]]
+    assert len(creates) == 1 and creates[0][creates[0].index("-R") + 1] == "Ryan/mine"
+    assert not any("Ryan/other" in c for c in run.calls if c[:2] == ["gh", "issue"])
+
+
+def test_only_is_repeatable(tmp_path, capsys):
+    pf, listing = two_repos(tmp_path)
+    _, run = converge(tmp_path, listing, pf, flags={"only": ["mine", "other"], "apply": True})
+    assert len([c for c in writes(run) if c[:3] == ["gh", "issue", "create"]]) == 2
+
+
+def test_only_with_an_unknown_name_is_an_error_not_a_silent_no_op(tmp_path, capsys):
+    pf, listing = two_repos(tmp_path)
+    code, run = converge(tmp_path, listing, pf, flags={"only": ["typo"], "apply": True})
+    assert code == 1 and "--only typo: no such repo" in capsys.readouterr().out and writes(run) == []
+
+
+def test_only_an_old_repo_outside_the_portfolio_is_audited_but_never_gets_an_issue(tmp_path, capsys):
+    clone(tmp_path, "old-thing")
+    code, run = converge(tmp_path, [row("old-thing", createdAt=OLD)], portfolio(), flags={"only": ["old-thing"], "apply": True})
+    out = capsys.readouterr().out
+    assert "old-thing" in out and "never files into it" in out and writes(run) == []
+
+
+def test_only_still_respects_the_gates(tmp_path, capsys):
+    code, run = converge(tmp_path, [row("up", isFork=True)], portfolio(repos={"up": {}}), flags={"only": ["up"], "apply": True})
+    assert "skipped up: fork" in capsys.readouterr().out and writes(run) == []

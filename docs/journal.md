@@ -392,3 +392,7 @@ converge phase 3: weekly launchd job (Mon 09:00, RunAtLoad false, no env/secrets
 ## 2026-11-08 14:16 EST (at c0c58ac)
 
 converge: first real dry run (run by Ryan) found two problems before anything was filed. (1) claude-docs has issues disabled; the lookup error made the whole run exit 1, so the weekly status would read not-ok forever over one repo. Now a 'disabled' note, not an error. (2) 6 of 14 planned issues were for PUBLIC repos; a gap like no-tracked-secrets or secret-exposed-workflows would announce a weakness in a public issue. Those two rules are now counted but not written into the issue unless the repo is known private. My own first test asserted the opposite for unknown visibility (full detail), found by mutation checking: unknown is now treated as public, since the safe mistake is saying too little. 6 new tests, 3 mutations caught. Not verified: a real --apply.
+
+## 2026-11-08 14:22 EST (at d036eec)
+
+converge: --only REPO (repeatable) so the first real --apply is one issue Ryan can read on GitHub. It audits and files for just the named repos, still obeys the gates, errors on a name GitHub does not have, and never files into a repo outside the portfolio that is not new. 6 tests, 3 mutations caught (only ignored, unknown name ignored, out-of-scope repo gets an issue). Not verified: a real --apply.

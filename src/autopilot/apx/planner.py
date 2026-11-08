@@ -54,6 +54,32 @@ def enabled(api: Api, repo: str) -> tuple[bool, str]:
     return True, "ok"
 
 
+CONTROL_LABEL = "apx-control"
+
+
+def owner_paused(api: Api, repo: str, owner: str) -> str | None:
+    """Phone-friendly pause: the OWNER's latest `/pause` or `/resume` comment on an owner-created issue labelled `apx-control`.
+    Returns a reason when paused, else None. Comments by anyone else are ignored. Fails closed: if the thread can't be read or is
+    too long to read in one page, work is paused. No such issue means not paused."""
+    try:
+        found = api("GET", f"/repos/{repo}/issues?labels={CONTROL_LABEL}&state=open&creator={owner}&per_page=1")
+        if not found:
+            return None
+        comments = api("GET", f"/repos/{repo}/issues/{found[0]['number']}/comments?per_page=100")  # type: ignore[index,union-attr]
+        if len(comments) >= 100:  # type: ignore[arg-type]
+            return "paused: control thread too long to read; start a new one"
+        state = None
+        for c in comments:  # type: ignore[union-attr]
+            if (c.get("user") or {}).get("login") != owner:
+                continue
+            words = (c.get("body") or "").strip().lower().split()
+            if words and words[0] in ("/pause", "/resume"):
+                state = words[0]
+        return "paused by owner comment (/pause)" if state == "/pause" else None
+    except (GitHubError, OSError, KeyError, TypeError, AttributeError, IndexError):
+        return "paused: control thread unreadable (fail closed)"
+
+
 def load_cfg(api: Api, repo: str, default_branch: str) -> dict:
     """repo.yaml from the DEFAULT branch only (what the owner merged), never from a PR."""
     f = api("GET", f"/repos/{repo}/contents/.autopilot/repo.yaml?ref={default_branch}")
@@ -355,6 +381,8 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
             if main_state == "red":
                 # new work built on a broken main is blamed for errors it did not cause: hold agent runs and fixes until main is green
                 runs, note = [], f"main failed {meta['ci_contexts'][0]}: agent work paused until it is green"
+            elif (paused := owner_paused(api, repo, owner)) is not None:
+                runs, note = [], paused  # checks above still ran; only new agent runs and fixes stop
             elif meta.get("agents"):
                 redo = [int(a.ref) for a in rebases if a.kind == "rebase-agent"]
                 runs, note = plan_agent_runs(

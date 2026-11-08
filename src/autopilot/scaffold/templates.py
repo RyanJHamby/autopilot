@@ -181,6 +181,14 @@ MAKEFILE = {
     "gomod": ".PHONY: check\ncheck:\n\tgo test ./...\n",
 }
 
+JUSTFILE = {
+    "uv": "# Run the tests\ntest:\n\tuv run pytest -q\n\n# Lint the code\nlint:\n\tuv run ruff check .\n",
+    "pip": "# Run the tests\ntest:\n\tpytest -q\n\n# Lint the code\nlint:\n\truff check .\n",
+    "npm": "# Run the tests\ntest:\n\tnpm test\n",
+    "cargo": "# Run the tests\ntest:\n\tcargo test\n",
+    "gomod": "# Run the tests\ntest:\n\tgo test ./...\n",
+}
+
 # .gitignore sections by language family. `results/` and `docs/` are deliberately never ignored.
 GITIGNORE_BASE = ".DS_Store\n*.log\n.env\n.env.*\n!.env.example\n"
 GITIGNORE = {

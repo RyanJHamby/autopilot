@@ -15,11 +15,15 @@ from autopilot.converge.core import Audit
 LABEL = "standard-gap"
 LABEL_COLOR = "FBCA04"
 PREFIX = "standard: "
+# Rules whose findings would announce a weakness. Unless a repo is known to be private they are counted but never written into
+# the issue: an unknown visibility is treated as public, because the safe mistake is to say too little.
+SENSITIVE = ("no-tracked-secrets", "secret-exposed-workflows")
+DISABLED = {"disabled": True}  # lookup's answer for a repo with issues turned off: not an error, and nothing to file
 
 
 @dataclass
 class Op:
-    kind: str  # create | update | close | unchanged | none | error
+    kind: str  # create | update | close | unchanged | none | disabled | error
     repo: str
     number: int | None = None
     title: str = ""
@@ -32,12 +36,21 @@ def title(a: Audit) -> str:
 
 
 def body(a: Audit, owner: str) -> str:
+    hidden = [g for g in a.gaps if a.public is not False and g.split(":", 1)[0] in SENSITIVE]
+    shown = [g for g in a.gaps if g not in hidden]
     lines = [
         "The project standard (`ap standard check`) found these gaps. Filed by `ap standard converge`; this issue is edited in",
         "place on every run and closes itself when the repo conforms. Nothing was pushed or changed in the repository.",
         "",
         "## Gaps",
-        *[f"- {g}" for g in a.gaps],
+        *[f"- {g}" for g in shown],
+        *(
+            [
+                f"- {len(hidden)} security-related gap(s) are not listed here because this repository is public; run `ap standard check` locally"
+            ]
+            if hidden
+            else []
+        ),
         "",
     ]
     if a.fixable:
@@ -74,7 +87,10 @@ def lookup(repo_slug: str, run: Callable = subprocess.run) -> tuple[dict | None,
     except OSError as e:
         return None, f"gh could not run: {e}"
     if r.returncode != 0:
-        return None, (r.stderr or "").strip() or "gh issue list failed"
+        said = (r.stderr or "").strip()
+        if "disabled issues" in said.lower():
+            return DISABLED, ""
+        return None, said or "gh issue list failed"
     try:
         rows = json.loads(r.stdout or "[]")
     except json.JSONDecodeError:
@@ -91,6 +107,8 @@ def plan(a: Audit, owner: str, run: Callable = subprocess.run) -> Op:
     existing, err = lookup(slug, run)
     if err:
         return Op("error", a.name, note=f"could not look up existing issues: {err}")
+    if existing is DISABLED:
+        return Op("disabled", a.name, note="issues are disabled on this repo, so its gaps are not filed")
     if a.skipped:
         return Op("none", a.name, note=f"skipped: {a.skipped}")
     if not a.gaps:

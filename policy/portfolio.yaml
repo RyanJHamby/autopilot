@@ -49,6 +49,7 @@ repos:
   stencil:               {tier: A, mode: standard, enabled: true}
   launch-scratch:        {tier: B, mode: standard, enabled: true}
   benchsane:             {tier: B, mode: standard, enabled: true}
+  devbook:               {tier: C, mode: standard, enabled: false, public: false}
 
 # data_class per repo: public | internal (default) | restricted. restricted = crown-jewel IP or personal data:
 # `ap init`, `ap enable` and `ap pick` refuse it, so no cloud agent ever sees it. Add `data_class: restricted` to an entry.

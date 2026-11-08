@@ -211,3 +211,59 @@ def dependabot(ecosystems: list[str], has_workflows: bool) -> str:
     for k in kinds:
         lines += [f"  - package-ecosystem: {k}", '    directory: "/"', "    schedule: {interval: weekly}"]
     return "\n".join(lines) + "\n"
+
+
+# --- new-package skeleton (written only into an empty directory) ---------------------------------------------------------
+
+
+def pyproject(name: str, pkg: str, owner: str, holder: str | None, public: bool, cli: bool) -> str:
+    """Package metadata. Fields nobody can know yet are TODO, never invented."""
+    lines = [
+        "[build-system]",
+        'requires = ["hatchling>=1.27"]',
+        'build-backend = "hatchling.build"',
+        "",
+        "[project]",
+        f'name = "{name}"',
+        'version = "0.1.0"',
+        'description = "TODO: one sentence on what this does"',
+        'readme = "README.md"',
+        'requires-python = ">=3.11"',
+    ]
+    if public:
+        lines += ['license = "MIT"', 'license-files = ["LICENSE"]']
+    if holder:
+        lines.append(f'authors = [{{ name = "{holder}" }}]')
+    lines += [
+        'classifiers = ["Programming Language :: Python :: 3", "Typing :: Typed"]',
+        "",
+        "[project.urls]",
+        f'Homepage = "https://github.com/{owner}/{name}"',
+        f'Issues = "https://github.com/{owner}/{name}/issues"',
+    ]
+    if cli:
+        lines += ["", "[project.scripts]", f'{name} = "{pkg}:main"']
+    lines += [
+        "",
+        "[tool.hatch.build.targets.wheel]",
+        f'packages = ["src/{pkg}"]',
+        "",
+        "[dependency-groups]",
+        'dev = ["pytest", "ruff"]',
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def init_py(cli: bool) -> str:
+    if not cli:
+        return '"""TODO: one line on this package."""\n'
+    return '"""TODO: one line on this package."""\n\n\ndef main() -> None:\n    print("hello")\n'
+
+
+def smoke_test(pkg: str) -> str:
+    return f"import {pkg}\n\n\ndef test_imports():\n    assert {pkg}.__doc__\n"
+
+
+def readme(name: str) -> str:
+    return f"# {name}\n\nTODO: what this is, how to install it, one example.\n"

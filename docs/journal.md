@@ -364,3 +364,7 @@ scaffold: git ls-remote works for me (gh api does not), so I fetched the four ac
 ## 2026-11-08 10:55 EST (at e1b1142)
 
 owner patch script for the four new warn rules + holder + public flags tested on a git-archive copy: applies, is idempotent, 1162 tests pass, ruff clean. Not applied to the real repo (protected paths). Also wrote docs/pypi-release-checklist.md; pyproject template deferred: a metadata template needs a package name and layout, which are per-repo owner decisions.
+
+## 2026-11-08 11:42 EST (at 2419e77)
+
+scaffold: empty-directory skeleton (pyproject with TODO blanks, src/<pkg>, py.typed, smoke test, README) and an advisory layout note for populated repos. Checked by hand: scaffolded a scratch dir, uv build produced sdist+wheel with LICENSE and py.typed, make check passed (ruff + 1 test). Not verified: the generated ci.yml/release.yml on GitHub, hatchling>=1.27 on other uv versions (only uv 0.12.16 tried). Layout is a scaffolder note, not a standard rule: a rule would need another owner edit.

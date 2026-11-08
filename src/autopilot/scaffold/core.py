@@ -34,6 +34,7 @@ class Ctx:
     autopilot_managed: bool = False  # `ap init` owns CODEOWNERS, templates and workflows here
     pawl: bool = False
     restricted: bool = False
+    empty: bool = False  # nothing in the directory but .git: the only case where a skeleton is written
     visibility: str = ""  # where `public` came from, shown in the output: it decides which files a repo gets
 
 
@@ -78,11 +79,15 @@ def read_ctx(path: Path, name: str, owner: str, public: bool | None, **extra) ->
     wf = path / ".github/workflows"
     makefile = path / "Makefile"
     has_check = makefile.is_file() and bool(re.search(r"^check\s*:", makefile.read_text(errors="replace"), re.M))
+    empty = not any(p.name != ".git" for p in path.iterdir())
+    kind = extra.get("kind")
     return Ctx(
         name=name,
         owner=owner,
         public=public,
-        ecosystems=detect_ecosystems(path),
+        empty=empty,
+        # a new Python package will be a uv project, so the files that depend on that are planned with it
+        ecosystems=["uv"] if empty and kind in PACKAGE_KINDS else detect_ecosystems(path),
         has_workflows=wf.is_dir() and any(wf.glob("*.y*ml")),
         has_check=has_check or _has_ci_list(path),
         autopilot_managed=(path / ".autopilot/manifest.json").is_file(),
@@ -163,6 +168,43 @@ def _release(ctx: Ctx) -> tuple[str, str] | None:
     return _public_only(ctx) or _uv_only(ctx)
 
 
+def package_name(ctx: Ctx) -> str:
+    """Import name: the repo name with anything that is not a letter, digit or underscore turned into `_`."""
+    return re.sub(r"\W+", "_", ctx.name).strip("_").lower()
+
+
+def _skeleton(ctx: Ctx) -> tuple[str, str] | None:
+    return None if ctx.empty and ctx.kind in PACKAGE_KINDS else ("skip", "skeletons go only into an empty directory")
+
+
+SKELETON: list[Item] = [
+    Item(
+        "pyproject.toml",
+        None,
+        lambda c: t.pyproject(c.name, package_name(c), c.owner, c.holder, bool(c.public), c.kind == "cli"),
+        _skeleton,
+    ),
+    Item("README.md", None, lambda c: t.readme(c.name), _skeleton),
+    Item("src/@pkg@/__init__.py", None, lambda c: t.init_py(c.kind == "cli"), _skeleton),
+    Item("src/@pkg@/py.typed", None, lambda c: "", _skeleton),
+    Item("tests/test_smoke.py", None, lambda c: t.smoke_test(package_name(c)), _skeleton),
+]
+
+
+def layout_notes(root: Path, ctx: Ctx) -> list[str]:
+    """Advisory drift for a populated package repo. Nothing is moved, renamed or written."""
+    if ctx.empty or ctx.kind not in PACKAGE_KINDS or refusal(ctx):
+        return []
+    notes = []
+    if not (root / "tests").is_dir() and any(root.glob("test_*.py")):
+        notes.append("tests sit at the repo root; the convention is a `tests/` directory")
+    if not (root / "src").is_dir() and (root / "pyproject.toml").is_file():
+        notes.append("no `src/` directory; the convention is `src/<package>/`")
+    if not (root / "docs").is_dir():
+        notes.append("no `docs/` directory")
+    return notes
+
+
 def _make_check(ctx: Ctx) -> str:
     return t.MAKEFILE[next(e for e in ctx.ecosystems if e in t.MAKEFILE)]
 
@@ -229,12 +271,23 @@ def _present(root: Path, item: Item) -> bool:
     return any(next(root.glob(a), None) is not None if "*" in a else (root / a).exists() for a in item.aliases)
 
 
+def _resolve(item: Item, ctx: Ctx) -> Item:
+    """Fill the `@pkg@` placeholder in a skeleton path."""
+    if "@pkg@" not in item.path:
+        return item
+    return Item(item.path.replace("@pkg@", package_name(ctx)), item.rule, item.render, item.applies, item.aliases)
+
+
 def plan(root: Path, ctx: Ctx, items: list[Item] | None = None) -> list[Action]:
     why = refusal(ctx)
     if why:
         return [Action(i.path, "skip", i.rule, why) for i in (items or ITEMS)]
     out = []
-    for item in items or ITEMS:
+    chosen = list(items or ITEMS)
+    if items is None and ctx.empty and ctx.kind in PACKAGE_KINDS:
+        chosen += SKELETON
+    for item in chosen:
+        item = _resolve(item, ctx)
         if _present(root, item):
             out.append(Action(item.path, "exists", item.rule, "already there; never overwritten"))
             continue

@@ -62,13 +62,17 @@ def git(path: Path, *args: str, run=subprocess.run) -> subprocess.CompletedProce
     return run(["git", "-C", str(path), *args], capture_output=True, text=True)
 
 
-def render(name: str, path: Path, actions: list[core.Action], why: str | None, visibility: str = "") -> str:
+def render(
+    name: str, path: Path, actions: list[core.Action], why: str | None, visibility: str = "", layout: list[str] | None = None
+) -> str:
     lines = [f"== {name}  ({path})" + (f"  [{visibility}]" if visibility else "")]
     if why:
         lines.append(f"  REFUSED  {why}")
     for a in actions:
         rule = f"[{a.rule}]" if a.rule else "[convention]"
         lines.append(f"  {MARK[a.status]:8} {a.path}  {rule}  {a.note}")
+    for note in layout or []:
+        lines.append(f"  layout   {note}  (advisory; nothing is moved)")
     counts = {k: sum(a.status == k for a in actions) for k in MARK}
     lines.append("  " + ", ".join(f"{n} {k}" for k, n in counts.items() if n))
     return "\n".join(lines)
@@ -114,7 +118,7 @@ def cmd_fix(ns: argparse.Namespace, *, repo_name, load_portfolio, run=subprocess
             if err:
                 errors.append(f"{ctx.name}: {err}")
                 code = 1
-        report.append((ctx.name, path, actions, why, written, ctx.visibility))
+        report.append((ctx.name, path, actions, why, written, ctx.visibility, core.layout_notes(path, ctx)))
 
     if ns.json:
         out = {
@@ -126,16 +130,17 @@ def cmd_fix(ns: argparse.Namespace, *, repo_name, load_portfolio, run=subprocess
                     "visibility": vis,
                     "refused": why,
                     "written": w,
+                    "layout": lay,
                     "actions": [{"path": a.path, "status": a.status, "rule": a.rule, "note": a.note} for a in acts],
                 }
-                for n, p, acts, why, w, vis in report
+                for n, p, acts, why, w, vis, lay in report
             ],
             "errors": errors,
         }
         print(json.dumps(out, indent=2))
     else:
-        for n, p, acts, why, w, vis in report:
-            print(render(n, p, acts, why, vis))
+        for n, p, acts, why, w, vis, lay in report:
+            print(render(n, p, acts, why, vis, lay))
             if w:
                 print(f"  wrote {len(w)} file(s) on branch {BRANCH}; review with `git diff`, then commit yourself")
         for e in errors:

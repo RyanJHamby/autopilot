@@ -626,6 +626,12 @@ def cmd_standard(ns: argparse.Namespace) -> int:
     return command.cmd_standard(ns, repo_name=repo_name, load_portfolio=load_portfolio, policy_root=ROOT)
 
 
+def cmd_standard_fix(ns: argparse.Namespace) -> int:
+    from autopilot.scaffold import command
+
+    return command.cmd_fix(ns, repo_name=repo_name, load_portfolio=load_portfolio)
+
+
 def cmd_trace(ns: argparse.Namespace) -> int:
     from autopilot import trace
 
@@ -1962,6 +1968,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--strict", action="store_true", help="a level-fail rule that cannot be answered also fails")
     p.add_argument("--offline", action="store_true", help="never call gh (ruleset-present becomes unknown)")
     p.set_defaults(fn=cmd_standard)
+    p = ssub.add_parser("fix", help="show (dry run) or --apply the standard files a repo is missing; never overwrites or commits")
+    p.add_argument("repos", nargs="*", help="repo paths")
+    p.add_argument("--portfolio", action="store_true", help="every enabled portfolio repo, found under --root by origin name")
+    p.add_argument("--root", default="~/dev", help="where clones live (default ~/dev)")
+    p.add_argument("--apply", action="store_true", help="write the files on a new branch standard/scaffold (clean tree required)")
+    p.add_argument("--holder", help="copyright holder for LICENSE (else `holder:` in policy/portfolio.yaml; never guessed)")
+    p.add_argument("--kind", choices=["library", "cli", "app", "site", "notes", "research", "fork"], help="repo kind")
+    p.add_argument("--offline", action="store_true", help="never call gh (public/private then comes from the portfolio only)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_standard_fix)
     p = sub.add_parser("trace", help="does a spec's pytest acceptance actually run and pass? reads JUnit XML (warn-only)")
     p.add_argument("spec")
     p.add_argument("--junit", required=True, help="pytest --junitxml output")

@@ -1,0 +1,1 @@
+uv run ap standard fix /Users/ryanhamby/dev/RyanJHamby.github.io /Users/ryanhamby/dev/fillcast /Users/ryanhamby/dev/tokenomics-bench --holder Ryan\ Hamby 

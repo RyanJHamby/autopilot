@@ -31,6 +31,8 @@ class Fake:
         self.files = kw.get("files", {})  # number -> [filenames]
         self.main_sha = kw.get("main_sha", "msha")
         self.batches = kw.get("batches", {})  # file name -> manifest text
+        self.control = kw.get("control")  # None: no control issue; True: exists; an Exception: reading it fails
+        self.control_comments = kw.get("control_comments", [])
         self.writes = []
 
     def __call__(self, method, path, body=None):
@@ -71,6 +73,14 @@ class Fake:
         m = re.match(r".*/issues/(\d+)/events", path)
         if m:
             return self.events.get(int(m.group(1)), [])
+        if "labels=apx-control" in path:
+            if self.control is None:
+                return []
+            if isinstance(self.control, Exception):
+                raise self.control
+            return [{"number": 900}]
+        if re.match(r".*/issues/900/comments", path):
+            return self.control_comments
         if "/issues?" in path:
             return self.issues
         raise AssertionError(path)
@@ -627,3 +637,32 @@ def test_issue_without_a_runnable_acceptance_command_is_held_and_named():
     assert [a.ref for a in r["actions"] if a.kind == "run-agent"] == ["6"]
     assert "held at intake" in r["note"] and "#4" in r["note"] and "#5" in r["note"] and "#6" not in r["note"]
     assert f.writes == []  # held, never labelled or commented
+
+
+def cm(body, user="RyanJHamby"):
+    return {"user": {"login": user}, "body": body}
+
+
+def runs_of(r):
+    return [a for a in r["actions"] if a.kind == "run-agent"]
+
+
+def test_owner_pause_stops_new_runs_but_not_checks_and_resume_restarts_them():
+    busy = dict(open=[pr(1, "agent/5-1", "s1")], issues=[issue(4)])
+    assert runs_of(go(Fake(**busy)))  # control: no control issue, work is planned
+    paused = go(Fake(control=True, control_comments=[cm("/pause")], **busy))
+    assert runs_of(paused) == [] and "owner comment" in paused["note"]
+    assert any(a.kind == "check-pr" for a in paused["actions"])  # open PRs are still verified
+    assert runs_of(go(Fake(control=True, control_comments=[cm("/pause"), cm("/resume")], **busy)))
+    assert runs_of(go(Fake(control=True, control_comments=[cm("/pause"), cm("/Resume please")], **busy)))
+    assert runs_of(go(Fake(control=True, control_comments=[cm("/resume"), cm("/pause")], **busy))) == []  # last one wins
+
+
+def test_owner_pause_ignores_strangers_and_fails_closed():
+    busy = dict(open=[pr(1, "agent/5-1", "s1")], issues=[issue(4)])
+    assert runs_of(go(Fake(control=True, control_comments=[cm("/pause", user="stranger")], **busy)))  # not the owner
+    assert runs_of(go(Fake(control=True, control_comments=[cm("please /pause")], **busy)))  # command must lead
+    r = go(Fake(control=GitHubError(500, "x", "boom"), **busy))
+    assert runs_of(r) == [] and "fail closed" in r["note"]
+    r = go(Fake(control=True, control_comments=[cm("hi")] * 100, **busy))
+    assert runs_of(r) == [] and "too long" in r["note"]

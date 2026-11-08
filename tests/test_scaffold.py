@@ -190,7 +190,7 @@ def test_a_makefile_check_is_written_only_when_there_is_none(tmp_path):
     assert statuses(make(tmp_path, {"uv.lock": "", "pyproject.toml": ""}), ctx(ecosystems=["uv"]))["Makefile"] == "create"
     root = make(tmp_path, {"Makefile": "all:\n\ttrue\n"}, name="has-makefile")
     c = core.read_ctx(root, "proj", "Ryan", True)
-    assert core.plan(root, ctx(ecosystems=["uv"], has_check=c.has_check))[-1].status == "exists"
+    assert statuses(root, ctx(ecosystems=["uv"], has_check=c.has_check))["Makefile"] == "exists"
     assert (root / "Makefile").read_text() == "all:\n\ttrue\n"
 
 
@@ -381,3 +381,46 @@ def test_the_report_shows_the_source_and_json_carries_it(tmp_path, capsys):
     assert "[public per portfolio (GitHub not asked or unreachable)]" in out
     _, js = run_fix(root, capsys, json=True, holder="Ryan Hamby")
     assert json.loads(js)["repos"][0]["visibility"].startswith("public per portfolio")
+
+
+# --- workflow templates ------------------------------------------------------------------------------------------------
+
+
+def test_every_action_in_the_workflow_templates_is_pinned_to_a_full_sha():
+    import re
+
+    from autopilot.scaffold import templates as t
+
+    for text in (t.CI_UV, t.RELEASE_UV):
+        uses = re.findall(r"uses:\s*(\S+)", text)
+        assert uses
+        assert all(re.fullmatch(r".+@[0-9a-f]{40}", u) for u in uses), uses
+
+
+def test_release_grants_id_token_to_the_publish_job_only():
+    import yaml
+
+    from autopilot.scaffold import templates as t
+
+    wf = yaml.safe_load(t.RELEASE_UV)
+    assert wf["permissions"] == {"contents": "read"}
+    assert "id-token" not in wf["jobs"]["build"].get("permissions", {})
+    assert wf["jobs"]["publish"]["permissions"] == {"id-token": "write"}
+    assert wf["jobs"]["publish"]["environment"] == "pypi"
+    assert wf[True]["push"]["tags"] == ["v*"]  # YAML reads the key `on` as boolean True
+
+
+def test_ci_and_release_are_gated_by_ecosystem_kind_and_visibility(tmp_path):
+    root = make(tmp_path, {})
+    uv = dict(ecosystems=["uv"], holder="R")
+    got = statuses(root, ctx(public=True, kind="library", **uv))
+    assert got[".github/workflows/ci.yml"] == "create" and got[".github/workflows/release.yml"] == "create"
+    assert statuses(root, ctx(public=False, kind="library", **uv))[".github/workflows/release.yml"] == "skip"
+    assert statuses(root, ctx(public=True, kind="app", **uv))[".github/workflows/release.yml"] == "skip"
+    assert statuses(root, ctx(public=True, kind="library", ecosystems=["npm"]))[".github/workflows/ci.yml"] == "skip"
+    assert statuses(root, ctx(public=True, kind="library", autopilot_managed=True, **uv))[".github/workflows/ci.yml"] == "skip"
+
+
+def test_any_existing_workflow_counts_as_ci(tmp_path):
+    root = make(tmp_path, {".github/workflows/test.yml": "name: t\n"})
+    assert statuses(root, ctx(ecosystems=["uv"]))[".github/workflows/ci.yml"] == "exists"

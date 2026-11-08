@@ -112,6 +112,67 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 """
 
+# Action pins were read from each repo's tags with `git ls-remote` on 2026-11-08; the comment names the tag. Tags can move,
+# which is why the workflow pins the commit. Refresh them with Dependabot's github-actions entry, not by hand.
+CHECKOUT = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4"
+SETUP_UV = "astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3"
+UPLOAD = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2"
+DOWNLOAD = "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2"
+PYPI_PUBLISH = "pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3"
+
+CI_UV = f"""name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: {CHECKOUT}
+      - uses: {SETUP_UV}
+      - run: uv sync --quiet
+      - run: make check
+"""
+
+# Trusted publishing (OIDC): no token is stored anywhere. `id-token: write` is on the publish job only, and that job waits
+# for a human to approve the `pypi` Environment. An agent can push neither the tag nor the approval.
+RELEASE_UV = f"""name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: {CHECKOUT}
+      - uses: {SETUP_UV}
+      - run: uv build
+      - uses: {UPLOAD}
+        with:
+          name: dist
+          path: dist/
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: {DOWNLOAD}
+        with:
+          name: dist
+          path: dist/
+      - uses: {PYPI_PUBLISH}
+"""
+
 MAKEFILE = {
     "uv": ".PHONY: check\ncheck:\n\tuv run ruff check .\n\tuv run pytest -q\n",
     "pip": ".PHONY: check\ncheck:\n\truff check .\n\tpytest -q\n",

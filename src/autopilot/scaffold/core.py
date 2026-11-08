@@ -149,6 +149,20 @@ def _makefile(ctx: Ctx) -> tuple[str, str] | None:
     return None
 
 
+def _uv_only(ctx: Ctx) -> tuple[str, str] | None:
+    return None if "uv" in ctx.ecosystems else ("skip", "only uv projects have a workflow template so far")
+
+
+def _ci(ctx: Ctx) -> tuple[str, str] | None:
+    return _unmanaged(ctx) or _uv_only(ctx)
+
+
+def _release(ctx: Ctx) -> tuple[str, str] | None:
+    if ctx.kind not in PACKAGE_KINDS:
+        return "skip", f"kind is {ctx.kind or 'unset'}, not a package"
+    return _public_only(ctx) or _uv_only(ctx)
+
+
 def _make_check(ctx: Ctx) -> str:
     return t.MAKEFILE[next(e for e in ctx.ecosystems if e in t.MAKEFILE)]
 
@@ -194,6 +208,15 @@ ITEMS: list[Item] = [
     Item(".github/ISSUE_TEMPLATE/bug.md", "templates-present", lambda c: t.ISSUE_BUG, _unmanaged, (".github/ISSUE_TEMPLATE/*",)),
     Item("CHANGELOG.md", None, lambda c: t.CHANGELOG, _changelog),
     Item("Makefile", "one-check-entrypoint", _make_check, _makefile),
+    # Any existing workflow counts as CI: a second competing ci.yml is worse than none.
+    Item(".github/workflows/ci.yml", "pinned-actions", lambda c: t.CI_UV, _ci, (".github/workflows/*.y*ml",)),
+    Item(
+        ".github/workflows/release.yml",
+        "pinned-actions",
+        lambda c: t.RELEASE_UV,
+        _release,
+        (".github/workflows/release*.y*ml", ".github/workflows/publish*.y*ml"),
+    ),
 ]
 
 

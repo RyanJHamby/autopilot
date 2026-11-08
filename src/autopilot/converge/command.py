@@ -8,7 +8,7 @@ import subprocess
 from datetime import date
 from pathlib import Path
 
-from autopilot.converge import core
+from autopilot.converge import core, issues
 
 
 def order(audits: list[core.Audit]) -> list[core.Audit]:
@@ -40,6 +40,11 @@ def render(audits: list[core.Audit], skipped: list[tuple[str, str]], errors: lis
     return "\n".join(lines)
 
 
+def in_scope(r: core.Listed, portfolio: dict, today: date) -> bool:
+    """Repos the job audits by default: anything in the portfolio, and anything created recently."""
+    return r.name in (portfolio.get("repos") or {}) or core.is_new(r.created_at, today)
+
+
 def cmd_converge(ns: argparse.Namespace, *, repo_name, load_portfolio, run=subprocess.run, today: date | None = None) -> int:
     portfolio = load_portfolio()
     owner = ns.owner or portfolio["owner"]
@@ -50,13 +55,18 @@ def cmd_converge(ns: argparse.Namespace, *, repo_name, load_portfolio, run=subpr
         print(f"ERROR cannot list {owner}'s repos: {e}")
         return 1
 
+    show_all = bool(getattr(ns, "all", False))
     skipped: list[tuple[str, str]] = []
     audits: list[core.Audit] = []
     errors: list[str] = []
+    outside = 0
     for r in sorted(listed, key=lambda x: x.name):
         why = core.gate(r, owner, portfolio)
         if why:
             skipped.append((r.name, why))
+            continue
+        if not show_all and not in_scope(r, portfolio, today):
+            outside += 1  # never cloned or read: an old repo nobody asked this job to look at
             continue
         path, tmp, err = core.checkout(r.name, owner, Path(ns.root).expanduser(), repo_name, run=run)
         if path is None:
@@ -71,13 +81,25 @@ def cmd_converge(ns: argparse.Namespace, *, repo_name, load_portfolio, run=subpr
             if tmp is not None:
                 tmp.cleanup()
 
+    ops = [issues.plan(a, owner, run) for a in order(audits) if a.in_portfolio or a.new]
+    failed = [o for o in ops if o.kind == "error"]
+    if getattr(ns, "apply", False):
+        for o in ops:
+            err = issues.apply(o, owner, run)
+            if err:
+                errors.append(f"{o.repo}: issue {o.kind} failed ({err})")
+    errors += [f"{o.repo}: {o.note}" for o in failed]
+
     if ns.json:
         print(
             json.dumps(
                 {
                     "owner": owner,
+                    "applied": bool(getattr(ns, "apply", False)),
                     "audits": [a.__dict__ for a in order(audits)],
+                    "issues": [o.__dict__ for o in ops],
                     "skipped": [{"repo": n, "why": w} for n, w in skipped],
+                    "outside_scope": outside,
                     "errors": errors,
                 },
                 indent=2,
@@ -85,4 +107,12 @@ def cmd_converge(ns: argparse.Namespace, *, repo_name, load_portfolio, run=subpr
         )
     else:
         print(render(audits, skipped, errors))
+        verb = "" if getattr(ns, "apply", False) else "would "
+        for o in ops:
+            if o.kind in ("create", "update", "close"):
+                print(f"  {verb}{o.kind} issue on {o.repo}: {o.title or o.note}")
+        if outside:
+            print(f"{outside} older repo(s) outside the portfolio were not audited; pass --all to include them")
+        if not getattr(ns, "apply", False) and any(o.kind in ("create", "update", "close") for o in ops):
+            print("dry run: no issue was filed. Re-run with --apply to file them.")
     return 1 if errors else 0

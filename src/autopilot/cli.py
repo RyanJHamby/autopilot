@@ -632,6 +632,12 @@ def cmd_standard_fix(ns: argparse.Namespace) -> int:
     return command.cmd_fix(ns, repo_name=repo_name, load_portfolio=load_portfolio)
 
 
+def cmd_standard_converge(ns: argparse.Namespace) -> int:
+    from autopilot.converge import command
+
+    return command.cmd_converge(ns, repo_name=repo_name, load_portfolio=load_portfolio)
+
+
 def cmd_trace(ns: argparse.Namespace) -> int:
     from autopilot import trace
 
@@ -1978,6 +1984,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--offline", action="store_true", help="never call gh (public/private then comes from the portfolio only)")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_standard_fix)
+    p = ssub.add_parser("converge", help="audit every repo the owner has on GitHub and report the ones that miss the standard (read-only)")
+    p.add_argument("--owner", help="GitHub owner (default: `owner:` in policy/portfolio.yaml)")
+    p.add_argument("--root", default="~/dev", help="where clones live; repos without one are audited from a shallow throwaway clone")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_standard_converge)
     p = sub.add_parser("trace", help="does a spec's pytest acceptance actually run and pass? reads JUnit XML (warn-only)")
     p.add_argument("spec")
     p.add_argument("--junit", required=True, help="pytest --junitxml output")

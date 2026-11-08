@@ -62,6 +62,11 @@ disagree.
 separate "repo kind" field, and this standard doesn't read a product's stage: stage belongs to the bets ledger, and
 reading it here would create a second policy file.
 
+A rule can also report `skip` when the repo has nothing for it to check. `dependency-updates` skips a repo with no
+manifests and no workflows, and `one-check-entrypoint` skips a repo with no manifests, workflows or Makefile (a
+docs-only repo, for example). A skip is shown as a skip, never as a pass, and a repo that has something to update or
+run but no config or check still fails.
+
 ## Waivers
 
 A repo that can't meet a rule yet needs a waiver. Waivers live in one central file, `policy/waivers.yaml` in the

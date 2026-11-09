@@ -53,5 +53,5 @@ any errors. `"ok": false`, or a stale `time`, means it needs a look. The log is 
 
 ## Not verified
 - That launchd fires on schedule and catches up after sleep (observable only after a week).
-- That `gh` is on the PATH that `zsh -lc` sees under launchd; check the log after the first scheduled run.
+- That `gh` and `git` are found under launchd. The first manual start (`launchctl start`) failed with exit 127, `uv: command not found`: launchd's login shell skips `.zshrc`, so `~/.local/bin` was missing. The plist now sets `PATH` itself (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`); re-run `launchctl start` and check the log.
 - That rulesets bind on private repos (depends on your GitHub plan).

@@ -519,6 +519,23 @@ def test_a_failed_pull_stops_the_job(tmp_path):
     assert r.returncode != 0 and "RAN-CONVERGE" not in r.stdout
 
 
+def test_the_job_finds_uv_without_a_zshrc(tmp_path):
+    """launchd's login shell skips .zshrc, so uv in ~/.local/bin was not found (exit 127). The command must set PATH itself."""
+    import plistlib
+    import subprocess
+
+    work, _ = _guard_repo(tmp_path)
+    home = tmp_path / "home"
+    (home / ".local/bin").mkdir(parents=True)
+    fake = home / ".local/bin/uv"
+    fake.write_text('#!/bin/sh\necho "FAKE-UV $@"\n')
+    fake.chmod(0o755)
+    cmd = plistlib.loads(PLIST.read_bytes())["ProgramArguments"][-1].replace("REPO_DIR", str(work))
+    r = subprocess.run(["sh", "-c", cmd], capture_output=True, text=True, env={"HOME": str(home), "PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    assert "FAKE-UV run ap standard converge --apply" in r.stdout
+
+
 # --- repos with issues disabled, and public repos ------------------------------------------------------------------------
 
 DISABLED_MSG = "the 'Ryan/mine' repository has disabled issues"

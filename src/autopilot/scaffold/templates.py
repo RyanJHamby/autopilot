@@ -138,6 +138,25 @@ jobs:
       - run: make check
 """
 
+# For a new repo with no package: one dependency-free check, so every repo has a status check a ruleset can require. It is a real
+# check (no key material or env files tracked), not a placeholder, and CI runs the same `make check` you run locally. The job id
+# (`check`) is what the ruleset requires; core.required_check names it and a test pins that they agree.
+CI_GENERIC = f"""name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: {CHECKOUT}
+      - run: make check
+"""
+
 # Trusted publishing (OIDC): no token is stored anywhere. `id-token: write` is on the publish job only, and that job waits
 # for a human to approve the `pypi` Environment. An agent can push neither the tag nor the approval.
 RELEASE_UV = f"""name: release
@@ -180,6 +199,17 @@ MAKEFILE = {
     "cargo": ".PHONY: check\ncheck:\n\tcargo test\n",
     "gomod": ".PHONY: check\ncheck:\n\tgo test ./...\n",
 }
+
+# The generic check for a repo with no package. `$$` is make's escape for a literal `$`. The Makefile excludes itself from the
+# key-material grep because the pattern text is in it. A test runs it with real make against a clean and a dirty repo.
+MAKEFILE_GENERIC = (
+    ".PHONY: check\ncheck:\n"
+    "\t@bad=$$(git ls-files | grep -E '(^|/)\\.env(\\.|$$)|\\.(pem|key|p12)$$|(^|/)id_(rsa|ed25519)' "
+    "| grep -v -E '\\.(example|sample|template)$$' || true); \\\n"
+    '\tif [ -n "$$bad" ]; then echo "tracked secret-like files:"; echo "$$bad"; exit 1; fi; \\\n'
+    "\tif git grep -I -n -e 'BEGIN [A-Z ]*PRIVATE KEY' -- . ':!.github' ':!Makefile'; "
+    'then echo "private key material is tracked"; exit 1; fi\n'
+)
 
 JUSTFILE = {
     "uv": "# Run the tests\ntest:\n\tuv run pytest -q\n\n# Lint the code\nlint:\n\tuv run ruff check .\n",

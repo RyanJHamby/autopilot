@@ -36,6 +36,22 @@ your steps: `pow init`, a signed commit, `gh repo create`, then the portfolio en
 afterwards are `journal-present` and `thin-claude-md`, which `pow init` and `AGENTS.md` cover. Private is the default; `--public`
 adds LICENSE, SECURITY and CONTRIBUTING and needs a holder.
 
+Every new repo has a status check a ruleset can require: a library or cli reports the `test` job, and an app or notes repo gets a
+Makefile `check` (no tracked env or key material) and a CI job named `check` that runs it. `core.required_check` names the job, and
+a test pins it to the generated workflow, because a required check that never reports blocks every merge. The template itself
+carries no CI: it serves repos of every kind, so a repo made from the template button has no check to require, and the admin doctor
+flags it. Use `ap new` for new repos.
+
+### `--create`: the whole way, owner-run
+`ap new NAME --kind K [--public] --create` also makes the signed first commit, runs `gh repo create --push` (private unless
+`--public`), applies the `autopilot-main` ruleset with only that repo's own CI job required (never autopilot's `guard`, which a repo
+that is not autopilot-managed does not have), then reads the ruleset back from GitHub and fails if it is narrower than asked. It
+checks before touching anything outward that commit signing is on and that the required job exists in the generated workflow. If a
+step fails it says exactly what now exists (for example "EXISTS BUT IS UNPROTECTED" with the fix command). Run it yourself: agents
+are denied `gh`. It was tested with a fake `gh`, not against real GitHub. On a free GitHub plan, rulesets are not available on private
+repos, so the ruleset step fails there and the message says so. For an existing repo use `ap ruleset REPO --standalone --check JOB --apply`.
+The admin doctor discovers repos from GitHub, so nothing needs registering for a repo to be audited.
+
 ## Not verified
 - How GitHub renders a template into a new repo (not tried until the repo exists).
 - That regenerating the template is a step anyone remembers: `converge` is the backstop, not this.

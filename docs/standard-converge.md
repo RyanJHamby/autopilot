@@ -30,16 +30,22 @@ respects every gate, errors on a name that is not on GitHub, and never files int
 The job needs your own `gh` login to see private repos, so it runs on your Mac, not in the cloud: the apx GitHub App is installed
 on three repos only and `github.token` sees one repo. No token is stored anywhere.
 
+Install it from a **dedicated clean clone that nothing else touches**, not from the checkout you work in. Your working checkout is on
+a feature branch or has uncommitted changes most of the time, and the job refuses to run from such a checkout (see below), so it
+would silently never run:
+
 ```
-sed "s|REPO_DIR|$PWD|" deploy/launchd/com.autopilot.standard.converge.plist > ~/Library/LaunchAgents/com.autopilot.standard.converge.plist
+git clone https://github.com/RyanJHamby/autopilot.git ~/.autopilot/converge-checkout
+(cd ~/.autopilot/converge-checkout && uv sync --quiet)
+sed "s|REPO_DIR|$HOME/.autopilot/converge-checkout|" ~/.autopilot/converge-checkout/deploy/launchd/com.autopilot.standard.converge.plist > ~/Library/LaunchAgents/com.autopilot.standard.converge.plist
 launchctl load ~/Library/LaunchAgents/com.autopilot.standard.converge.plist
 ```
 It runs Mondays at 09:00 (on wake if the Mac was asleep). Installing it files nothing; the first run is the next Monday.
 
 The job runs whatever code `REPO_DIR` has checked out, so it guards itself: it runs only if that checkout is on `main` with no
 uncommitted changes to tracked files (untracked files are ignored), and it pulls `main` first. Otherwise it prints why to the log
-and exits without running, so `last.json` goes stale. Install it from a checkout you keep on `main`, or from a separate clean clone
-that you only ever pull.
+and exits without running, so `last.json` goes stale. A dedicated clone that you only ever pull never trips that guard. To see
+that it ran, check `~/.autopilot/converge/last.json` (`ok`, and its timestamp) after the first Monday: a stale file means it did not.
 
 ## Did it work?
 `~/.autopilot/converge/last.json` records the last `--apply` run: `ok`, `exit`, counts of issues created, updated and closed, and

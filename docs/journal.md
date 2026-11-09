@@ -408,3 +408,7 @@ Phase 4: ap standard template renders the generic hygiene layer (9 files) from c
 ## 2026-11-09 10:56 EST (at 71251a5)
 
 Phase 5: ap new NAME --kind library|cli|app|notes: mkdir, git init -b main, the files ap standard fix would write; no commit, nothing on GitHub, prints the owner steps. Found while trying it: the skeleton README lacked the 'How this was built' heading, so a brand-new library failed how-this-was-built; fixed in templates.readme (the scaffolder), not in ap new. Only journal-present and thin-claude-md still fail on a new repo of any kind (pow init / AGENTS.md). Mutants: no cleanup on failure, no README heading, an empty commit: each turned tests red (1, 5, 2 failures). Full suite 1299 passed.
+
+## 2026-11-09 11:08 EST (at d1bedad)
+
+Phase 6 (real runs): created private RyanJHamby/repo-template from ap standard template via an owner script (isTemplate true, PRIVATE). First attempt via the ! runner exited silently at the confirm prompt (no tty, read hit EOF under set -e), so I added a CONFIRM=yes env path; nothing was created by the first attempt. Made scratch-check from the template: GitHub rendered all 9 files, CODEOWNERS kept '@RyanJHamby', no @@ placeholders. ap standard converge --only scratch-check (dry run): NEW, private, 2 gaps (journal-present, thin-claude-md), exactly the two that pow init and AGENTS.md cover. Not done: launchd job not installed or fired; ap new not run for real; scratch-check repo and clone still to be deleted by the owner.

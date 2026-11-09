@@ -36,6 +36,11 @@ launchctl load ~/Library/LaunchAgents/com.autopilot.standard.converge.plist
 ```
 It runs Mondays at 09:00 (on wake if the Mac was asleep). Installing it files nothing; the first run is the next Monday.
 
+The job runs whatever code `REPO_DIR` has checked out, so it guards itself: it runs only if that checkout is on `main` with no
+uncommitted changes to tracked files (untracked files are ignored), and it pulls `main` first. Otherwise it prints why to the log
+and exits without running, so `last.json` goes stale. Install it from a checkout you keep on `main`, or from a separate clean clone
+that you only ever pull.
+
 ## Did it work?
 `~/.autopilot/converge/last.json` records the last `--apply` run: `ok`, `exit`, counts of issues created, updated and closed, and
 any errors. `"ok": false`, or a stale `time`, means it needs a look. The log is `/tmp/standard-converge.log`.

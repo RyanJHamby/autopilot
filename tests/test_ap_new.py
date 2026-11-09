@@ -46,7 +46,8 @@ def test_private_repos_get_no_public_only_files(tmp_path):
 def test_only_the_pow_steps_still_fail_the_standard(tmp_path, kind):
     path, _, _ = make(tmp_path, kind=kind)
     failed = {r.id for r in engine.run(engine.Repo(path, github_public=True)) if r.result == "fail"}
-    assert failed == POW_STEPS
+    # Kinds with no package ecosystem get no justfile to scaffold, so their commands are an owner step too.
+    assert failed == POW_STEPS | ({"commands-documented"} if kind in ("app", "notes") else set())
 
 
 def test_git_is_initialised_on_main_with_no_commit(tmp_path):

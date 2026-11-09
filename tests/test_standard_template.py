@@ -21,8 +21,9 @@ EXPECTED = [
     "README.md",
     "SECURITY.md",
 ]
-# Rules the template does not serve: they belong to `pow init` (journal) and to AGENTS.md/CLAUDE.md, which come per repo.
-NOT_SERVED = {"journal-present", "thin-claude-md"}
+# Rules the template does not serve: they belong to `pow init` (journal), to AGENTS.md/CLAUDE.md, and to the justfile
+# (commands-documented), all of which come per repo.
+NOT_SERVED = {"journal-present", "thin-claude-md", "commands-documented"}
 
 
 def build(tmp_path: Path, owner="octo", holder="Octo Cat") -> tuple[Path, list[str]]:

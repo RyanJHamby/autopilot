@@ -132,6 +132,14 @@ checks:
     why: A template says what a change needs to show before a reviewer reads it. Whether that helps is unproven.
     fix: Run `ap standard fix REPO`, or add `.github/pull_request_template.md` and `.github/ISSUE_TEMPLATE/`.
 
+  - id: commands-documented
+    title: The repo says how to run it (a justfile, or an AGENTS.md `## Commands` section)
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: Devbook indexes each repo's own commands, and a person or agent returning after weeks needs them. Without either, the index has nothing for the repo.
+    fix: Run `ap standard fix REPO` to scaffold a justfile, then replace the stub recipes with the real commands.
+
   - id: security-policy
     title: Public repos have a SECURITY.md
     level: warn

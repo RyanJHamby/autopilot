@@ -50,6 +50,7 @@ A rule's **level** says what a failing result does to the run: `fail` exits non-
 | `dependency-updates` | warn | advisory | all |
 | `gitignore-present` | warn | advisory | all |
 | `templates-present` | warn | advisory | all |
+| `commands-documented` | warn | advisory | all |
 | `security-policy` | warn | advisory | public repos |
 | `contributing-present` | warn | advisory | public repos |
 

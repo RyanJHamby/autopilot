@@ -404,3 +404,7 @@ owner patch: dependency-updates and one-check-entrypoint now skip a repo with no
 ## 2026-11-09 10:48 EST (at b642c24)
 
 Phase 4: ap standard template renders the generic hygiene layer (9 files) from core.plan for a synthetic public repo, so it cannot drift from the scaffolder. Drift test pins the file list and runs the standard's rules over the output; two mutants (private ctx, library kind) both turned it red. Left out on purpose: pyproject, Makefile, CI, release (per-repo values). journal-present and thin-claude-md still fail on a fresh template: they belong to pow init and AGENTS.md. Creating the GitHub repo is an owner script; nothing was created.
+
+## 2026-11-09 10:56 EST (at 71251a5)
+
+Phase 5: ap new NAME --kind library|cli|app|notes: mkdir, git init -b main, the files ap standard fix would write; no commit, nothing on GitHub, prints the owner steps. Found while trying it: the skeleton README lacked the 'How this was built' heading, so a brand-new library failed how-this-was-built; fixed in templates.readme (the scaffolder), not in ap new. Only journal-present and thin-claude-md still fail on a new repo of any kind (pow init / AGENTS.md). Mutants: no cleanup on failure, no README heading, an empty commit: each turned tests red (1, 5, 2 failures). Full suite 1299 passed.

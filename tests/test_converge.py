@@ -438,6 +438,87 @@ def test_the_launchd_job_is_weekly_files_nothing_at_install_and_stores_no_secret
     assert "--all" not in command_line  # the schedule never widens its scope
 
 
+def _guard_repo(tmp_path):
+    """A clone on main with a local origin, plus the plist's shell command pointed at it with the real converge call swapped for echo."""
+    import plistlib
+    import subprocess
+
+    def git(*a, cwd):
+        subprocess.run(["git", "-c", "commit.gpgsign=false", *a], cwd=cwd, check=True, capture_output=True)
+
+    origin, work = tmp_path / "origin.git", tmp_path / "work"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True)
+    git("clone", "-q", str(origin), str(work), cwd=tmp_path)
+    git("checkout", "-q", "-b", "main", cwd=work)
+    (work / "f.txt").write_text("1")
+    git("add", "f.txt", cwd=work)
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "one", cwd=work)
+    git("push", "-q", "-u", "origin", "main", cwd=work)
+    cmd = plistlib.loads(PLIST.read_bytes())["ProgramArguments"][-1]
+    assert "uv run ap standard converge --apply" in cmd
+    return work, cmd.replace("REPO_DIR", str(work)).replace("uv run ap standard converge --apply", "echo RAN-CONVERGE")
+
+
+def _sh(cmd):
+    import subprocess
+
+    return subprocess.run(["sh", "-c", cmd], capture_output=True, text=True)
+
+
+def test_the_job_runs_from_a_clean_main(tmp_path):
+    _, cmd = _guard_repo(tmp_path)
+    r = _sh(cmd)
+    assert r.returncode == 0 and "RAN-CONVERGE" in r.stdout
+
+
+def test_the_job_refuses_a_feature_branch(tmp_path):
+    import subprocess
+
+    work, cmd = _guard_repo(tmp_path)
+    subprocess.run(["git", "checkout", "-q", "-b", "feat/x"], cwd=work, check=True)
+    r = _sh(cmd)
+    assert r.returncode != 0 and "RAN-CONVERGE" not in r.stdout and "not on main" in r.stdout
+
+
+def test_the_job_refuses_uncommitted_changes_to_tracked_files(tmp_path):
+    work, cmd = _guard_repo(tmp_path)
+    (work / "f.txt").write_text("edited")
+    r = _sh(cmd)
+    assert r.returncode != 0 and "RAN-CONVERGE" not in r.stdout and "uncommitted" in r.stdout
+
+
+def test_untracked_files_do_not_block_the_job(tmp_path):
+    work, cmd = _guard_repo(tmp_path)
+    (work / "key.pub").write_text("x")
+    assert "RAN-CONVERGE" in _sh(cmd).stdout
+
+
+def test_the_job_pulls_main_before_running(tmp_path):
+    import subprocess
+
+    work, cmd = _guard_repo(tmp_path)
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", str(tmp_path / "origin.git"), str(other)], check=True, capture_output=True)
+    (other / "g.txt").write_text("2")
+    for a in (
+        ["add", "g.txt"],
+        ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "two"],
+        ["push", "-q", "origin", "main"],
+    ):
+        subprocess.run(["git", *a], cwd=other, check=True, capture_output=True)
+    assert "RAN-CONVERGE" in _sh(cmd).stdout
+    assert (work / "g.txt").exists()
+
+
+def test_a_failed_pull_stops_the_job(tmp_path):
+    import shutil
+
+    work, cmd = _guard_repo(tmp_path)
+    shutil.rmtree(tmp_path / "origin.git")
+    r = _sh(cmd)
+    assert r.returncode != 0 and "RAN-CONVERGE" not in r.stdout
+
+
 # --- repos with issues disabled, and public repos ------------------------------------------------------------------------
 
 DISABLED_MSG = "the 'Ryan/mine' repository has disabled issues"

@@ -400,3 +400,7 @@ converge: --only REPO (repeatable) so the first real --apply is one issue Ryan c
 ## 2026-11-08 14:37 EST (at d036eec)
 
 owner patch: dependency-updates and one-check-entrypoint now skip a repo with nothing for them to check (no manifests/workflows; no manifests/workflows/Makefile). Reason: converge filed fillcast issue 3 for two gaps that ap standard fix correctly declines to fix and that could never close, so docs-only repos would keep an issue open forever. Script tested on git-archive copies: first version broke two existing tests that assumed an empty dir fails (found by running the whole suite on the copy, not just the new tests), and I introduced bad escapes in the script while fixing that; both fixed. A test ties the engine's something-to-update to the scaffolder's. Not verified: the converge close path against real GitHub (fillcast issue 3 should close on the next --apply).
+
+## 2026-11-09 10:48 EST (at b642c24)
+
+Phase 4: ap standard template renders the generic hygiene layer (9 files) from core.plan for a synthetic public repo, so it cannot drift from the scaffolder. Drift test pins the file list and runs the standard's rules over the output; two mutants (private ctx, library kind) both turned it red. Left out on purpose: pyproject, Makefile, CI, release (per-repo values). journal-present and thin-claude-md still fail on a fresh template: they belong to pow init and AGENTS.md. Creating the GitHub repo is an owner script; nothing was created.

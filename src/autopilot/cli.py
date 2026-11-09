@@ -638,6 +638,12 @@ def cmd_standard_template(ns: argparse.Namespace) -> int:
     return template.cmd_template(ns, load_portfolio=load_portfolio)
 
 
+def cmd_new(ns: argparse.Namespace) -> int:
+    from autopilot.scaffold import new
+
+    return new.cmd_new(ns, load_portfolio=load_portfolio)
+
+
 def cmd_standard_converge(ns: argparse.Namespace) -> int:
     from autopilot.converge import command
 
@@ -2003,6 +2009,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--only", action="append", metavar="REPO", help="audit (and with --apply, file for) just this repo; repeatable")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_standard_converge)
+    p = sub.add_parser("new", help="start a new local repo on the standard (mkdir, git init, the standard files); makes no commit and nothing on GitHub")
+    p.add_argument("name", help="repo name, e.g. my-tool")
+    p.add_argument("--kind", required=True, choices=["library", "cli", "app", "notes"], help="what the repo is")
+    p.add_argument("--public", action="store_true", help="plan it as a public repo (LICENSE, SECURITY, CONTRIBUTING); default private")
+    p.add_argument("--root", default="~/dev", help="where the new directory goes (default ~/dev)")
+    p.add_argument("--owner", help="GitHub owner (default: `owner:` in policy/portfolio.yaml)")
+    p.add_argument("--holder", help="copyright holder for LICENSE (default: `holder:` in policy/portfolio.yaml)")
+    p.set_defaults(fn=cmd_new)
     p = sub.add_parser("trace", help="does a spec's pytest acceptance actually run and pass? reads JUnit XML (warn-only)")
     p.add_argument("spec")
     p.add_argument("--junit", required=True, help="pytest --junitxml output")

@@ -359,6 +359,15 @@ def templates_present(repo: Repo) -> Outcome:
     return ("fail", [f"no {n}" for n in missing]) if missing else _ok()
 
 
+def commands_documented(repo: Repo) -> Outcome:
+    if _first_file(repo, ("justfile", "Justfile", ".justfile"), "justfile")[0] == "pass":
+        return _ok()
+    agents = repo.path / "AGENTS.md"
+    if agents.is_file() and re.search(r"^## Commands\b", agents.read_text(encoding="utf-8", errors="replace"), re.M):
+        return _ok()
+    return ("fail", ["no justfile and no `## Commands` section in AGENTS.md"])
+
+
 def security_policy(repo: Repo) -> Outcome:
     return _first_file(repo, ("SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"), "SECURITY.md")
 
@@ -384,6 +393,7 @@ CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "dependency-updates": dependency_updates,
     "gitignore-present": gitignore_present,
     "templates-present": templates_present,
+    "commands-documented": commands_documented,
     "security-policy": security_policy,
     "contributing-present": contributing_present,
 }

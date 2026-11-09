@@ -3,6 +3,7 @@
 <!-- The OWNER's weekly standard check (a LaunchAgent, runs as you, not as apx). Monday 09:00: it runs `ap standard converge` with its apply flag,
      which audits the portfolio plus repos created in the last 14 days and files, edits or closes ONE `standard-gap` issue per repo.
      It never pushes, never opens a PR, never touches a default branch. It uses your own `gh` login: no token is stored anywhere.
+     It sets PATH itself (launchd's login shell does not read .zshrc, so uv in ~/.local/bin and gh in /opt/homebrew/bin are otherwise not found).
      It runs only from a checkout that is on main with no uncommitted changes to tracked files, and pulls main first: otherwise it prints why and exits.
      If the Mac is asleep at 09:00 launchd runs it on wake. RunAtLoad is false on purpose: installing it files nothing.
      How it went: ~/.autopilot/converge/last.json (ok, counts, errors); the log is /tmp/standard-converge.log.
@@ -17,7 +18,7 @@
   <array>
     <string>/bin/zsh</string>
     <string>-lc</string>
-    <string>cd REPO_DIR &amp;&amp; { [ "$(git branch --show-current)" = main ] || { echo "converge: REPO_DIR is not on main; not running"; exit 1; }; } &amp;&amp; { [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "converge: REPO_DIR has uncommitted changes to tracked files; not running"; exit 1; }; } &amp;&amp; git pull --ff-only -q origin main &amp;&amp; uv run ap standard converge --apply</string>
+    <string>export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH" &amp;&amp; cd REPO_DIR &amp;&amp; { [ "$(git branch --show-current)" = main ] || { echo "converge: REPO_DIR is not on main; not running"; exit 1; }; } &amp;&amp; { [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "converge: REPO_DIR has uncommitted changes to tracked files; not running"; exit 1; }; } &amp;&amp; git pull --ff-only -q origin main &amp;&amp; uv run ap standard converge --apply</string>
   </array>
   <key>StartCalendarInterval</key>
   <dict>

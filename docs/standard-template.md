@@ -28,6 +28,14 @@ A private template works for its owner; the public-only files in it are harmless
 Use it: `gh repo create NAME --private --template OWNER/repo-template`, or "Use this template" on GitHub.
 Regenerate after the scaffolder changes: render into a fresh directory, diff against the template repo, commit there.
 
+## Starting a project with the right shape: `ap new`
+The template cannot know the package name or kind, so `ap new NAME --kind library|cli|app|notes [--public]` does the per-repo part
+locally: `mkdir`, `git init -b main`, and the files `ap standard fix` would write (a package skeleton, CI and release for a
+library or cli; the generic layer for an app or notes). It makes no commit, creates nothing on GitHub and pushes nothing. It prints
+your steps: `pow init`, a signed commit, `gh repo create`, then the portfolio entry and ruleset. The only rules still failing
+afterwards are `journal-present` and `thin-claude-md`, which `pow init` and `AGENTS.md` cover. Private is the default; `--public`
+adds LICENSE, SECURITY and CONTRIBUTING and needs a holder.
+
 ## Not verified
 - How GitHub renders a template into a new repo (not tried until the repo exists).
 - That regenerating the template is a step anyone remembers: `converge` is the backstop, not this.

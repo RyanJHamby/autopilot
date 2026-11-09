@@ -525,25 +525,75 @@ def _slug(ns_repo: str, owner: str) -> str:
     return ns_repo if "/" in ns_repo else f"{owner}/{ns_repo}"
 
 
-def cmd_ruleset(ns: argparse.Namespace) -> int:
-    slug = _slug(ns.repo, load_portfolio()["owner"])
-    # a reusable-workflow job reports as "<caller job> / <called job>"
-    body = ruleset_json(["guard / guard" if ns.central else "guard"] + ns.check)
-    if not ns.apply:
-        print(f"[dry run] would POST (or PUT if it exists) to repos/{slug}/rulesets:\n{json.dumps(body, indent=2)}")
-        return 0
-    # update in place if the ruleset exists (a second POST would add a duplicate or 422)
-    found = json.loads(_run("gh", "api", f"repos/{slug}/rulesets", check=False) or "[]")
+def apply_ruleset(slug: str, checks: list[str], run=subprocess.run) -> tuple[int, str]:
+    """POST the ruleset, or PUT it in place if one with the same name exists (a second POST would add a duplicate or 422).
+    Returns (exit code, gh's output or error)."""
+    body = ruleset_json(checks)
+    listing = run(["gh", "api", f"repos/{slug}/rulesets"], capture_output=True, text=True)
+    try:
+        found = json.loads(listing.stdout or "[]") if listing.returncode == 0 else []
+    except ValueError:
+        found = []
     rid = next((x["id"] for x in found if isinstance(x, dict) and x.get("name") == body["name"]), None)
     url, method = (f"repos/{slug}/rulesets/{rid}", "PUT") if rid else (f"repos/{slug}/rulesets", "POST")
-    r = subprocess.run(
-        ["gh", "api", url, "--method", method, "--input", "-"],
-        input=json.dumps(body),
-        text=True,
-        capture_output=True,
-    )
-    print(r.stdout or r.stderr)
-    return r.returncode
+    r = run(["gh", "api", url, "--method", method, "--input", "-"], input=json.dumps(body), text=True, capture_output=True)
+    return r.returncode, (r.stdout or r.stderr)
+
+
+def verify_ruleset(slug: str, checks: list[str], run=subprocess.run) -> list[str]:
+    """Read the ruleset back from GitHub and say what is wrong with it (empty list = it is what we asked for). Applying is not
+    proof: a 200 from a PUT that was silently narrowed, or a plan that cannot enforce a rule, would otherwise pass."""
+    want = ruleset_json(checks)
+    listing = run(["gh", "api", f"repos/{slug}/rulesets"], capture_output=True, text=True)
+    if listing.returncode != 0:
+        return [f"cannot read rulesets back: {(listing.stderr or listing.stdout).strip()[:160]}"]
+    try:
+        found = json.loads(listing.stdout or "[]")
+    except ValueError:
+        return ["cannot read rulesets back: unparseable response"]
+    rid = next((x["id"] for x in found if isinstance(x, dict) and x.get("name") == want["name"]), None)
+    if rid is None:
+        return [f"ruleset {want['name']!r} is not present after applying it"]
+    detail = run(["gh", "api", f"repos/{slug}/rulesets/{rid}"], capture_output=True, text=True)
+    try:
+        got = json.loads(detail.stdout or "{}") if detail.returncode == 0 else {}
+    except ValueError:
+        got = {}
+    if not got:
+        return ["cannot read the ruleset's rules back"]
+    problems = []
+    if got.get("enforcement") != "active":
+        problems.append(f"enforcement is {got.get('enforcement')!r}, not 'active'")
+    have = {r.get("type"): r for r in got.get("rules") or []}
+    for r in want["rules"]:
+        if r["type"] not in have:
+            problems.append(f"rule {r['type']!r} is missing")
+    have_checks = {
+        c.get("context") for c in (have.get("required_status_checks", {}).get("parameters") or {}).get("required_status_checks", [])
+    }
+    for c in checks:
+        if c not in have_checks:
+            problems.append(f"required check {c!r} is missing (have {sorted(x for x in have_checks if x)})")
+    return problems
+
+
+def cmd_ruleset(ns: argparse.Namespace) -> int:
+    slug = _slug(ns.repo, load_portfolio()["owner"])
+    if getattr(ns, "standalone", False):  # onboard --finish builds its own namespace, always for managed repos
+        # not autopilot-managed: there is no `guard` job, and requiring one would block every merge
+        checks = list(ns.check)
+        if not checks:
+            print("ERROR --standalone needs at least one --check (the CI job the repo reports, e.g. test or check)")
+            return 1
+    else:
+        # a reusable-workflow job reports as "<caller job> / <called job>"
+        checks = ["guard / guard" if ns.central else "guard"] + ns.check
+    if not ns.apply:
+        print(f"[dry run] would POST (or PUT if it exists) to repos/{slug}/rulesets:\n{json.dumps(ruleset_json(checks), indent=2)}")
+        return 0
+    rc, text = apply_ruleset(slug, checks)
+    print(text)
+    return rc
 
 
 def cmd_vars(ns: argparse.Namespace) -> int:
@@ -2016,6 +2066,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--root", default="~/dev", help="where the new directory goes (default ~/dev)")
     p.add_argument("--owner", help="GitHub owner (default: `owner:` in policy/portfolio.yaml)")
     p.add_argument("--holder", help="copyright holder for LICENSE (default: `holder:` in policy/portfolio.yaml)")
+    p.add_argument("--create", action="store_true", help="owner-run, outward-facing: signed first commit, create the GitHub repo, push, apply and verify the ruleset")
     p.set_defaults(fn=cmd_new)
     p = sub.add_parser("trace", help="does a spec's pytest acceptance actually run and pass? reads JUnit XML (warn-only)")
     p.add_argument("spec")
@@ -2128,6 +2179,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("repo")
     p.add_argument("--check", action="append", default=[], help="extra required check name, e.g. ci")
     p.add_argument("--central", action="store_true", help="repo uses the shared kit (check is named 'guard / guard')")
+    p.add_argument("--standalone", action="store_true", help="repo is not autopilot-managed: require only the --check jobs, not `guard`")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_ruleset)
     for c in ("enable", "pause", "resume"):

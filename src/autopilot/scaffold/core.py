@@ -153,6 +153,8 @@ def _changelog(ctx: Ctx) -> tuple[str, str] | None:
 def _makefile(ctx: Ctx) -> tuple[str, str] | None:
     if ctx.has_check:
         return "skip", "a check entrypoint already exists"
+    if _generic_new(ctx):
+        return None
     if not any(e in t.MAKEFILE for e in ctx.ecosystems):
         return "skip", "no known ecosystem to write a check command for"
     return None
@@ -170,8 +172,23 @@ def _uv_only(ctx: Ctx) -> tuple[str, str] | None:
     return None if "uv" in ctx.ecosystems else ("skip", "only uv projects have a workflow template so far")
 
 
+def _generic_new(ctx: Ctx) -> bool:
+    """A brand-new repo with no package. It gets a generic `make check` and a CI job that runs it, so a ruleset has a status check
+    to require. An existing repo, and the template (used for repos of every kind), are left alone: their CI is their owner's."""
+    return ctx.empty and not ctx.ecosystems
+
+
 def _ci(ctx: Ctx) -> tuple[str, str] | None:
-    return _unmanaged(ctx) or _uv_only(ctx)
+    skip = _unmanaged(ctx)
+    if skip or "uv" in ctx.ecosystems:
+        return skip
+    return None if _generic_new(ctx) else _uv_only(ctx)
+
+
+def required_check(kind: str | None) -> str:
+    """The CI job id a new repo's ruleset requires. It must be a job in the workflow `ap new` writes; a test pins that, because a
+    required check that never reports blocks every merge."""
+    return "test" if kind in PACKAGE_KINDS else "check"
 
 
 def _release(ctx: Ctx) -> tuple[str, str] | None:
@@ -218,6 +235,8 @@ def layout_notes(root: Path, ctx: Ctx) -> list[str]:
 
 
 def _make_check(ctx: Ctx) -> str:
+    if _generic_new(ctx):
+        return t.MAKEFILE_GENERIC
     return t.MAKEFILE[next(e for e in ctx.ecosystems if e in t.MAKEFILE)]
 
 
@@ -268,7 +287,13 @@ ITEMS: list[Item] = [
     Item("Makefile", "one-check-entrypoint", _make_check, _makefile),
     Item("justfile", "commands-documented", _just_commands, _justfile, ("Justfile",)),
     # Any existing workflow counts as CI: a second competing ci.yml is worse than none.
-    Item(".github/workflows/ci.yml", "pinned-actions", lambda c: t.CI_UV, _ci, (".github/workflows/*.y*ml",)),
+    Item(
+        ".github/workflows/ci.yml",
+        "pinned-actions",
+        lambda c: t.CI_UV if "uv" in c.ecosystems else t.CI_GENERIC,
+        _ci,
+        (".github/workflows/*.y*ml",),
+    ),
     Item(
         ".github/workflows/release.yml",
         "pinned-actions",

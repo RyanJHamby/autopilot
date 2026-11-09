@@ -1,6 +1,6 @@
 ---
 id: scaffold-justfile
-status: ready
+status: done
 issue: 210
 goal: "`ap standard fix` offers a stub `justfile` (rule id `commands-documented`) to any repo that has neither a justfile nor an AGENTS.md `## Commands` section, so every repo has run/test commands a catalog can index."
 acceptance:
@@ -47,3 +47,4 @@ Owner follow-up (not for the agent): add `commands-documented` as a `warn` rule 
 ## Log
 - 2026-11-08 draft; failing test written first (12 fail without the xfail marker: no justfile item exists)
 - 2026-11-08 ready, issue #210
+- 2026-11-09 done: scaffolder item merged in #216; the rule went live as a warn in #225. The id stays in PROPOSED_RULES, as the other live scaffolder rules do, so the owner follow-up above is only half needed

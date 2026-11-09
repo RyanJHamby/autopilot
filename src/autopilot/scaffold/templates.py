@@ -275,3 +275,11 @@ def smoke_test(pkg: str) -> str:
 
 def readme(name: str) -> str:
     return f"# {name}\n\nTODO: what this is, how to install it, one example.\n"
+
+
+def template_readme() -> str:
+    """README for the generated template repo. Every new repo made from it starts with the heading the standard looks for."""
+    return (
+        "# TODO: name\n\nTODO: what this is, how to install it, one example.\n\n"
+        "## How this was built\n\nTODO: say plainly how AI assistance was used, and keep it accurate.\n"
+    )

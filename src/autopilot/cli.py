@@ -632,6 +632,12 @@ def cmd_standard_fix(ns: argparse.Namespace) -> int:
     return command.cmd_fix(ns, repo_name=repo_name, load_portfolio=load_portfolio)
 
 
+def cmd_standard_template(ns: argparse.Namespace) -> int:
+    from autopilot.scaffold import template
+
+    return template.cmd_template(ns, load_portfolio=load_portfolio)
+
+
 def cmd_standard_converge(ns: argparse.Namespace) -> int:
     from autopilot.converge import command
 
@@ -1984,6 +1990,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--offline", action="store_true", help="never call gh (public/private then comes from the portfolio only)")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_standard_fix)
+    p = ssub.add_parser("template", help="render the generic hygiene layer into a new directory, to publish as a GitHub template repo")
+    p.add_argument("out_dir", help="a new or empty directory")
+    p.add_argument("--owner", help="GitHub owner (default: `owner:` in policy/portfolio.yaml)")
+    p.add_argument("--holder", help="copyright holder for LICENSE (default: `holder:` in policy/portfolio.yaml)")
+    p.set_defaults(fn=cmd_standard_template)
     p = ssub.add_parser("converge", help="audit every repo the owner has on GitHub and report the ones that miss the standard (read-only)")
     p.add_argument("--owner", help="GitHub owner (default: `owner:` in policy/portfolio.yaml)")
     p.add_argument("--root", default="~/dev", help="where clones live; repos without one are audited from a shallow throwaway clone")

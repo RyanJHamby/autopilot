@@ -82,16 +82,19 @@ def cmd_converge(
         return 1
 
     show_all = bool(getattr(ns, "all", False))
+    only = set(getattr(ns, "only", None) or [])
     skipped: list[tuple[str, str]] = []
     audits: list[core.Audit] = []
     errors: list[str] = []
     outside = 0
     for r in sorted(listed, key=lambda x: x.name):
+        if only and r.name not in only:
+            continue  # --only: nothing else is cloned, read or reported
         why = core.gate(r, owner, portfolio)
         if why:
             skipped.append((r.name, why))
             continue
-        if not show_all and not in_scope(r, portfolio, today):
+        if not only and not show_all and not in_scope(r, portfolio, today):
             outside += 1  # never cloned or read: an old repo nobody asked this job to look at
             continue
         path, tmp, err = core.checkout(r.name, owner, Path(ns.root).expanduser(), repo_name, run=run)
@@ -107,7 +110,10 @@ def cmd_converge(
             if tmp is not None:
                 tmp.cleanup()
 
+    for name in sorted(only - {r.name for r in listed}):
+        errors.append(f"--only {name}: no such repo among {owner}'s repos on GitHub")
     ops = [issues.plan(a, owner, run) for a in order(audits) if a.in_portfolio or a.new]
+    ineligible = [a.name for a in audits if not (a.in_portfolio or a.new)]
     failed = [o for o in ops if o.kind == "error"]
     if getattr(ns, "apply", False):
         for o in ops:
@@ -139,6 +145,8 @@ def cmd_converge(
                 print(f"  {verb}{o.kind} issue on {o.repo}: {o.title or o.note}")
             elif o.kind == "disabled":
                 print(f"  no issue on {o.repo}: {o.note}")
+        for name in ineligible:
+            print(f"  no issue on {name}: not in the portfolio and not new, so the job never files into it")
         if outside:
             print(f"{outside} older repo(s) outside the portfolio were not audited; pass --all to include them")
         if not getattr(ns, "apply", False) and any(o.kind in ("create", "update", "close") for o in ops):

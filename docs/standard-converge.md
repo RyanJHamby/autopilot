@@ -20,8 +20,11 @@ With `--apply` it files, edits or closes one issue per repo.
 ```
 uv run ap standard converge                 # dry run: report plus "would create issue on ..."
 uv run ap standard converge --apply         # files the issues
+uv run ap standard converge --only REPO --apply   # one repo only; repeat --only for more
 ```
-Start with a dry run and read it. The first `--apply` is yours to run, not the schedule's.
+Start with a dry run and read it. The first `--apply` is yours to run, not the schedule's, and I would make it
+`--only` one repo so you can read that one issue on GitHub (title, body, label) before filing the rest. `--only` still
+respects every gate, errors on a name that is not on GitHub, and never files into a repo outside the portfolio that is not new.
 
 ## Schedule it (optional)
 The job needs your own `gh` login to see private repos, so it runs on your Mac, not in the cloud: the apx GitHub App is installed

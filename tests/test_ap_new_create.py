@@ -227,3 +227,19 @@ def test_ruleset_standalone_requires_a_check_and_never_requires_guard(capsys):
     assert '"context": "test"' in out and '"guard"' not in out
     managed = SimpleNamespace(repo="octo/x", check=["ci"], central=False, apply=False)  # onboard --finish builds no `standalone`
     assert cli.cmd_ruleset(managed) == 0 and '"context": "guard"' in capsys.readouterr().out
+
+
+def test_ruleset_apply_reads_back_and_says_verified(capsys):
+    gh = FakeGH()
+    ns = SimpleNamespace(repo="octo/x", check=["test"], central=False, apply=True, standalone=True)
+    assert cli.cmd_ruleset(ns, run=gh) == 0
+    assert "verified: octo/x" in capsys.readouterr().out
+    assert [c for c in gh.calls if c[:2] == ["gh", "api"] and "--method" not in c][-1][2].endswith("/rulesets/7")  # read after the write
+
+
+@pytest.mark.parametrize("dropped", ["required_signatures", "pull_request", "required_status_checks"])
+def test_ruleset_apply_fails_when_github_narrows_it(capsys, dropped):
+    ns = SimpleNamespace(repo="octo/x", check=["test"], central=False, apply=True, standalone=True)
+    assert cli.cmd_ruleset(ns, run=FakeGH(narrow=dropped)) == 1
+    out = capsys.readouterr().out
+    assert "did not read back" in out and "verified:" not in out

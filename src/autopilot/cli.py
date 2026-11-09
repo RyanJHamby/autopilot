@@ -577,7 +577,7 @@ def verify_ruleset(slug: str, checks: list[str], run=subprocess.run) -> list[str
     return problems
 
 
-def cmd_ruleset(ns: argparse.Namespace) -> int:
+def cmd_ruleset(ns: argparse.Namespace, run=subprocess.run) -> int:
     slug = _slug(ns.repo, load_portfolio()["owner"])
     if getattr(ns, "standalone", False):  # onboard --finish builds its own namespace, always for managed repos
         # not autopilot-managed: there is no `guard` job, and requiring one would block every merge
@@ -591,9 +591,18 @@ def cmd_ruleset(ns: argparse.Namespace) -> int:
     if not ns.apply:
         print(f"[dry run] would POST (or PUT if it exists) to repos/{slug}/rulesets:\n{json.dumps(ruleset_json(checks), indent=2)}")
         return 0
-    rc, text = apply_ruleset(slug, checks)
+    rc, text = apply_ruleset(slug, checks, run=run)
     print(text)
-    return rc
+    if rc != 0:
+        return rc
+    problems = verify_ruleset(slug, checks, run=run)  # a 200 is not proof: read it back
+    if problems:
+        print(f"ERROR the ruleset on {slug} did not read back as asked:")
+        for p in problems:
+            print(f"  - {p}")
+        return 1
+    print(f"verified: {slug} reads back with the five rules, enforcement active, required check(s) {', '.join(checks)}")
+    return 0
 
 
 def cmd_vars(ns: argparse.Namespace) -> int:

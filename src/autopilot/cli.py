@@ -723,6 +723,12 @@ def cmd_standard(ns: argparse.Namespace) -> int:
     return command.cmd_standard(ns, repo_name=repo_name, load_portfolio=load_portfolio, policy_root=ROOT)
 
 
+def cmd_gate(ns: argparse.Namespace) -> int:
+    from autopilot.gates import command
+
+    return command.cmd_gate(ns, repo_name=repo_name, load_portfolio=load_portfolio, policy_root=ROOT)
+
+
 def cmd_standard_fix(ns: argparse.Namespace) -> int:
     from autopilot.scaffold import command
 
@@ -2242,6 +2248,16 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--path", help="the clone to check, if it is not under --root")
             p.add_argument("--root", action="append", help="where clones live; repeat for more (default ~/dev and ~/Documents)")
         p.set_defaults(fn=cmd_vars)
+    p = sub.add_parser("gate", help="gates a bet clears before real users and before the first payment (checklists, read-only unless seeding)")
+    gsub = p.add_subparsers(dest="gate_cmd", required=True)
+    s = gsub.add_parser("show", help="where a bet stands against a gate (read-only; exit 0 only when ready)")
+    s.add_argument("bet")
+    s.add_argument("gate", help="beta or charge")
+    s.add_argument("--control", help="the pawl control repo (default $PAWL_ROOT, else ~/dev/control)")
+    s.add_argument("--path", help="the bet's repo clone, if it is not under --root")
+    s.add_argument("--root", action="append", help="where clones live; repeat for more (default ~/dev and ~/Documents)")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_gate)
     ns = ap.parse_args(argv)
     return ns.fn(ns)
 

@@ -122,6 +122,37 @@ checks:
     why: Most malicious package releases are caught and pulled within days, so a version a week old is far less likely to be one.
     fix: "Add `cooldown: {default-days: 7}` to every Dependabot entry, or set `minimumReleaseAge` in Renovate."
 
+  # Capability packs, `since: 2026-11-10`. A repo that can take payments, call an LLM or run a deployment must have that capability's
+  # pack (see packs.yaml). The capability is read from the repo's own content, so the requirement appears when the capability does.
+  # Code items are checked against the code. Record items are SELF-ATTESTED: the repo can hold a note that a spend cap exists, not
+  # prove it. A dated record goes stale after 180 days. Nothing here can tell a real record from a plausible one.
+  - id: payments-pack
+    title: A repo that takes payments has the payments pack (signature check, event dedupe, threat model, terms, owned billing paths)
+    level: fail
+    label: enforced
+    since: 2026-11-10
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
+    why: Taking money is where a missing webhook check, a replayed event or an unowned billing route costs real money and trust.
+    fix: "Add each missing item the finding names; `packs.yaml` says exactly what satisfies it. Records are self-attested."
+
+  - id: llm-pack
+    title: A hosted repo that calls an LLM has the LLM pack (spend cap record, kill switch, per-user limit, evals)
+    level: fail
+    label: enforced
+    since: 2026-11-10
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
+    why: An LLM call is the one line of code that spends money per request, so a runaway loop or a free account can become a large bill.
+    fix: "Add each missing item the finding names. Only a deployed repo with users or payments owes the cap, kill switch and evals. Records are self-attested."
+
+  - id: deploy-pack
+    title: A deployed repo has the deploy pack (health endpoint, error tracking, rollback runbook)
+    level: fail
+    label: enforced
+    since: 2026-11-10
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
+    why: You should hear about a broken deploy before a user tells you, and know how to undo it.
+    fix: "Add each missing item the finding names. Records are self-attested."
+
   # Advisory rules: judgment. They warn and never fail a run, and nothing here claims they improve outcomes.
   - id: agents-md-budget
     title: AGENTS.md is 60 lines or fewer

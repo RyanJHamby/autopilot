@@ -16,8 +16,8 @@ well agents work. Where a rule is judgment, it says so.
 | `audited` | `ap standard check` reports it when someone runs it | Yes, but nothing blocks a merge |
 | `advisory` | Judgment, not enforced anywhere | No, it only warns |
 
-The `fail`-level rules are the `enforced` ones: six from the start, and four day-0 rules (`since: 2026-11-10`, see "Phasing a
-rule in"). They are enforced by the `ci.yml` step
+The `fail`-level rules are the `enforced` ones: six from the start, then four day-0 rules and three capability-pack rules (all `since: 2026-11-10`, see "Phasing a
+rule in" and "Capability packs"). They are enforced by the `ci.yml` step
 `uv run ap standard check . --offline`, which exits non-zero when one of them fails. That step runs offline, so it
 never asks GitHub anything. Two limits: nothing has yet run on GitHub Actions, so "enforced" is the design until a real
 pull request shows the step blocking; and whether the step is a *required* status check depends on the ruleset, which
@@ -55,6 +55,9 @@ A rule's **level** says what a failing result does to the run: `fail` exits non-
 | `secret-scan-wired` | fail | enforced | all |
 | `workflow-lint-wired` | fail | enforced | all |
 | `dependency-cooldown` | fail | enforced | all |
+| `payments-pack` | fail | enforced | all |
+| `llm-pack` | fail | enforced | all |
+| `deploy-pack` | fail | enforced | all |
 | `agents-md-budget` | warn | advisory | all |
 | `how-this-was-built` | warn | advisory | all |
 | `journal-present` | warn | advisory | all |
@@ -94,6 +97,33 @@ How a repo's age is read, and the edge cases:
   `converge`'s shallow audits from mistaking an old repo for a new one. It also means a very new repo audited through a shallow
   clone is grandfathered; audit it from a full clone to see its full level.
 - A rewritten history changes a repo's age. The goal is to stop forgetting, not to resist someone rewriting their own repo.
+
+## Capability packs
+
+A repo that can take payments, call an LLM or run a deployment must have the pack for that capability. The capability is read from the
+repo's own content (`src/autopilot/standard/capabilities.py`), so the requirement appears the moment the capability does, with nothing to
+remember or record. What each pack requires is in `src/autopilot/standard/packs.yaml`.
+
+| Rule | Detected from | Requires |
+|---|---|---|
+| `payments-pack` | a payments dependency, a call to a payment API by URL, or a `STRIPE_*` env read | webhook signature check, event dedupe (or a decision record on idempotency), a threat model, a terms page, billing paths in CODEOWNERS |
+| `llm-pack` | an LLM dependency, a call to an LLM API by URL, an `import`, or an `*_API_KEY` env read | when **hosted** (deployed, with users or payments): a dated spend-cap record, a kill-switch runbook, an eval suite; when there are users: a per-user limit |
+| `deploy-pack` | `vercel.json`, a Dockerfile, `fly.toml`, `netlify.toml`, `render.yaml` | a health endpoint, error tracking, a rollback runbook |
+
+Detection is scoped so a mention is not a capability: runtime dependencies only (not dev dependencies, optional extras or lockfiles), code
+files only (not docs, tests, fixtures, examples, templates or agent config), comments and Python docstrings stripped, and a call needs a URL
+with a scheme (a hostname in a sandbox allowlist is not a call). A call made with no SDK, such as Gemini by raw `fetch`, is still found.
+
+Two kinds of item, and the difference matters:
+- A **code** item is checked against the code: it passes only if the pattern, path or dependency is really there. It is a pattern, so it
+  cannot tell a signature check that runs from one that is merely named (a `limit` test records that).
+- A **record** item is **self-attested**. The repo can hold a note that a spend cap is set on each provider account; it cannot prove the
+  cap exists. A record must exist, hold no placeholder text, and be long enough to say something; where it states an external fact it
+  must carry a `Verified: YYYY-MM-DD` line, and it fails as stale after 180 days. That forces the question, dates the answer and asks
+  again, and nothing more: a plausible filler record with a fresh date passes (a `limit` test records that too).
+
+These rules carry `enforced` like the others, with the same third limit described above: for a repo made by `ap new`, nothing runs
+`ap standard check` in CI, so the pack is checked when `make check` runs it, when `converge` runs, or when someone runs the standard.
 
 ## Waivers
 

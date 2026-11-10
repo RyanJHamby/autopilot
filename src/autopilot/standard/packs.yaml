@@ -1,6 +1,98 @@
 # Capability packs: what a repo must have once it can take payments, call an LLM or run a deployment. See autopilot/standard/packs.py.
 # Each pack is required by a rule in checks.yaml; the rule is strict for repos born on or after its `since` date and warns for older ones.
-# A `record` item is self-attested (the repo holds a note, it cannot prove the fact), and goes stale after 180 days.
+# A `record` item is self-attested (the repo holds a note, it cannot prove the fact), and goes stale after 180 days when it is `verified`.
 # Agents must not edit this file. It is part of the standard (src/autopilot/standard/**).
 
-packs: {}
+packs:
+  payments:
+    needs: payments
+    items:
+      - id: webhook-signature
+        kind: code
+        title: Webhook signatures are verified before an event is trusted
+        match: ['constructEvent', 'construct_event', 'webhooks\.unmarshal', 'verify_signature', 'verifyWebhook', 'verify_webhook']
+        fix: Verify the provider's signature on the raw request body before reading the event (Stripe `webhooks.constructEvent`), and reject on failure.
+
+      - id: event-dedupe
+        kind: code
+        title: Webhook events are deduplicated by event id, or the handler is shown to be idempotent
+        match: ['processed_\w*events?', 'stripe_events?', 'webhook_events?', 'idempotency[_-]?key']
+        paths: ['docs/decisions/*idempot*', 'docs/**/*idempot*']
+        include_sql: true
+        fix: Store each processed event id in a table and skip repeats, or write docs/decisions/NNNN-webhook-idempotency.md explaining why replaying an event is harmless.
+
+      - id: threat-model
+        kind: record
+        title: A one-page threat model exists
+        path: ['docs/threat-model.md']
+        min_lines: 8
+        fix: Write docs/threat-model.md (what is valuable, how it is reached, what an agent holding the repo's credentials could touch). No TODO or placeholder text.
+
+      - id: terms-and-refunds
+        kind: code
+        title: A terms page and refund policy exist
+        paths: ['**/terms*', '**/terms*/**', '**/refund*', '**/refund*/**']
+        fix: Add a terms page that states the refund policy (a route such as src/app/terms/page.tsx, a public/terms.html, or docs/terms.md for a repo that is only a site).
+
+      - id: billing-owned
+        kind: codeowners
+        title: The billing paths have a named code owner
+        cover: 'stripe|billing|payment|checkout'
+        fix: Add CODEOWNERS entries for the payment routes and library (for example /src/app/api/stripe/ and /src/lib/stripe.ts) so a change there needs your review.
+
+  llm:
+    needs: llm
+    items:
+      - id: spend-cap
+        kind: record
+        when: hosted
+        verified: true
+        title: Every LLM provider account has a spend cap, recorded with the date it was checked
+        path: ['docs/gates/llm-spend.md']
+        min_lines: 6
+        fix: "Write docs/gates/llm-spend.md listing each provider account, its cap, and where it is set, ending with a `Verified: YYYY-MM-DD` line. Re-check it within 180 days."
+
+      - id: kill-switch
+        kind: record
+        when: hosted
+        title: There is a written way to turn LLM calls off quickly
+        path: ['docs/runbooks/llm-kill-switch.md']
+        min_lines: 6
+        fix: Write docs/runbooks/llm-kill-switch.md (the flag or command that stops every LLM call, how long it takes, and how to turn it back on).
+
+      - id: per-user-limit
+        kind: code
+        when: auth
+        title: LLM calls are limited per user
+        match: ['(?i)rate[_-]?limit', '(?i)quota', 'usage_counter', '(?i)throttle']
+        fix: Add a per-user rate limit or quota in front of every route that spends LLM tokens, so one account or bot cannot run up the bill.
+
+      - id: evals
+        kind: code
+        when: hosted
+        title: There is an eval suite for the LLM behaviour
+        paths: ['**/evals/**', '**/eval/**', 'evals/**', 'eval/**']
+        fix: Add a small golden set of inputs and expected outputs, run on every prompt or model change (an evals/ directory).
+
+  deploy:
+    needs: deploy
+    items:
+      - id: health-endpoint
+        kind: code
+        title: There is a health endpoint that checks real dependencies
+        paths: ['**/health', '**/health.*', '**/health/**', '**/healthz', '**/healthz.*', '**/healthz/**']
+        match: ['/healthz?\b']
+        fix: Add a /health or /healthz route that checks the database and other critical dependencies, not just that the process is up.
+
+      - id: error-tracking
+        kind: code
+        title: Errors are reported to a tracker
+        deps: ['@sentry/*', 'sentry-sdk', 'sentry', 'glitchtip*', '@bugsnag/*', 'bugsnag', 'rollbar', 'honeybadger*']
+        fix: Add error tracking (Sentry's free tier, or self-hosted GlitchTip) to the frontend and backend, with releases tagged.
+
+      - id: rollback-runbook
+        kind: record
+        title: There is a written, tested way to roll back a deploy
+        path: ['docs/runbooks/rollback.md']
+        min_lines: 6
+        fix: Write docs/runbooks/rollback.md (the exact command or click that returns to the previous deploy, and how you know it worked).

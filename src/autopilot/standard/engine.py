@@ -20,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from autopilot.standard import load_checks, since_date
+from autopilot.standard import capabilities, load_checks, packs, since_date
 
 # Mirrors kit/runtime/guard.py DEFAULT_PROTECTED. The kit isn't in the wheel, so it is copied, and a test fails if the
 # two lists drift.
@@ -79,6 +79,13 @@ class Repo:
         self.gh = gh or subprocess.run
         self._workflows: list[tuple[Path, str, object]] | None = None
         self._born: tuple[str, datetime.date | None] | None = None
+        self._scan: capabilities.Scan | None = None
+
+    def scan(self) -> capabilities.Scan:
+        """One cached look at this repo's files, shared by every capability and pack rule so nothing is read twice."""
+        if self._scan is None:
+            self._scan = capabilities.Scan(self.path)
+        return self._scan
 
     def _git(self, *args: str) -> tuple[int, str]:
         r = subprocess.run(["git", "-C", str(self.path), *args], capture_output=True, text=True)
@@ -452,6 +459,13 @@ def workflow_lint_wired(repo: Repo) -> Outcome:
     return _verdict([f"the Makefile does not run {tool} on .github/workflows" for tool in missing])
 
 
+def _pack_rule(name: str) -> Callable[["Repo"], Outcome]:
+    def check(repo: Repo) -> Outcome:
+        return packs.check_pack(repo.scan(), name)
+
+    return check
+
+
 _COOLDOWN_KEYS = ("default-days", "semver-major-days", "semver-minor-days", "semver-patch-days")
 
 
@@ -497,6 +511,9 @@ CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "secret-scan-wired": secret_scan_wired,
     "workflow-lint-wired": workflow_lint_wired,
     "dependency-cooldown": dependency_cooldown,
+    "payments-pack": _pack_rule("payments"),
+    "llm-pack": _pack_rule("llm"),
+    "deploy-pack": _pack_rule("deploy"),
     "agents-md-budget": agents_md_budget,
     "how-this-was-built": how_this_was_built,
     "journal-present": journal_present,

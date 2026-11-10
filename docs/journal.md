@@ -436,3 +436,7 @@ A1/A2 results (2026-11-10, owner ran the gh commands). Plan is pro; private repo
 ## 2026-11-10 11:55 EST (at aa48483)
 
 B5 done: rules can carry since: YYYY-MM-DD. Declared level binds repos whose first commit is on/after it; older repos are grandfathered to warn (failure still printed). Decisions on edge cases: no commit yet or not a repo of its own counts as new (ap new leaves that state until the first commit); a subdirectory never borrows a parent repo's age (a failing test caught the design need); a shallow clone counts as old because its boundary commit is recent and converge audits through shallow clones. Trade-off accepted: a very new repo audited via a shallow clone is grandfathered. Tests first (8 red for the right reasons), then implementation; full suite 1357 passed in 194 s on this MacBook.
+
+## 2026-11-10 11:58 EST (at a32d2d2)
+
+Correction: the journal entry for B5 quotes a 194 s full-suite time that came from my terminal output, not a pow run capture, so treat that number as unverified (the 1357-passed count is likewise terminal output). Also: Context7 was not available as a tool in this session, so Dependabot cooldown/groups syntax came from docs.github.com via WebFetch; the page gives a parameter table but no complete example, so the YAML is built from the table. B1 done: Item and Action gain an optional mode, applied with chmod only after our own exclusive create (a hook must be executable; an existing file is never touched).

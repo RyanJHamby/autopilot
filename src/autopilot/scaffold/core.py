@@ -46,6 +46,7 @@ class Action:
     rule: str | None
     note: str = ""
     content: str = ""
+    mode: int | None = None  # applied only to a file this run creates (a git hook must be executable)
 
 
 @dataclass
@@ -55,6 +56,7 @@ class Item:
     render: Callable[[Ctx], str]
     applies: Callable[[Ctx], tuple[str, str] | None]  # None = applies; else (status, note)
     aliases: tuple[str, ...] = ()  # other names that already satisfy this item (globs allowed)
+    mode: int | None = None  # e.g. 0o755 for a hook; None leaves the default
 
 
 def detect_ecosystems(path: Path) -> list[str]:
@@ -317,7 +319,7 @@ def _resolve(item: Item, ctx: Ctx) -> Item:
     """Fill the `@pkg@` placeholder in a skeleton path."""
     if "@pkg@" not in item.path:
         return item
-    return Item(item.path.replace("@pkg@", package_name(ctx)), item.rule, item.render, item.applies, item.aliases)
+    return Item(item.path.replace("@pkg@", package_name(ctx)), item.rule, item.render, item.applies, item.aliases, item.mode)
 
 
 def plan(root: Path, ctx: Ctx, items: list[Item] | None = None) -> list[Action]:
@@ -337,7 +339,7 @@ def plan(root: Path, ctx: Ctx, items: list[Item] | None = None) -> list[Action]:
         if gate:
             out.append(Action(item.path, gate[0], item.rule, gate[1]))
             continue
-        out.append(Action(item.path, "create", item.rule, "missing", item.render(ctx)))
+        out.append(Action(item.path, "create", item.rule, "missing", item.render(ctx), item.mode))
     return out
 
 
@@ -355,5 +357,7 @@ def write(root: Path, actions: list[Action]) -> list[str]:
         except FileExistsError:
             a.status, a.note = "exists", "appeared while writing; left alone"
             continue
+        if a.mode is not None:
+            target.chmod(a.mode)  # only after our own exclusive create, so a file that was already there is never touched
         written.append(a.path)
     return written

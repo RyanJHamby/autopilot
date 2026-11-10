@@ -101,7 +101,7 @@ def find_clone(name: str, root, repo_name) -> Path | None:
 
 
 def check_one(
-    path: Path, portfolio: dict, repo_name, gh, wvs: list[dict], today: date
+    path: Path, portfolio: dict, repo_name, gh, wvs: list[dict], today: date, force_new: bool = False
 ) -> tuple[str, list[engine.Result], list[str]]:
     """Check one repo. GitHub's answer about public/private wins over the portfolio's flag, and a disagreement is a note."""
     name = repo_name(path)
@@ -114,9 +114,25 @@ def check_one(
             f"{name}: GitHub says {'public' if public else 'private'} but policy/portfolio.yaml says "
             f"{'public' if entry.get('public', False) else 'not public'}; GitHub's answer was used"
         )
-    results = engine.run(engine.Repo(path, entry=entry, slug=slug, gh=gh, github_public=public))
+    results = engine.run(engine.Repo(path, entry=entry, slug=slug, gh=gh, github_public=public, force_new=force_new))
     waivers.apply(results, name, wvs, today)
     return name, results, notes
+
+
+def revive_check(
+    name: str, portfolio: dict, root, explicit: Path | None, repo_name, gh, wvs: list[dict], today: date
+) -> tuple[Path | None, list[str], list[str]]:
+    """Check repo `name` as if it were born today, for the moment it is revived. Returns (the clone checked or None, the fail-level
+    gaps as "rule: finding", notes). Waivers apply: a repo that cannot meet a rule yet needs one, like anywhere else."""
+    path = Path(explicit).expanduser().resolve() if explicit else find_clone(name, root, repo_name)
+    if path is None or not path.is_dir():
+        return None, [], []
+    _, results, notes = check_one(path, portfolio, repo_name, gh, wvs, today, force_new=True)
+    gaps = [f"{r.id}: {r.findings[0] if r.findings else 'failed'}" for r in results if r.level == "fail" and r.result == "fail"]
+    unknown = [r.id for r in results if r.level == "fail" and r.result == "unknown"]
+    if unknown:
+        notes = [*notes, f"could not be answered here, so not counted: {', '.join(unknown)}"]
+    return path, gaps, notes
 
 
 def render(name: str, path: Path, results: list[engine.Result], info: str = "") -> str:

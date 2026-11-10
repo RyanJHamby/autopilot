@@ -72,6 +72,7 @@ class Repo:
         gh: Callable | None = None,
         github_public: bool | None = None,
         born_on: datetime.date | None = None,
+        force_new: bool = False,
     ):
         self.path = Path(path)
         self.entry = entry  # this repo's policy/portfolio.yaml entry, or None if it isn't in the portfolio
@@ -81,7 +82,11 @@ class Repo:
         self._workflows: list[tuple[Path, str, object]] | None = None
         # A repo's age when the caller knows it better than the checkout can (converge reads GitHub's created date, because a shallow
         # clone has no history to read). It overrides the first-commit date.
-        self._born: tuple[str, datetime.date | None] | None = ("dated", born_on) if born_on is not None else None
+        # `force_new` holds a repo to every dated rule as if it were born today: used when reviving a repo, which is the moment to retrofit.
+        if force_new:
+            self._born: tuple[str, datetime.date | None] | None = ("dated", datetime.date.today())
+        else:
+            self._born = ("dated", born_on) if born_on is not None else None
         self._scan: capabilities.Scan | None = None
 
     def scan(self) -> capabilities.Scan:

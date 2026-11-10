@@ -605,8 +605,40 @@ def cmd_ruleset(ns: argparse.Namespace, run=subprocess.run) -> int:
     return 0
 
 
+def _revive_gate(ns: argparse.Namespace, pf: dict, name: str) -> bool:
+    """True when `ap enable` must stop. Reviving a repo is when agents start writing code in it, so it is checked as if it were new:
+    every rule an old repo was excused from by its age counts. No clone to look at means no enabling; --allow-gaps waves gaps through
+    (and still prints them), but nothing waves through a repo that cannot be looked at."""
+    from datetime import date
+
+    from autopilot.standard import command as standard_command
+    from autopilot.standard import waivers
+
+    text, _ = waivers.read_base(ROOT)
+    wvs, _ = waivers.parse(text)
+    explicit = Path(ns.path) if getattr(ns, "path", None) else None
+    root = getattr(ns, "root", None)
+    path, gaps, notes = standard_command.revive_check(name, pf, root, explicit, repo_name, subprocess.run, wvs, date.today())
+    if path is None:
+        searched = ", ".join(str(r) for r in standard_command.roots_of(root))
+        print(f"{name}: no clone found under {searched}, so it cannot be checked against the current standard; not enabling it (use --path)")
+        return True
+    print(f"{name}: checked as a new repo would be, from {path}")
+    for g in gaps:
+        print(f"  - {g}")
+    for n in notes:
+        print(f"  note: {n}")
+    if gaps and not getattr(ns, "allow_gaps", False):
+        print(f"{name}: {len(gaps)} fail-level gap(s). Fix them, or pass --allow-gaps to enable anyway.")
+        return True
+    if gaps:
+        print(f"{name}: --allow-gaps given, enabling with {len(gaps)} gap(s) listed above")
+    return False
+
+
 def cmd_vars(ns: argparse.Namespace) -> int:
-    """enable / pause / resume: set repo variables. Dry-run unless --apply."""
+    """enable / pause / resume: set repo variables. Dry-run unless --apply. `enable REPO` also checks the repo against the current standard
+    first (see _revive_gate); pause, resume, and `enable` with no repo (re-asserting repos that already run) are never gated."""
     pf = load_portfolio()
     repos = [ns.repo] if getattr(ns, "repo", None) else [n for n, e in pf["repos"].items() if e.get("enabled")]
     var, val = {
@@ -614,9 +646,14 @@ def cmd_vars(ns: argparse.Namespace) -> int:
         "pause": ("AUTOPILOT_PAUSED", "true"),
         "resume": ("AUTOPILOT_PAUSED", "false"),
     }[ns.cmd]
+    status = 0
     for name in repos:
         if ns.cmd == "enable" and pf["repos"].get(name, {}).get("data_class") == "restricted":
             print(f"{name}: data_class restricted; refusing to enable")
+            status = 1
+            continue
+        if ns.cmd == "enable" and getattr(ns, "repo", None) and _revive_gate(ns, pf, name):
+            status = 1
             continue
         slug = _slug(name, pf["owner"])
         if not ns.apply:
@@ -624,7 +661,8 @@ def cmd_vars(ns: argparse.Namespace) -> int:
             continue
         r = subprocess.run(["gh", "variable", "set", var, "--body", val, "-R", slug], capture_output=True, text=True)
         print(f"{slug}: {var}={val}" if r.returncode == 0 else f"{slug}: FAILED {r.stderr.strip()}")
-    return 0
+        status = status or (1 if r.returncode else 0)
+    return status
 
 
 def cmd_doctor(ns: argparse.Namespace) -> int:
@@ -1592,7 +1630,8 @@ def cmd_onboard(ns: argparse.Namespace) -> int:
         ruleset_ns = argparse.Namespace(repo=slug, check=checks, central=True, apply=ns.apply)
         if cmd_ruleset(ruleset_ns):
             return 1
-        cmd_vars(argparse.Namespace(cmd="enable", repo=name, apply=ns.apply))
+        if cmd_vars(argparse.Namespace(cmd="enable", repo=name, apply=ns.apply, allow_gaps=getattr(ns, "allow_gaps", False))):
+            return 1
         if ns.apply:
             cmd_preflight(argparse.Namespace(repos=[name], verbose=False))
         return 0
@@ -2164,6 +2203,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--kit-repo", default="RyanJHamby/autopilot-kit")
     p.add_argument("--check", action="append", default=[], help="required CI check name (default: detected)")
     p.add_argument("--finish", action="store_true")
+    p.add_argument("--allow-gaps", action="store_true", help="with --finish: enable even if the repo misses the current standard")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_onboard)
     p = sub.add_parser("preflight", help="read-only readiness check before leaving a repo unattended")
@@ -2197,6 +2237,10 @@ def main(argv: list[str] | None = None) -> int:
         p = sub.add_parser(c, help=f"{c}: set repo variable (dry run unless --apply)")
         p.add_argument("repo", nargs="?")
         p.add_argument("--apply", action="store_true")
+        if c == "enable":
+            p.add_argument("--allow-gaps", action="store_true", help="enable even if the repo misses the current standard (the gaps are still listed)")
+            p.add_argument("--path", help="the clone to check, if it is not under --root")
+            p.add_argument("--root", action="append", help="where clones live; repeat for more (default ~/dev and ~/Documents)")
         p.set_defaults(fn=cmd_vars)
     ns = ap.parse_args(argv)
     return ns.fn(ns)

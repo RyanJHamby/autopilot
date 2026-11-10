@@ -254,10 +254,28 @@ _WORKFLOW_LINT = (
 )
 
 
+# The tripwire: `check` runs the whole standard and fails when a capability the repo gained (payments, an LLM, a deployment) has no pack;
+# `quick`, which the hook runs, only reports those same failures so a work-in-progress commit is never blocked. A machine without `ap`
+# warns instead of failing, the same as a missing gitleaks.
+_STANDARD = (
+    "standard:\n"
+    "\t@if command -v ap >/dev/null 2>&1; then ap standard check . --offline; "
+    "else echo 'WARN: ap is not on PATH (run ./install.sh in the autopilot checkout): the standard check is skipped'; fi\n"
+)
+_STANDARD_REPORT = (
+    "standard-report:\n"
+    "\t@if command -v ap >/dev/null 2>&1; then \\\n"
+    "\t  out=$$(ap standard check . --offline 2>&1 | grep -E 'FAIL .*fail-level' || true); \\\n"
+    '\t  if [ -n "$$out" ]; then echo "$$out" | sed \'s/^/standard: /\'; '
+    "echo \"standard: run 'make standard' for details; 'make check' fails until these are fixed\"; fi; \\\n"
+    "\tfi\n"
+)
+
+
 def makefile_new(lint: str = "", test: str = "", audit: str = "") -> str:
     """The Makefile a brand-new repo gets: setup, quick (the hook), check (what CI runs), audit (slow, uses the network)."""
-    quick = "quick: staged-secrets\n" + (f"\t{lint}\n" if lint else "")
-    check = "check: quick tracked-secrets workflow-lint\n" + (f"\t{test}\n" if test else "")
+    quick = "quick: staged-secrets standard-report\n" + (f"\t{lint}\n" if lint else "")
+    check = "check: quick tracked-secrets workflow-lint standard\n" + (f"\t{test}\n" if test else "")
     audit_body = (
         "audit:\n"
         "\t@if command -v gitleaks >/dev/null 2>&1; then gitleaks git --redact --no-banner; "
@@ -266,13 +284,15 @@ def makefile_new(lint: str = "", test: str = "", audit: str = "") -> str:
     )
     return "\n".join(
         [
-            ".PHONY: setup quick check audit staged-secrets tracked-secrets workflow-lint\n",
+            ".PHONY: setup quick check audit staged-secrets tracked-secrets workflow-lint standard standard-report\n",
             _SETUP,
             quick,
             check,
             _STAGED_SECRETS,
             "tracked-secrets:\n" + TRACKED_SECRETS_BODY,
             _WORKFLOW_LINT,
+            _STANDARD,
+            _STANDARD_REPORT,
             audit_body,
         ]
     )

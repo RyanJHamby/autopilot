@@ -1,4 +1,4 @@
-"""The four day-0 rules: each has a passing and a failing fixture, and what `ap new` writes passes all of them.
+"""The five day-0 rules: each has a passing and a failing fixture, and what `ap new` writes passes all of them.
 
 They audit wiring (is the hook installed by `make setup`, is a secret scan in the Makefile). Whether a scan catches a secret is the
 scaffold test's job, with real gitleaks. Blind spots are recorded as `limit` tests so they stay visible."""
@@ -11,7 +11,7 @@ import pytest
 from autopilot.scaffold import core
 from autopilot.standard import engine, load_checks
 
-RULES = ("hook-wired", "secret-scan-wired", "workflow-lint-wired", "dependency-cooldown")
+RULES = ("hook-wired", "secret-scan-wired", "workflow-lint-wired", "dependency-cooldown", "standard-wired")
 
 
 def new_repo(tmp_path, kind="app", ecosystems=None, name="proj"):
@@ -36,7 +36,7 @@ def edit(root, rel, fn):
 
 
 @pytest.mark.parametrize("kind,eco", [("app", []), ("notes", []), ("library", ["uv"]), ("cli", ["uv"])])
-def test_a_fresh_repo_of_every_kind_passes_all_four(tmp_path, kind, eco):
+def test_a_fresh_repo_of_every_kind_passes_all_five(tmp_path, kind, eco):
     root = new_repo(tmp_path, kind, eco)
     got = {rule: check(rule, root) for rule in RULES}
     assert {k: v[0] for k, v in got.items()} == dict.fromkeys(RULES, "pass"), got
@@ -187,3 +187,32 @@ def test_dependency_cooldown_is_unknown_not_a_pass_when_the_config_does_not_pars
     root = new_repo(tmp_path)
     (root / ".github/dependabot.yml").write_text("updates: [unclosed\n")
     assert check("dependency-cooldown", root)[0] == "unknown"
+
+
+# --- standard-wired ----------------------------------------------------------------------------------------------------
+
+
+def test_standard_wired_fails_when_the_makefile_never_runs_the_standard(tmp_path):
+    root = new_repo(tmp_path)
+    edit(root, "Makefile", lambda s: s.replace("ap standard check", "echo skipped"))
+    result, findings = check("standard-wired", root)
+    assert result == "fail" and any("ap standard check" in f for f in findings)
+
+
+def test_standard_wired_fails_when_check_does_not_depend_on_it(tmp_path):
+    # The target exists, but nothing that CI or an agent runs calls it, so the tripwire never blocks.
+    root = new_repo(tmp_path)
+    edit(root, "Makefile", lambda s: s.replace("check: quick tracked-secrets workflow-lint standard", "check: quick tracked-secrets workflow-lint"))
+    assert check("standard-wired", root)[0] == "fail"
+
+
+def test_standard_wired_is_not_fooled_by_a_commented_out_call(tmp_path):
+    root = new_repo(tmp_path)
+    (root / "Makefile").write_text("# ap standard check . --offline\ncheck: standard\nstandard:\n\ttrue\n")
+    assert check("standard-wired", root)[0] == "fail"
+
+
+def test_LIMIT_standard_wired_cannot_see_that_ap_is_missing_from_the_machine(tmp_path):
+    # The wiring is intact; on a machine without `ap` the target only warns. A repo audited there passes while checking nothing.
+    root = new_repo(tmp_path)
+    assert check("standard-wired", root)[0] == "pass"

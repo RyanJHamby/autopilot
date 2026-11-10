@@ -169,7 +169,7 @@ def guard_on_diff(tmp: Path) -> list[DrillResult]:
     return out
 
 
-DAY0_RULES = ["hook-wired", "secret-scan-wired", "workflow-lint-wired", "dependency-cooldown"]
+DAY0_RULES = ["hook-wired", "secret-scan-wired", "workflow-lint-wired", "dependency-cooldown", "standard-wired"]
 
 
 def scaffolded(root: Path, born: str = NEW) -> Path:
@@ -189,12 +189,22 @@ def _swap(rel: str, old: str, new: str) -> Callable[[Path], None]:
     return go
 
 
+def _write(files: dict[str, str]) -> Callable[[Path], None]:
+    def go(root: Path) -> None:
+        for rel, text in files.items():
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text)
+
+    return go
+
+
 def day_zero(tmp: Path) -> list[DrillResult]:
     """Plant one defect per day-0 rule in a repo born on the day they start. Each must fail at full strength; an old repo with the
     same defect must be reported but not broken; and the one blind spot (an empty `quick`) is recorded, not hidden."""
     base = scaffolded(tmp / "baseline")
     clean = engine.exit_code(engine.run(engine.Repo(base), only=DAY0_RULES), strict=True) == 0
-    out = [DrillResult("day0-baseline", "green" if clean else "baseline-failed", "a fresh `ap new` repo passes all four, strictly")]
+    out = [DrillResult("day0-baseline", "green" if clean else "baseline-failed", "a fresh `ap new` repo passes all five, strictly")]
     if not clean:
         return out
     planted = [
@@ -203,6 +213,15 @@ def day_zero(tmp: Path) -> list[DrillResult]:
         ("day0-secret-scan-removed", "secret-scan-wired", _swap("Makefile", "gitleaks", "scanner")),
         ("day0-workflow-lint-removed", "workflow-lint-wired", _swap("Makefile", "zizmor", "nothing")),
         ("day0-cooldown-removed", "dependency-cooldown", _swap(".github/dependabot.yml", "default-days: 7", "default-days: 0")),
+        ("day0-standard-removed", "standard-wired", _swap("Makefile", "ap standard check", "echo skipped")),
+        # The tripwire itself: a new repo gains a capability and has none of its pack.
+        ("tripwire-payments", "payments-pack", _write({"package.json": '{"dependencies": {"stripe": "^23"}}'})),
+        ("tripwire-deploy", "deploy-pack", _write({"vercel.json": "{}"})),
+        ("tripwire-llm-raw-fetch", "llm-pack", _write({
+            "package.json": '{"dependencies": {"@supabase/ssr": "1"}}',
+            "vercel.json": "{}",
+            "src/ai.ts": 'await fetch("https://generativelanguage.googleapis.com/v1beta/auth_tokens");\n',
+        })),
     ]
     for name, rule, mutate in planted:
         root = scaffolded(tmp / name)

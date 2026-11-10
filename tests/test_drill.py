@@ -26,6 +26,10 @@ def test_every_drill_reports_the_expected_outcome():
         "day0-secret-scan-removed": "caught",
         "day0-workflow-lint-removed": "caught",
         "day0-cooldown-removed": "caught",
+        "day0-standard-removed": "caught",
+        "tripwire-payments": "caught",
+        "tripwire-deploy": "caught",
+        "tripwire-llm-raw-fetch": "caught",
         "day0-old-repo-not-broken": "caught",
         "day0-quick-empty": "limit",
     }

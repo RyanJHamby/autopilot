@@ -53,7 +53,7 @@ def test_every_kind_of_new_repo_gets_the_day_zero_files(tmp_path, kind, eco):
         assert (root / rel).is_file(), rel
     assert executable(root / ".githooks/pre-commit")
     mk = (root / "Makefile").read_text()
-    for target in ("setup:", "quick:", "check:", "audit:"):
+    for target in ("setup:", "quick:", "check:", "audit:", "standard:", "standard-report:"):
         assert target in mk, target
 
 
@@ -182,3 +182,78 @@ def test_the_generated_hook_runs_make_quick_and_nothing_slower():
 
 def test_the_pr_template_asks_for_risk_and_rollback_and_for_untouched_tests():
     assert "Rollback" in t.PULL_REQUEST and "loosened" in t.PULL_REQUEST
+
+
+# --- the tripwire: a repo that gains a capability is told by `make quick` and stopped by `make check` ----------------------------
+
+AP = pytest.mark.skipif(shutil.which("ap") is None, reason="ap is not on PATH")
+STRIPE = {"package.json": '{"dependencies": {"stripe": "^23"}}'}
+COMPLETE_PAYMENTS = {
+    **STRIPE,
+    "src/app/api/stripe/webhook/route.ts": "const e = stripe.webhooks.constructEvent(raw, sig, secret);\n",
+    "supabase/migrations/0005_events.sql": "create table processed_stripe_events (event_id text primary key);\n",
+    "docs/threat-model.md": "# Threat model\n\n" + "\n".join(f"Line {i} of real content about what could go wrong." for i in range(8)) + "\n",
+    "public/terms.html": "<h1>Terms and refund policy</h1>\n",
+}
+STRIPE_OWNER = "/src/app/api/stripe/ @o\n"  # appended to the scaffolded CODEOWNERS, as a person would; replacing it drops the other cover
+
+
+def add(root, files):
+    for rel, text in files.items():
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+
+
+@NEEDS
+@AP
+def test_a_fresh_repo_passes_make_check_including_the_standard(tmp_path):
+    root = new_repo(tmp_path)
+    git_init(root)
+    sh(root, "git", "add", ".")
+    r = sh(root, "make", "check", check=False)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+@NEEDS
+@AP
+def test_adding_payments_makes_check_fail_naming_the_pack_and_quick_only_reports(tmp_path):
+    root = new_repo(tmp_path)
+    git_init(root)
+    add(root, STRIPE)
+    sh(root, "git", "add", ".")
+    check = sh(root, "make", "check", check=False)
+    assert check.returncode != 0 and "payments-pack" in check.stdout
+    quick = sh(root, "make", "quick", check=False)
+    assert quick.returncode == 0, "the hook must report, not block, so a work-in-progress commit is allowed"
+    assert "payments-pack" in quick.stdout
+
+
+@NEEDS
+@AP
+def test_a_complete_payments_pack_lets_check_pass_again(tmp_path):
+    root = new_repo(tmp_path)
+    git_init(root)
+    add(root, COMPLETE_PAYMENTS)
+    with open(root / ".github/CODEOWNERS", "a") as f:
+        f.write(STRIPE_OWNER)
+    sh(root, "git", "add", ".")
+    r = sh(root, "make", "check", check=False)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+@NEEDS
+@AP
+def test_quick_stays_quiet_when_nothing_is_wrong(tmp_path):
+    root = new_repo(tmp_path)
+    git_init(root)
+    sh(root, "git", "add", ".")
+    assert "standard:" not in sh(root, "make", "quick").stdout
+
+
+@NEEDS
+def test_a_missing_ap_warns_instead_of_failing(tmp_path):
+    root = new_repo(tmp_path)
+    git_init(root)
+    r = sh(root, "make", "standard", env={"PATH": path_without_linters(tmp_path)})
+    assert "ap is not on PATH" in r.stdout

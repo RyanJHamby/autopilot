@@ -16,7 +16,7 @@ well agents work. Where a rule is judgment, it says so.
 | `audited` | `ap standard check` reports it when someone runs it | Yes, but nothing blocks a merge |
 | `advisory` | Judgment, not enforced anywhere | No, it only warns |
 
-The `fail`-level rules are the `enforced` ones: six from the start, then four day-0 rules and three capability-pack rules (all `since: 2026-11-10`, see "Phasing a
+The `fail`-level rules are the `enforced` ones: six from the start, then five day-0 rules and three capability-pack rules (all `since: 2026-11-10`, see "Phasing a
 rule in" and "Capability packs"). They are enforced by the `ci.yml` step
 `uv run ap standard check . --offline`, which exits non-zero when one of them fails. That step runs offline, so it
 never asks GitHub anything. Two limits: nothing has yet run on GitHub Actions, so "enforced" is the design until a real
@@ -55,6 +55,7 @@ A rule's **level** says what a failing result does to the run: `fail` exits non-
 | `secret-scan-wired` | fail | enforced | all |
 | `workflow-lint-wired` | fail | enforced | all |
 | `dependency-cooldown` | fail | enforced | all |
+| `standard-wired` | fail | enforced | all |
 | `payments-pack` | fail | enforced | all |
 | `llm-pack` | fail | enforced | all |
 | `deploy-pack` | fail | enforced | all |

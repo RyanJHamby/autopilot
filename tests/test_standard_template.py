@@ -22,9 +22,9 @@ EXPECTED = [
     "SECURITY.md",
 ]
 # Rules the template does not serve: they belong to `pow init` (journal), to AGENTS.md/CLAUDE.md, to the justfile
-# (commands-documented), and to the Makefile and hook (hook-wired, secret-scan-wired), all of which come per repo from `ap new`.
+# (commands-documented), and to the Makefile and hook (hook-wired, secret-scan-wired, standard-wired), all of which come per repo from `ap new`.
 # The template serves repos of every kind, so it cannot carry a Makefile whose targets depend on the stack.
-NOT_SERVED = {"journal-present", "thin-claude-md", "commands-documented", "hook-wired", "secret-scan-wired"}
+NOT_SERVED = {"journal-present", "thin-claude-md", "commands-documented", "hook-wired", "secret-scan-wired", "standard-wired"}
 
 
 def build(tmp_path: Path, owner="octo", holder="Octo Cat") -> tuple[Path, list[str]]:

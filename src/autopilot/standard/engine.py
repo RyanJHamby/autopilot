@@ -459,6 +459,17 @@ def workflow_lint_wired(repo: Repo) -> Outcome:
     return _verdict([f"the Makefile does not run {tool} on .github/workflows" for tool in missing])
 
 
+def standard_wired(repo: Repo) -> Outcome:
+    """The Makefile runs the standard and `make check` depends on it, so the capability tripwire reaches what CI and agents run."""
+    code = _make_code(repo)
+    findings = []
+    if not re.search(r"\bap standard check\b", code):
+        findings.append("the Makefile never runs `ap standard check`, so a capability the repo gains goes unnoticed")
+    if not re.search(r"^check\s*:[^\n]*\bstandard\b", code, re.M):
+        findings.append("`make check` does not depend on a `standard` target, so nothing CI or an agent runs calls the standard")
+    return _verdict(findings)
+
+
 def _pack_rule(name: str) -> Callable[["Repo"], Outcome]:
     def check(repo: Repo) -> Outcome:
         return packs.check_pack(repo.scan(), name)
@@ -511,6 +522,7 @@ CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "secret-scan-wired": secret_scan_wired,
     "workflow-lint-wired": workflow_lint_wired,
     "dependency-cooldown": dependency_cooldown,
+    "standard-wired": standard_wired,
     "payments-pack": _pack_rule("payments"),
     "llm-pack": _pack_rule("llm"),
     "deploy-pack": _pack_rule("deploy"),

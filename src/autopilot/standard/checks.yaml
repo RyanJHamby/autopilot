@@ -122,6 +122,15 @@ checks:
     why: Most malicious package releases are caught and pulled within days, so a version a week old is far less likely to be one.
     fix: "Add `cooldown: {default-days: 7}` to every Dependabot entry, or set `minimumReleaseAge` in Renovate."
 
+  - id: standard-wired
+    title: "`make check` runs the standard, so a new capability is noticed"
+    level: fail
+    label: enforced
+    since: 2026-11-10
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
+    why: The capability packs only help if something that runs on every change calls them, or a repo can ship Stripe code with nothing said.
+    fix: "Add a `standard` target running `ap standard check . --offline` and make `check` depend on it; `quick` should call `standard-report`."
+
   # Capability packs, `since: 2026-11-10`. A repo that can take payments, call an LLM or run a deployment must have that capability's
   # pack (see packs.yaml). The capability is read from the repo's own content, so the requirement appears when the capability does.
   # Code items are checked against the code. Record items are SELF-ATTESTED: the repo can hold a note that a spend cap exists, not

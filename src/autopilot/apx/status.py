@@ -15,6 +15,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from . import hostenv
 from .redact import redact
 
 PROBLEM_WORDS = ("planner error", "crashed", "failed", "config error", "rolled back")
@@ -81,7 +82,10 @@ def code_version(code_dir: str) -> str:
 
 
 def notify(title: str, message: str) -> None:
-    """A local macOS notification on the owner's own screen. Arguments are passed as argv, never interpolated into the script."""
+    """A local macOS notification on the owner's own screen. Arguments are passed as argv, never interpolated into the script.
+    Only macOS has a screen to notify: on a headless Linux host this does nothing, and the alert is the dead-man's-switch heartbeat."""
+    if not hostenv.is_darwin():
+        return
     script = "on run argv\ndisplay notification (item 2 of argv) with title (item 1 of argv)\nend run"
     subprocess.run(["/usr/bin/osascript", "-e", script, title, message], capture_output=True, timeout=15)
 

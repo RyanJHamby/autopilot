@@ -18,6 +18,7 @@ from typing import Callable
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import automerge as kit_automerge  # noqa: E402
 
+from . import hostenv  # noqa: E402
 from .app_auth import TokenCache, make_jwt  # noqa: E402
 from .github import make_api  # noqa: E402
 from .planner import ALLOWED_REPOS  # noqa: E402
@@ -104,14 +105,8 @@ def sandbox_checks(s, launcher) -> list[Check]:
             who.stderr.strip()[:80] or s.ci_user,
         )
     )
-    admin = run(["/usr/sbin/dseditgroup", "-o", "checkmember", "-m", s.ci_user, "admin"])
-    out.append(
-        Check(
-            "sandbox account is not an admin",
-            "is a member" not in (admin.stdout + admin.stderr) or "NOT" in admin.stdout,
-            "standard user",
-        )
-    )
+    admin = run(hostenv.admin_check_argv(s.ci_user))
+    out.append(Check("sandbox account is not an admin", not hostenv.is_admin(admin, s.ci_user), "standard user"))
     for label, path in (
         ("App key", str(s.key_path)),
         ("Claude token", s.oauth_file),
@@ -143,11 +138,11 @@ def sandbox_checks(s, launcher) -> list[Check]:
 def agent_checks(s, launcher) -> list[Check]:
     """The model's account: it may hold the Claude token and nothing that can write to GitHub. Proven from ITS side, plus the one
     check only the orchestrator can make: that this account no longer keeps a copy of the Claude token."""
-    home = f"/Users/{s.agent_user}"
+    home = hostenv.home_of(s.agent_user)
     token = s.oauth_file
     code_dir = s.code_dir()
     python = f"{s.shared_dir}/venv/bin/python"
-    binary = s.agent_binary or f"{home}/.local/bin/claude"
+    binary = s.agent_bin()
 
     def run(argv, env=None):
         try:
@@ -160,14 +155,8 @@ def agent_checks(s, launcher) -> list[Check]:
     out.append(
         Check("agent account is usable via sudo", who.returncode == 0 and who.stdout.strip() == s.agent_user, s.agent_user)
     )
-    admin = run(["/usr/sbin/dseditgroup", "-o", "checkmember", "-m", s.agent_user, "admin"])
-    out.append(
-        Check(
-            "agent account is not an admin",
-            "is a member" not in (admin.stdout + admin.stderr) or "NOT" in admin.stdout,
-            "standard user",
-        )
-    )
+    admin = run(hostenv.admin_check_argv(s.agent_user))
+    out.append(Check("agent account is not an admin", not hostenv.is_admin(admin, s.agent_user), "standard user"))
     for label, argv in (
         ("the App key", ["/bin/cat", str(s.key_path)]),
         ("the orchestrator home", ["/bin/ls", str(Path(s.key_path).parent)]),

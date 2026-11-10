@@ -716,8 +716,9 @@ def test_build_deps_uses_the_sandbox_lanes_only_when_a_ci_account_is_configured(
 
     monkeypatch.setattr(guardlane, "fetch_kit", lambda repo, ref, dest: dest)  # no network in this test
     plain = dm.build_deps(dm.Settings.from_env(env(tmp_path)), lambda *a, **k: {}, lambda r: "t", {})
+    boxed_settings = dm.Settings.from_env(env(tmp_path, APX_CI_USER="apx-ci"))
     boxed = dm.build_deps(
-        dm.Settings.from_env(env(tmp_path, APX_CI_USER="apx-ci")),
+        boxed_settings,
         lambda *a, **k: {},
         lambda r: "write",
         {},
@@ -726,7 +727,7 @@ def test_build_deps_uses_the_sandbox_lanes_only_when_a_ci_account_is_configured(
     assert not isinstance(getattr(plain.guard, "__self__", None), SandboxLanes)
     assert isinstance(boxed.guard.__self__, SandboxLanes) and isinstance(boxed.checkout.__self__, SandboxLanes)
     assert boxed.guard.__self__.launcher.user == "apx-ci"
-    assert "/Users/Shared/apx/kit" in boxed.guard.__self__.kit_dir  # the kit lives where the sandbox account can read it
+    assert f"{boxed_settings.shared_dir}/kit" in boxed.guard.__self__.kit_dir  # the kit lives where the sandbox account can read it
     assert boxed.guard.__self__.token_for("o/r") == "read"  # PR code gets the read-only token, never the write one
 
 

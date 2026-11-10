@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sys
 from pathlib import Path
 
@@ -62,7 +63,51 @@ def _section(title: str, lines: list[str]) -> list[str]:
     return [f"## {title} ({len(lines)})" if lines else f"## {title}", *(lines or ["- none"]), ""]
 
 
-def render(summaries: list[dict], statuses: dict[str, str], now: dt.datetime) -> str:
+def read_history(path, n: int = 2) -> list[dict]:
+    """The last `n` valid runs from converge's history file, oldest first. A missing file, a blank line or a corrupt line is skipped."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    runs = []
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and isinstance(row.get("repos"), dict):
+            runs.append(row)
+    return runs[-n:]
+
+
+def standard_section(rows: list[dict]) -> list[str]:
+    """The standard's burn-down: each repo with gaps, now against the previous converge run, worst first. Pure; reads no network."""
+    if not rows:
+        return ["- converge has not recorded a run yet (it records one on `ap standard converge --apply`)"]
+    cur = rows[-1]["repos"]
+    prev = rows[-2]["repos"] if len(rows) > 1 else None
+    gaps = {n: c for n, c in cur.items() if c["fail_level"] or c["warn"] or c["grandfathered"]}
+    out = []
+    for name, c in sorted(gaps.items(), key=lambda kv: (-kv[1]["fail_level"], -kv[1]["warn"], kv[0])):
+        f, w, g = c["fail_level"], c["warn"], c["grandfathered"]
+        if prev is None:
+            out.append(f"- {name}: {f} fail-level, {w} warn, {g} grandfathered")
+        elif name not in prev:
+            out.append(f"- {name}: {f} fail-level (new since last run), {w} warn, {g} grandfathered")
+        else:
+            p = prev[name]
+            out.append(
+                f"- {name}: {f} fail-level (was {p['fail_level']}), {w} warn (was {p['warn']}), {g} grandfathered (was {p['grandfathered']})"
+            )
+    clean = len(cur) - len(gaps)
+    if clean:
+        out.append(f"- {clean} repo(s) conform (no gaps)")
+    if prev is None:
+        out.append("- no earlier run to compare yet")
+    return out
+
+
+def render(summaries: list[dict], statuses: dict[str, str], now: dt.datetime, standard: list[str] | None = None) -> str:
     def prs(key: str) -> list[str]:
         return [f"- {s['repo']} #{p['number']} {p['title']} ({p['url']})" for s in summaries for p in s[key]]
 
@@ -77,4 +122,6 @@ def render(summaries: list[dict], statuses: dict[str, str], now: dt.datetime) ->
     out = [f"# Autopilot digest {now.strftime('%Y-%m-%d')}", "", "Last 24 hours.", ""]
     out += _section("Merged", prs("merged")) + _section("Waiting on you", waiting())
     out += _section("Failed runs", failed) + _section("Paused or held", stopped)
+    if standard is not None:
+        out += _section("Standard burn-down", standard)
     return "\n".join(out).rstrip("\n") + "\n"

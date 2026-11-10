@@ -1050,7 +1050,9 @@ def cmd_digest(ns: argparse.Namespace) -> int:
         statuses[name] = digest.repo_status(e, v.returncode == 0 and v.stdout.strip() == "true", now)
         if p.returncode or r.returncode:
             statuses[name] = "cannot read GitHub" if statuses[name] == "ok" else statuses[name] + " (cannot read GitHub)"
-    text = digest.render(summaries, statuses, now)
+    from autopilot.converge import command as converge_command
+
+    text = digest.render(summaries, statuses, now, standard=digest.standard_section(digest.read_history(converge_command.HISTORY)))
     if ns.out:
         Path(ns.out).write_text(text)
         print(f"wrote {ns.out}")

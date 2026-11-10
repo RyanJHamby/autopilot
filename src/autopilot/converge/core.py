@@ -44,6 +44,8 @@ class Audit:
     skipped: str | None = None  # why this repo was not audited
     gaps: list[str] = field(default_factory=list)  # failing rules, "rule-id: first finding"
     fail_level: int = 0  # how many of the gaps are fail-level rules
+    warn: int = 0  # gaps that are warn-level rules in their own right
+    grandfathered: int = 0  # gaps that would be fail-level but the repo predates the rule, so they only warn
     fixable: list[str] = field(default_factory=list)  # files `ap standard fix` would create
     new: bool = False  # created in the last NEW_DAYS days
     in_portfolio: bool = False
@@ -152,6 +154,11 @@ def audit(listed: Listed, path: Path, owner: str, portfolio: dict, today: date) 
     for res in engine.run(repo):
         if res.result == "fail":
             a.gaps.append(f"{res.id}: {res.findings[0] if res.findings else 'failed'}")
-            a.fail_level += res.level == "fail"
+            if res.level == "fail":
+                a.fail_level += 1
+            elif res.findings and res.findings[0].startswith("grandfathered to warn"):
+                a.grandfathered += 1
+            else:
+                a.warn += 1
     a.fixable = [x.path for x in scaffold.plan(path, ctx) if x.status == "create"]
     return a

@@ -17,9 +17,10 @@ TODAY = date(2026, 11, 8)
 
 @pytest.fixture(autouse=True)
 def status_file(tmp_path_factory, monkeypatch):
-    """No test may write to the real ~/.autopilot/converge/last.json."""
+    """No test may write to the real ~/.autopilot/converge/ (last.json or history.jsonl)."""
     path = tmp_path_factory.mktemp("status") / "last.json"
     monkeypatch.setattr(command, "STATUS", path)
+    monkeypatch.setattr(command, "HISTORY", path.with_name("history.jsonl"))
     return path
 
 
@@ -414,6 +415,26 @@ def test_apply_records_how_the_run_went(tmp_path, status_file):
     data = json.loads(status_file.read_text())
     assert data["ok"] is True and data["exit"] == 0 and data["audited"] == 1 and data["with_gaps"] == 1
     assert data["issues"]["create"] == 1 and data["errors"] == [] and data["time"]
+
+
+def test_apply_appends_per_repo_counts_to_the_history_and_a_dry_run_does_not(tmp_path, status_file):
+    history = status_file.with_name("history.jsonl")
+    clone(tmp_path, "mine")
+    converge(tmp_path, [row("mine")], portfolio(repos={"mine": {}}))
+    assert not history.exists()
+    converge(tmp_path, [row("mine")], portfolio(repos={"mine": {}}), flags={"apply": True})
+    converge(tmp_path, [row("mine")], portfolio(repos={"mine": {}}), flags={"apply": True})
+    rows = [json.loads(line) for line in history.read_text().splitlines()]
+    assert len(rows) == 2, "each applied run adds one line"
+    c = rows[-1]["repos"]["mine"]
+    assert set(c) == {"fail_level", "warn", "grandfathered"} and c["warn"] > 0
+
+
+def test_a_skipped_repo_is_not_in_the_history(tmp_path, status_file):
+    clone(tmp_path, "mine")
+    converge(tmp_path, [row("mine"), row("forked", isFork=True)], portfolio(repos={"mine": {}}), flags={"apply": True})
+    rows = [json.loads(line) for line in status_file.with_name("history.jsonl").read_text().splitlines()]
+    assert list(rows[-1]["repos"]) == ["mine"]
 
 
 def test_a_dry_run_writes_no_status_file(tmp_path, status_file):

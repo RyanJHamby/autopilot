@@ -41,6 +41,19 @@ def render(audits: list[core.Audit], skipped: list[tuple[str, str]], errors: lis
 
 
 STATUS = Path.home() / ".autopilot" / "converge" / "last.json"
+HISTORY = Path.home() / ".autopilot" / "converge" / "history.jsonl"  # private and local: per-repo counts, one line per applied run
+
+
+def append_history(path: Path, repos: dict) -> str:
+    """Add one line of per-repo counts. Append-only, so the past is never rewritten. A write failure is reported, never fatal."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps({"time": datetime.now().astimezone().isoformat(timespec="seconds"), "repos": repos})
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError as e:
+        return f"could not write the history file {path}: {e}"
+    return ""
 
 
 def write_status(path: Path, payload: dict) -> str:
@@ -67,8 +80,10 @@ def cmd_converge(
     run=subprocess.run,
     today: date | None = None,
     status_path: Path | None = None,
+    history_path: Path | None = None,
 ) -> int:
     status_path = status_path or STATUS  # resolved at call time so tests can redirect it
+    history_path = history_path or HISTORY
     portfolio = load_portfolio()
     owner = ns.owner or portfolio["owner"]
     today = today or date.today()
@@ -161,6 +176,12 @@ def cmd_converge(
                 "errors": errors,
             },
         )
+        if bad:
+            print(f"WARNING {bad}")
+        counted = {
+            a.name: {"fail_level": a.fail_level, "warn": a.warn, "grandfathered": a.grandfathered} for a in audits if not a.skipped
+        }
+        bad = append_history(history_path, counted)
         if bad:
             print(f"WARNING {bad}")
     return 1 if errors else 0

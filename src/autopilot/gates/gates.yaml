@@ -1,0 +1,131 @@
+# Gates: checklists a bet clears before real users arrive (beta) and before the first payment (charge). See autopilot/gates/__init__.py.
+# `ap gate show BET GATE` reports each item; `ap gate seed BET GATE` writes the `step` items into the control repo as draft pawl steps.
+# Item kinds: repo-standard (checked against the repo's code), bet-artifact (another bet delivered an artifact; as good as the ref recorded in
+# pawl), bet-field (a bet.toml field is filled in), step (a manual task, self-attested). Tips are numbers from the Lean Ship Stack list.
+# This is a checklist, not legal or tax advice: the legal and tax steps say to confirm with a professional.
+
+gates:
+  beta:
+    title: "Real users' data is about to arrive"
+    items:
+      - id: repo-standard
+        kind: repo-standard
+        title: "The repo meets the current standard (no fail-level gaps)"
+        tips: [14, 55, 180]
+      - id: repo-set
+        kind: bet-field
+        field: repo
+        title: "The bet names its repo"
+      - id: money-gate
+        kind: bet-field
+        field: money_gate
+        title: "The bet says what payment earns scale"
+      - id: billing-alerts
+        kind: step
+        title: "Turn on billing alerts and hard spend caps on every cloud, LLM and SaaS account"
+        note: "Tips 75, 76. Record where each cap is set and who gets the alert."
+      - id: funnel
+        kind: step
+        title: "Track the five-event funnel: visit, signup, activation, the core action, payment"
+        note: "Tip 86. Five events, not fifty."
+      - id: uptime
+        kind: step
+        title: "Add uptime and certificate-expiry checks for the deployed app"
+        note: "Tip 66. Page only on what a user would feel."
+      - id: dev-prod
+        kind: step
+        title: "Keep dev and prod apart: separate projects or accounts, no prod keys on dev machines or in agent sessions"
+        note: "Tips 58, 59."
+      - id: feedback
+        kind: step
+        title: "Add a one-click feedback link inside the app"
+        note: "Tip 89. The cheapest user research."
+      - id: secrets
+        kind: step
+        title: "Move secrets into a secrets manager and confirm none are committed, including in .env files in git"
+        note: "Tips 55, 56."
+      - id: privacy-page
+        kind: step
+        title: "Publish a privacy page before collecting any user data, and have a professional review the wording"
+        note: "Tips 96, 225. A checklist, not legal advice; confirm with a professional."
+
+  charge:
+    title: "Ready to take the first payment"
+    items:
+      - id: repo-standard
+        kind: repo-standard
+        title: "The repo meets the current standard (payments, deploy and LLM packs included)"
+        tips: [88, 195, 196]
+      - id: entity-formed
+        kind: bet-artifact
+        bet: llc
+        artifacts: [filing, ein]
+        title: "The business entity is formed and has an EIN (llc bet: filing and ein delivered)"
+        tips: [107, 108]
+      - id: business-account
+        kind: bet-artifact
+        bet: financial-separation
+        artifacts: [account]
+        title: "A business bank account is open (financial-separation bet: account delivered)"
+        tips: [109]
+      - id: conflicts-reviewed
+        kind: bet-field
+        field: conflict_check
+        title: "The ownership and conflict review is recorded on the bet"
+        tips: [111]
+      - id: money-gate
+        kind: bet-field
+        field: money_gate
+        title: "The bet says what payment earns scale"
+      - id: sales-tax
+        kind: step
+        title: "Decide sales tax and VAT: sell through a merchant of record, or register where you have obligations (confirm with a professional)"
+        note: "Tip 226. Retrofitting this is painful. Not tax advice; confirm with a professional."
+      - id: processor-account
+        kind: step
+        title: "Open the payment processor account in the business's name, linked to the business bank account"
+        note: "Tips 112, 109. Never a personal account."
+      - id: bookkeeping
+        kind: step
+        title: "Set up bookkeeping and a receipts folder, and categorize every month"
+        note: "Tip 110."
+      - id: tax-set-aside
+        kind: step
+        title: "Set money aside for taxes each month and note the estimated-payment dates; confirm the plan with a CPA"
+        note: "Tip 113. Not tax advice; confirm with a CPA."
+      - id: insurance
+        kind: step
+        title: "Decide on general liability and cyber insurance now that money is changing hands; ask a professional"
+        note: "Tip 115. Cheap compared with one claim; not advice, confirm with a professional."
+      - id: support-inbox
+        kind: step
+        title: "Set up one support inbox and a short help page with the top answers"
+        note: "Tip 139."
+      - id: dunning
+        kind: step
+        title: "Turn on failed-payment retries and reminder emails in the payment processor"
+        note: "Tip 138. They quietly recover lost revenue."
+      - id: revenue-alert
+        kind: step
+        title: "Alert when signups or payments drop to zero"
+        note: "Tip 201. Often the first sign of a silent outage."
+      - id: data-retention
+        kind: step
+        title: "Write what user data you keep and for how long, and test the deletion process"
+        note: "Tips 137, 225."
+      - id: webhook-replay
+        kind: step
+        title: "Replay a recorded payment webhook in tests to prove the handler is safe to retry"
+        note: "Tips 39, 88, 195."
+      - id: test-purchase
+        kind: step
+        title: "Run a full test-mode purchase end to end, then one live purchase of a tiny amount and refund it"
+        note: "Tip 88. Do this before announcing."
+      - id: legal-pages
+        kind: step
+        title: "Publish terms and a refund policy and have a professional review them"
+        note: "Tips 96, 225. Not legal advice; confirm with a professional."
+      - id: recovery-record
+        kind: step
+        title: "Record every account, its owner, and where the recovery codes are kept (in the password manager)"
+        note: "Tips 57, 116."

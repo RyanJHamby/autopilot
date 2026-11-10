@@ -11,6 +11,7 @@ a pass. `skip` is only for a rule whose `applies_to` doesn't match the repo, and
 from __future__ import annotations
 
 import datetime
+import os
 import re
 import subprocess
 from collections.abc import Callable
@@ -410,6 +411,77 @@ def contributing_present(repo: Repo) -> Outcome:
     return _first_file(repo, ("CONTRIBUTING.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"), "CONTRIBUTING.md")
 
 
+# --- day-0 rules: they audit wiring, not whether a tool catches anything ----------------------------------------------------
+
+
+def _make_code(repo: Repo) -> str:
+    """The Makefile without its comment lines, so a scanner named only in a comment does not count as wired."""
+    return "\n".join(ln for ln in (repo.read("Makefile") or "").splitlines() if not ln.lstrip().startswith("#"))
+
+
+def hook_wired(repo: Repo) -> Outcome:
+    """A pre-commit hook that runs make, and a `setup` target that installs it, because a hook cannot be forced onto a clone."""
+    findings = []
+    hook = repo.path / ".githooks/pre-commit"
+    if not hook.is_file():
+        findings.append("no .githooks/pre-commit")
+    else:
+        if not os.access(hook, os.X_OK):
+            findings.append(".githooks/pre-commit is not executable (git ignores a hook that is not)")
+        body = "\n".join(ln for ln in hook.read_text(encoding="utf-8", errors="replace").splitlines() if not ln.lstrip().startswith("#"))
+        if not re.search(r"\bmake\b", body):
+            findings.append(".githooks/pre-commit does not run make, so it cannot run the repo's checks")
+    code = _make_code(repo)
+    if not (re.search(r"^setup\s*:", code, re.M) and ".githooks" in code):
+        findings.append("the Makefile has no `setup` target that installs .githooks/pre-commit, so a fresh clone gets no hook")
+    return _verdict(findings)
+
+
+def secret_scan_wired(repo: Repo) -> Outcome:
+    scanned = _make_code(repo) + "\n".join(
+        ln for ln in (repo.read(".pre-commit-config.yaml") or "").splitlines() if not ln.lstrip().startswith("#")
+    )
+    return _ok() if "gitleaks" in scanned else ("fail", ["no gitleaks in the Makefile or .pre-commit-config.yaml"])
+
+
+def workflow_lint_wired(repo: Repo) -> Outcome:
+    if not _has_workflows(repo):
+        return "skip", ["no workflows to lint"]
+    code = _make_code(repo)
+    missing = [tool for tool in ("actionlint", "zizmor") if tool not in code]
+    return _verdict([f"the Makefile does not run {tool} on .github/workflows" for tool in missing])
+
+
+_COOLDOWN_KEYS = ("default-days", "semver-major-days", "semver-minor-days", "semver-patch-days")
+
+
+def dependency_cooldown(repo: Repo) -> Outcome:
+    """Every Dependabot entry waits some days before proposing a new release, or Renovate sets `minimumReleaseAge`."""
+    for name in (".github/dependabot.yml", ".github/dependabot.yaml"):
+        text = repo.read(name)
+        if text is None:
+            continue
+        try:
+            doc = yaml.safe_load(text) or {}
+        except yaml.YAMLError as e:
+            return "unknown", [f"{name} does not parse: {type(e).__name__}"]
+        updates = doc.get("updates") if isinstance(doc, dict) else None
+        if not isinstance(updates, list) or not updates:
+            return "unknown", [f"{name} has no `updates` list to check"]
+        bad = []
+        for u in updates:
+            cool = u.get("cooldown") if isinstance(u, dict) else None
+            ok = isinstance(cool, dict) and any(isinstance(cool.get(k), int) and cool[k] > 0 for k in _COOLDOWN_KEYS)
+            if not ok:
+                bad.append(f"the {u.get('package-ecosystem', '?') if isinstance(u, dict) else '?'} entry has no cooldown of one or more days")
+        return _verdict(bad)
+    for name in ("renovate.json", ".renovaterc", ".github/renovate.json"):
+        text = repo.read(name)
+        if text is not None:
+            return _ok() if "minimumReleaseAge" in text else ("fail", [f"{name} sets no minimumReleaseAge"])
+    return "skip", ["no Dependabot or Renovate config (dependency-updates reports that)"]
+
+
 CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "pinned-actions": pinned_actions,
     "workflow-permissions": workflow_permissions,
@@ -421,6 +493,10 @@ CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "one-check-entrypoint": one_check_entrypoint,
     "license-present": license_present,
     "ruleset-present": ruleset_present,
+    "hook-wired": hook_wired,
+    "secret-scan-wired": secret_scan_wired,
+    "workflow-lint-wired": workflow_lint_wired,
+    "dependency-cooldown": dependency_cooldown,
     "agents-md-budget": agents_md_budget,
     "how-this-was-built": how_this_was_built,
     "journal-present": journal_present,

@@ -83,6 +83,45 @@ checks:
     why: Branch rules are what make checks binding. Without them a failing check cannot block a merge.
     fix: Apply the ruleset with `ap ruleset REPO --apply`. Result is `unknown` if the ruleset can't be read.
 
+  # Day-0 rules, `since: 2026-11-10`: strict for a repo whose first commit is on or after that date, grandfathered to warn for an
+  # older one (see STANDARD.md, "Phasing a rule in"). They audit wiring only: that a hook, a scan and a cooldown are set up, not
+  # that a scan catches anything. A repo made by `ap new` already passes all four.
+  - id: hook-wired
+    title: A pre-commit hook runs make, and `make setup` installs it
+    level: fail
+    label: enforced
+    since: 2026-11-10
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
+    why: A hook cannot be forced onto a clone. Without a `setup` target a fresh clone, including an agent's, commits with no checks.
+    fix: Add `.githooks/pre-commit` (executable) that runs `make quick`, and a `setup` target that symlinks it into .git/hooks.
+
+  - id: secret-scan-wired
+    title: A secret scan (gitleaks) is wired into the Makefile or pre-commit config
+    level: fail
+    label: enforced
+    since: 2026-11-10
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
+    why: Agents and people paste keys into code and logs, and a leaked key is the most common way a small account is taken over.
+    fix: Add a `staged-secrets` target running `gitleaks git --staged`, and call it from `quick`.
+
+  - id: workflow-lint-wired
+    title: actionlint and zizmor run on the workflows
+    level: fail
+    label: enforced
+    since: 2026-11-10
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
+    why: Workflow files are code that runs with your credentials, and a PR title interpolated into a shell step is an injection.
+    fix: Add a `workflow-lint` target that runs actionlint and zizmor on .github/workflows, and call it from `check`.
+
+  - id: dependency-cooldown
+    title: Dependency updates wait a few days before they are proposed
+    level: fail
+    label: enforced
+    since: 2026-11-10
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
+    why: Most malicious package releases are caught and pulled within days, so a version a week old is far less likely to be one.
+    fix: "Add `cooldown: {default-days: 7}` to every Dependabot entry, or set `minimumReleaseAge` in Renovate."
+
   # Advisory rules: judgment. They warn and never fail a run, and nothing here claims they improve outcomes.
   - id: agents-md-budget
     title: AGENTS.md is 60 lines or fewer

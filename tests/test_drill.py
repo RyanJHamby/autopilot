@@ -20,6 +20,14 @@ def test_every_drill_reports_the_expected_outcome():
         "guard-protected-paths": "caught",
         "guard-ignores-humans": "caught",
         "guard-test-deletion": "caught",
+        "day0-baseline": "green",
+        "day0-hook-not-executable": "caught",
+        "day0-hook-no-setup": "caught",
+        "day0-secret-scan-removed": "caught",
+        "day0-workflow-lint-removed": "caught",
+        "day0-cooldown-removed": "caught",
+        "day0-old-repo-not-broken": "caught",
+        "day0-quick-empty": "limit",
     }
 
 

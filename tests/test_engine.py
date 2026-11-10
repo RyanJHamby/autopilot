@@ -1,5 +1,6 @@
 """The standard's engine: each rule has a passing and a failing fixture, so a check that always passes turns a test red."""
 
+import os
 import subprocess
 from types import SimpleNamespace
 
@@ -19,10 +20,16 @@ def write(root, files):
     return root
 
 
-def git_repo(root, files=None):
+OLD = "2026-01-01"  # before every rule's `since`: an existing repo, so a rule dated later is grandfathered to warn
+
+
+def git_repo(root, files=None, born=OLD):
+    """A repo with one commit dated `born`. Backdated by default so tests about exit codes and clones model an *existing* repo;
+    a test about the day-0 floor passes a recent `born` (see test_standard_since and test_standard_day0_rules)."""
     write(root, files or {"README.md": "x\n"})
+    env = {**os.environ, "GIT_AUTHOR_DATE": f"{born}T12:00:00+00:00", "GIT_COMMITTER_DATE": f"{born}T12:00:00+00:00"}
     for args in (["init", "-q", "-b", "main"], ["add", "."], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "b"]):
-        subprocess.run(["git", "-c", "commit.gpgsign=false", *args], cwd=root, check=True, capture_output=True)
+        subprocess.run(["git", "-c", "commit.gpgsign=false", *args], cwd=root, check=True, capture_output=True, env=env)
     return root
 
 

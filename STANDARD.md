@@ -2,7 +2,7 @@
 
 Status: **v0 draft, standard version 1.** The rule list and labels are in
 [`src/autopilot/standard/checks.yaml`](src/autopilot/standard/checks.yaml). Run them with `ap standard check REPO`, or
-`ap standard check --portfolio` for every enabled repo. All 14 rules have a check. The engine runs from the CLI on a
+`ap standard check --portfolio` for every enabled repo. Every rule has a check. The engine runs from the CLI on a
 machine and, offline, from a CI step in `ci.yml`.
 
 This file says what a repo should have and how each rule is backed. It makes no claim that following it improves how
@@ -16,11 +16,18 @@ well agents work. Where a rule is judgment, it says so.
 | `audited` | `ap standard check` reports it when someone runs it | Yes, but nothing blocks a merge |
 | `advisory` | Judgment, not enforced anywhere | No, it only warns |
 
-Six rules are `enforced`: the `fail`-level ones. They are enforced by the `ci.yml` step
+The `fail`-level rules are the `enforced` ones: six from the start, and four day-0 rules (`since: 2026-11-10`, see "Phasing a
+rule in"). They are enforced by the `ci.yml` step
 `uv run ap standard check . --offline`, which exits non-zero when one of them fails. That step runs offline, so it
 never asks GitHub anything. Two limits: nothing has yet run on GitHub Actions, so "enforced" is the design until a real
 pull request shows the step blocking; and whether the step is a *required* status check depends on the ruleset, which
 is an owner setting. A test checks that the CI step exists whenever any rule claims `enforced`.
+
+A third limit, which applies to every `enforced` rule and matters most for a repo made by `ap new`: that CI step exists only
+in autopilot's own `ci.yml`. A new repo's `ci.yml` runs `make check`, not `ap standard check`, so for it these rules are audited
+when someone runs `ap standard check` or when `converge` runs, not blocked by CI. What actually stops a bad commit there is the
+local hook and `make check`, which the day-0 rules verify are wired. The day-0 rules audit that wiring and nothing more: they
+cannot tell whether a scan catches a secret (a scaffold test checks that with real gitleaks) or whether `make quick` does any work.
 
 A result is `pass`, `fail`, `unknown`, `skip` or `waived`. `unknown` means the check couldn't be answered, for example
 because `gh` isn't installed, the ruleset can't be read, or a workflow file doesn't parse. It is never counted as a pass,
@@ -44,6 +51,10 @@ A rule's **level** says what a failing result does to the run: `fail` exits non-
 | `one-check-entrypoint` | warn | audited | all |
 | `license-present` | warn | audited | public repos |
 | `ruleset-present` | warn | audited | all |
+| `hook-wired` | fail | enforced | all |
+| `secret-scan-wired` | fail | enforced | all |
+| `workflow-lint-wired` | fail | enforced | all |
+| `dependency-cooldown` | fail | enforced | all |
 | `agents-md-budget` | warn | advisory | all |
 | `how-this-was-built` | warn | advisory | all |
 | `journal-present` | warn | advisory | all |

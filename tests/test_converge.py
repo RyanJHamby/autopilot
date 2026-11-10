@@ -585,6 +585,38 @@ def test_an_unknown_visibility_is_treated_as_public_so_the_safe_mistake_is_sayin
     assert "prod.pem" not in text and "1 security-related gap(s) are not listed here" in text
 
 
+PACK_GAPS = [
+    "payments-pack: payments detected: stripe in package.json dependencies",
+    "llm-pack: llm detected: openai in package.json dependencies",
+    "deploy-pack: deploy detected: vercel.json is a deploy config",
+]
+
+
+def test_a_public_issue_never_says_what_capabilities_a_repo_has_or_which_controls_it_lacks():
+    # "no webhook signature check" or "no spend cap" is a map for an attacker, so the pack gaps are counted and never written down.
+    text = issues.body(audit_with(True, "license-present: no LICENSE file", *PACK_GAPS), "Ryan")
+    assert "stripe" not in text and "openai" not in text and "vercel" not in text and "detected" not in text
+    assert "3 security-related gap(s) are not listed here because this repository is public" in text
+    assert "license-present: no LICENSE file" in text
+
+
+def test_a_private_issue_lists_the_pack_gaps_in_full():
+    text = issues.body(audit_with(False, *PACK_GAPS), "Ryan")
+    assert "stripe in package.json" in text and "vercel.json is a deploy config" in text and "not listed here" not in text
+
+
+def test_an_unknown_visibility_hides_the_pack_gaps_too():
+    text = issues.body(audit_with(None, PACK_GAPS[0]), "Ryan")
+    assert "stripe" not in text and "1 security-related gap(s) are not listed here" in text
+
+
+def test_the_day_zero_wiring_gaps_are_still_listed_on_a_public_repo():
+    # A decision, written down so changing it is deliberate: a missing hook or cooldown is hygiene, like an unpinned action, which
+    # converge already lists publicly. A missing control that names what the product does is what gets hidden.
+    wiring = "hook-wired: no .githooks/pre-commit"
+    assert wiring in issues.body(audit_with(True, wiring), "Ryan")
+
+
 def test_the_redacted_text_is_what_is_actually_sent_to_github(tmp_path):
     import subprocess as sp
 

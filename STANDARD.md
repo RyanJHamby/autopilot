@@ -93,8 +93,9 @@ Only a `fail` can be waived. An `unknown` has nothing to waive.
    standard doesn't choose.
 2. **Required check.** Make the CI job a required status check in the `autopilot-main` ruleset, or the step can fail
    without blocking the merge.
-3. **Rulesets on your plan.** Whether rulesets and code owners bind on private repos depends on the GitHub plan, which
-   hasn't been checked. Run `gh api user --jq .plan.name`.
+3. **Rulesets on your plan.** Checked 2026-11-10: the account plan is `pro`, and the private repo `pawl` carries an
+   `autopilot-main` ruleset. That shows private repos accept rulesets on this plan. It does not show a ruleset blocking a
+   merge on a private repo; only the public-repo block (autopilot PR #188) has been seen.
 
 ## Related
 

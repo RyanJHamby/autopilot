@@ -432,3 +432,7 @@ Lean Ship Stack, Phase A (2026-11-10). Explored three layers that each define 'c
 ## 2026-11-10 11:49 EST (at 4c42883)
 
 A1/A2 results (2026-11-10, owner ran the gh commands). Plan is pro; private repo pawl has an autopilot-main ruleset, so private repos accept rulesets (a block on a private repo is still unobserved). gh works under the doctor's launchd-style env, so PATH/auth are not the doctor's blindness. The 'check your internet' text is gh's own stderr, and the blind run was stamped 09:53 against a 09:07 schedule while earlier log runs were green: most likely a missed calendar job firing on wake before the network was up. That is a hypothesis from timing, not observed. Fix queued for the admin repo: retry network errors in server_audit.gh_api, mark a blind run explicitly, and add a later second run.
+
+## 2026-11-10 11:55 EST (at aa48483)
+
+B5 done: rules can carry since: YYYY-MM-DD. Declared level binds repos whose first commit is on/after it; older repos are grandfathered to warn (failure still printed). Decisions on edge cases: no commit yet or not a repo of its own counts as new (ap new leaves that state until the first commit); a subdirectory never borrows a parent repo's age (a failing test caught the design need); a shallow clone counts as old because its boundary commit is recent and converge audits through shallow clones. Trade-off accepted: a very new repo audited via a shallow clone is grandfathered. Tests first (8 red for the right reasons), then implementation; full suite 1357 passed in 194 s on this MacBook.

@@ -10,6 +10,7 @@ a pass. `skip` is only for a rule whose `applies_to` doesn't match the repo, and
 
 from __future__ import annotations
 
+import datetime
 import re
 import subprocess
 from collections.abc import Callable
@@ -18,7 +19,7 @@ from pathlib import Path
 
 import yaml
 
-from autopilot.standard import load_checks
+from autopilot.standard import load_checks, since_date
 
 # Mirrors kit/runtime/guard.py DEFAULT_PROTECTED. The kit isn't in the wheel, so it is copied, and a test fails if the
 # two lists drift.
@@ -76,6 +77,39 @@ class Repo:
         self.github_public = github_public  # what GitHub says, when it could be asked; it wins over the portfolio
         self.gh = gh or subprocess.run
         self._workflows: list[tuple[Path, str, object]] | None = None
+        self._born: tuple[str, datetime.date | None] | None = None
+
+    def _git(self, *args: str) -> tuple[int, str]:
+        r = subprocess.run(["git", "-C", str(self.path), *args], capture_output=True, text=True)
+        return r.returncode, r.stdout.strip()
+
+    def born(self) -> tuple[str, datetime.date | None]:
+        """How old this repo is, as ('dated', first-commit date), ('shallow', None) or ('none', None).
+
+        `none` is a directory that is not itself a git repo, or one with no commit yet (what `ap new` leaves). A shallow
+        clone cannot see its real first commit, so it is reported as such instead of guessed from its boundary commit.
+        """
+        if self._born is not None:
+            return self._born
+        rc, top = self._git("rev-parse", "--show-toplevel")
+        if rc != 0 or Path(top).resolve() != self.path.resolve():
+            self._born = ("none", None)  # not a repo of its own: never borrow a parent repo's history
+            return self._born
+        rc, shallow = self._git("rev-parse", "--is-shallow-repository")
+        if rc == 0 and shallow == "true":
+            self._born = ("shallow", None)
+            return self._born
+        rc, out = self._git("log", "--max-parents=0", "--format=%as", "HEAD")
+        days = [d for d in out.splitlines() if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d)] if rc == 0 else []
+        self._born = ("dated", min(datetime.date.fromisoformat(d) for d in days)) if days else ("none", None)
+        return self._born
+
+    def is_new_since(self, since: datetime.date) -> bool:
+        """True when a rule dated `since` should bind this repo at its full level. Unknown age leans new, except shallow."""
+        kind, day = self.born()
+        if kind == "dated":
+            return day >= since
+        return kind == "none"  # a shallow clone is grandfathered: the audit cannot prove the repo is new
 
     @property
     def public(self) -> bool | None:
@@ -427,7 +461,12 @@ def run(repo: Repo, only: list[str] | None = None, rules: dict | None = None) ->
     for rule in (rules or load_checks())["checks"]:
         if only is not None and rule["id"] not in only:
             continue
-        head = {"id": rule["id"], "label": rule["label"], "level": rule["level"]}
+        level = rule["level"]
+        since = since_date(rule.get("since"))
+        grandfathered = level == "fail" and since is not None and not repo.is_new_since(since)
+        if grandfathered:
+            level = "warn"
+        head = {"id": rule["id"], "label": rule["label"], "level": level}
         ok, why = applies(rule, repo)
         if not ok:
             results.append(Result(**head, result="skip", findings=[why]))
@@ -440,6 +479,8 @@ def run(repo: Repo, only: list[str] | None = None, rules: dict | None = None) ->
             outcome, findings = fn(repo)
         except Exception as e:  # a broken check must never read as a pass
             outcome, findings = "unknown", [f"check raised {type(e).__name__}: {e}"]
+        if grandfathered and outcome == "fail":
+            findings = [f"grandfathered to warn: this repo predates the rule ({since}); fix it to clear the warning", *findings]
         results.append(Result(**head, result=outcome, findings=findings))
     return results
 

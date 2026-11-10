@@ -68,6 +68,22 @@ manifests and no workflows, and `one-check-entrypoint` skips a repo with no mani
 docs-only repo, for example). A skip is shown as a skip, never as a pass, and a repo that has something to update or
 run but no config or check still fails.
 
+## Phasing a rule in: `since`
+
+A rule can carry `since: YYYY-MM-DD` in `checks.yaml`. Its declared level binds only repos whose first commit is on or after
+that date; older repos are **grandfathered to `warn`**. The failure is still printed, with a "grandfathered" note, so nothing is
+hidden; it just can't fail a run. Fixing the repo clears it. This is how a new rule is strict for new repos from day one
+without breaking an old repo overnight, and there is no per-repo field to forget.
+
+How a repo's age is read, and the edge cases:
+- Age is the author date of the repo's first commit (the earliest, if there are several roots).
+- A directory with no commit yet, or one that is not a git repo of its own, counts as **new**. `ap new` leaves a repo in that
+  state until its first commit, so a brand-new repo is strict from the start. A subdirectory never borrows a parent repo's age.
+- A **shallow clone** counts as old, because it cannot see its real first commit and its boundary commit is recent. This keeps
+  `converge`'s shallow audits from mistaking an old repo for a new one. It also means a very new repo audited through a shallow
+  clone is grandfathered; audit it from a full clone to see its full level.
+- A rewritten history changes a repo's age. The goal is to stop forgetting, not to resist someone rewriting their own repo.
+
 ## Waivers
 
 A repo that can't meet a rule yet needs a waiver. Waivers live in one central file, `policy/waivers.yaml` in the

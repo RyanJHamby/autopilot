@@ -8,10 +8,15 @@
 
 A rule's `level` is what a failing result does to the run: `fail` exits non-zero, `warn` prints. New rules start at `warn`
 until the portfolio is clean, so adding one never breaks a repo overnight.
+
+A rule may also carry `since: YYYY-MM-DD`. Its declared level then binds only repos whose first commit is on or after that
+date; older repos are grandfathered to `warn`. That makes a new repo strict by construction while an old one is never broken
+overnight, with no per-repo field to forget. Conforming is the way out of grandfathering: the failure still shows.
 """
 
 from __future__ import annotations
 
+import datetime
 import re
 from pathlib import Path
 
@@ -27,6 +32,20 @@ CHECKS_FILE = Path(__file__).with_name("checks.yaml")
 
 def load_checks(path: Path | None = None) -> dict:
     return yaml.safe_load((path or CHECKS_FILE).read_text(encoding="utf-8"))
+
+
+def since_date(value: object) -> datetime.date | None:
+    """A rule's `since` as a date, or None if absent or malformed. YAML turns an unquoted 2026-11-10 into a date already."""
+    if isinstance(value, datetime.datetime):
+        return None  # a timestamp is not a day; say which day
+    if isinstance(value, datetime.date):
+        return value
+    if isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        try:
+            return datetime.date.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
 
 
 def validate(data: dict) -> list[str]:
@@ -60,6 +79,8 @@ def validate(data: dict) -> list[str]:
             problems.append(f"{label}: label must be one of {', '.join(LABELS)}")
         if check.get("applies_to", "all") not in APPLIES_TO:
             problems.append(f"{label}: applies_to must be one of {', '.join(APPLIES_TO)}")
+        if "since" in check and since_date(check["since"]) is None:
+            problems.append(f"{label}: since must be a date written YYYY-MM-DD")
         if check.get("label") == "enforced" and not check.get("enforced_by"):
             problems.append(f"{label}: an enforced rule must say what enforces it (`enforced_by`)")
         if check.get("label") == "advisory":

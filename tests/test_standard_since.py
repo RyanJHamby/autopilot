@@ -144,3 +144,22 @@ def test_exit_code_follows_the_effective_level(tmp_path):
 
 def test_the_shipped_rules_still_validate():
     assert validate(load_checks()) == []
+
+
+# --- an age the caller knows beats the one the checkout can show --------------------------------------------------------------
+
+
+def test_a_known_age_overrides_the_first_commit_date(tmp_path):
+    root = born(tmp_path, "2020-01-01")  # the history says old
+    new = engine.run(engine.Repo(root, born_on=datetime.date(2026, 11, 12)), rules=rules(since="2026-11-10"))[0]
+    assert new.level == "fail"
+    root2 = born(sub(tmp_path, "r2"), "2026-11-20")  # the history says new
+    old = engine.run(engine.Repo(root2, born_on=datetime.date(2025, 1, 1)), rules=rules(since="2026-11-10"))[0]
+    assert old.level == "warn"
+
+
+def test_a_known_age_works_where_there_is_no_history_at_all(tmp_path):
+    # A shallow clone: no real first commit, but GitHub says when the repo was created.
+    (tmp_path / "README.md").write_text("x\n")
+    assert engine.run(engine.Repo(tmp_path, born_on=datetime.date(2025, 1, 1)), rules=rules(since="2026-11-10"))[0].level == "warn"
+    assert engine.run(engine.Repo(tmp_path, born_on=datetime.date(2026, 11, 10)), rules=rules(since="2026-11-10"))[0].level == "fail"

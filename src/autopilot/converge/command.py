@@ -63,7 +63,6 @@ def in_scope(r: core.Listed, portfolio: dict, today: date) -> bool:
 def cmd_converge(
     ns: argparse.Namespace,
     *,
-    repo_name,
     load_portfolio,
     run=subprocess.run,
     today: date | None = None,
@@ -97,18 +96,16 @@ def cmd_converge(
         if not only and not show_all and not in_scope(r, portfolio, today):
             outside += 1  # never cloned or read: an old repo nobody asked this job to look at
             continue
-        path, tmp, err = core.checkout(r.name, owner, Path(ns.root).expanduser(), repo_name, run=run)
+        path, tmp, err = core.checkout(r.name, owner, run=run)
         if path is None:
             errors.append(f"{r.name}: could not get a checkout ({err})")
             continue
         try:
             a = core.audit(r, path, owner, portfolio, today)
-            if tmp is not None:
-                a.note = "audited from a shallow clone"
+            a.note = "audited from a shallow clone of GitHub's default branch"
             audits.append(a)
         finally:
-            if tmp is not None:
-                tmp.cleanup()
+            tmp.cleanup()
 
     for name in sorted(only - {r.name for r in listed}):
         errors.append(f"--only {name}: no such repo among {owner}'s repos on GitHub")

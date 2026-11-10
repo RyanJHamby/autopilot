@@ -706,7 +706,7 @@ def cmd_new(ns: argparse.Namespace) -> int:
 def cmd_standard_converge(ns: argparse.Namespace) -> int:
     from autopilot.converge import command
 
-    return command.cmd_converge(ns, repo_name=repo_name, load_portfolio=load_portfolio)
+    return command.cmd_converge(ns, load_portfolio=load_portfolio)
 
 
 def cmd_trace(ns: argparse.Namespace) -> int:
@@ -2062,7 +2062,7 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_standard_template)
     p = ssub.add_parser("converge", help="audit every repo the owner has on GitHub and report the ones that miss the standard (read-only)")
     p.add_argument("--owner", help="GitHub owner (default: `owner:` in policy/portfolio.yaml)")
-    p.add_argument("--root", default="~/dev", help="where clones live; repos without one are audited from a shallow throwaway clone")
+    p.add_argument("--root", default="~/dev", help="ignored: converge audits a fresh shallow clone of GitHub's default branch, never a local clone")
     p.add_argument("--all", action="store_true", help="also audit older repos outside the portfolio (default: portfolio plus new)")
     p.add_argument("--apply", action="store_true", help="file or update one `standard-gap` issue per repo with gaps; close it when the repo conforms")
     p.add_argument("--only", action="append", metavar="REPO", help="audit (and with --apply, file for) just this repo; repeatable")

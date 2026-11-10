@@ -11,7 +11,7 @@ With `--apply` it files, edits or closes one issue per repo.
   portfolio are neither cloned nor read. `--all` widens the report to them; it never widens the issues.
 - **Skipped, with the reason shown:** forks, archived repos, the profile repo, `excluded:`, templates, `data_class: restricted`,
   pawl repos.
-- **Read-only on your clones.** A repo with no local clone under `--root` (default `~/dev`) is audited from a shallow throwaway clone.
+- **It audits GitHub, not your disk.** Every repo is audited from a fresh shallow clone of its default branch, in a throwaway directory. Your local clones are never read or written, so a stale one cannot give stale gaps or close an issue wrongly. `--root` is accepted and ignored. A repo's age (which decides whether a dated rule binds it at full strength) comes from GitHub's created date, because a shallow clone has no history to read.
 - **One issue per repo,** titled `standard: N gaps`, label `standard-gap`. Later runs edit it in place; when the repo conforms the
   issue is closed. A failed lookup is an error and files nothing, so it cannot create duplicates.
 - **Never** pushes, opens a PR, or touches a default branch. It fails loudly if GitHub cannot be listed or the list hits the limit.

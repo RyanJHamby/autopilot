@@ -71,6 +71,7 @@ class Repo:
         slug: str | None = None,
         gh: Callable | None = None,
         github_public: bool | None = None,
+        born_on: datetime.date | None = None,
     ):
         self.path = Path(path)
         self.entry = entry  # this repo's policy/portfolio.yaml entry, or None if it isn't in the portfolio
@@ -78,7 +79,9 @@ class Repo:
         self.github_public = github_public  # what GitHub says, when it could be asked; it wins over the portfolio
         self.gh = gh or subprocess.run
         self._workflows: list[tuple[Path, str, object]] | None = None
-        self._born: tuple[str, datetime.date | None] | None = None
+        # A repo's age when the caller knows it better than the checkout can (converge reads GitHub's created date, because a shallow
+        # clone has no history to read). It overrides the first-commit date.
+        self._born: tuple[str, datetime.date | None] | None = ("dated", born_on) if born_on is not None else None
         self._scan: capabilities.Scan | None = None
 
     def scan(self) -> capabilities.Scan:

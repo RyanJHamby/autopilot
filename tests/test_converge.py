@@ -3,6 +3,7 @@ failed listing as 'everything is fine'."""
 
 import argparse
 import json
+import shutil
 import subprocess
 from datetime import date
 from pathlib import Path
@@ -38,7 +39,7 @@ def cp(cmd, rc=0, out="", err=""):
     return subprocess.CompletedProcess(cmd, rc, out, err)
 
 
-def fake_run(listing, *, clone_files=None, list_rc=0, clone_rc=0):
+def fake_run(listing, *, clone_files=None, list_rc=0, clone_rc=0, remote_root=None):
     calls = []
 
     def run(cmd, **kw):
@@ -49,6 +50,12 @@ def fake_run(listing, *, clone_files=None, list_rc=0, clone_rc=0):
             if clone_rc:
                 return cp(cmd, clone_rc, "", "not found")
             dest = Path(cmd[3 + 1])
+            name = cmd[3].split("/")[-1]
+            if remote_root is not None and (Path(remote_root) / name).is_dir():
+                # The fixture directory stands for what GitHub holds: a clone is a copy of it.
+                shutil.copytree(Path(remote_root) / name, dest, dirs_exist_ok=True)
+                (dest / ".git").mkdir(exist_ok=True)
+                return cp(cmd)
             (dest / ".git").mkdir(parents=True)
             for rel, text in (clone_files or {}).items():
                 (dest / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -165,9 +172,10 @@ def test_audit_counts_fail_level_rules_separately(tmp_path):
 
 
 def run_cmd(root, listing, capsys, pf=None, **runkw):
+    runkw.setdefault("remote_root", root)
     run = fake_run(listing, **runkw)
     code = command.cmd_converge(
-        ns(root), repo_name=lambda p: p.name, load_portfolio=lambda: pf or portfolio(), run=run, today=TODAY
+        ns(root), load_portfolio=lambda: pf or portfolio(), run=run, today=TODAY
     )
     return code, capsys.readouterr().out, run
 
@@ -190,19 +198,28 @@ def test_skipped_repos_are_named_with_a_reason(tmp_path, capsys):
     assert "skipped up: fork" in out and "skipped old: archived" in out
 
 
-def test_a_repo_with_no_local_clone_is_audited_from_a_shallow_clone(tmp_path, capsys):
+def test_every_repo_is_audited_from_a_shallow_clone_of_its_default_branch(tmp_path, capsys):
     code, out, run = run_cmd(tmp_path / "empty-root", [row("remote-only")], capsys, clone_files={"LICENSE": "x"})
-    assert code == 0 and "shallow clone" in out
+    assert code == 0 and "shallow clone" in out and "default branch" in out
     clone_cmd = next(c for c in run.calls if c[:3] == ["gh", "repo", "clone"])
     assert "--depth" in clone_cmd and "Ryan/remote-only" in clone_cmd
 
 
-def test_an_existing_local_clone_is_used_and_never_modified(tmp_path, capsys):
-    path = clone(tmp_path, "proj", {"README.md": "hi"})
-    before = tree(path)
-    _, _, run = run_cmd(tmp_path, [row("proj")], capsys)
-    assert tree(path) == before
-    assert not any(c[:3] == ["gh", "repo", "clone"] for c in run.calls)
+def test_a_stale_local_clone_is_ignored_and_never_modified(tmp_path, capsys):
+    # --root holds a stale copy with no LICENSE; GitHub's default branch has one. Converge must report what GitHub holds, or a stale
+    # clone could keep a gap on record that the repo no longer has (or close one it still does).
+    stale = clone(tmp_path, "proj", {"README.md": "stale"})
+    before = tree(stale)
+    _, out, run = run_cmd(tmp_path, [row("proj")], capsys, remote_root=tmp_path / "nowhere", clone_files={"LICENSE": "x"})
+    assert tree(stale) == before
+    assert any(c[:3] == ["gh", "repo", "clone"] for c in run.calls)
+    assert "license-present" not in out
+
+
+def test_a_clean_local_clone_cannot_hide_a_gap_that_github_has(tmp_path, capsys):
+    clone(tmp_path, "proj", {"LICENSE": "x"})  # the local copy looks fine
+    _, out, _ = run_cmd(tmp_path, [row("proj")], capsys, remote_root=tmp_path / "nowhere", clone_files={"README.md": "no license on GitHub"})
+    assert "license-present" in out
 
 
 def test_a_failed_clone_is_reported_and_the_exit_code_is_nonzero(tmp_path, capsys):
@@ -224,10 +241,10 @@ def test_dry_run_issues_no_write_commands(tmp_path, capsys):
 
 def test_json_output_has_audits_skipped_and_errors(tmp_path, capsys):
     clone(tmp_path, "proj")
-    run = fake_run([row("proj"), row("f", isFork=True)])
+    run = fake_run([row("proj"), row("f", isFork=True)], remote_root=tmp_path)
     n = ns(tmp_path)
     n.json = True
-    command.cmd_converge(n, repo_name=lambda p: p.name, load_portfolio=portfolio, run=run, today=TODAY)
+    command.cmd_converge(n, load_portfolio=portfolio, run=run, today=TODAY)
     data = json.loads(capsys.readouterr().out)
     assert [a["name"] for a in data["audits"]] == ["proj"]
     assert data["skipped"] == [{"repo": "f", "why": "fork"}] and data["errors"] == []
@@ -274,10 +291,10 @@ def with_issues(base, store=None, *, list_rc=0, write_rc=0, list_err="boom"):
 
 
 def converge(root, listing, pf, *, flags=None, store=None, **kw):
-    base = fake_run(listing)
+    base = fake_run(listing, remote_root=root)
     run = with_issues(base, store, **kw)
     code = command.cmd_converge(
-        ns(root, **(flags or {})), repo_name=lambda p: p.name, load_portfolio=lambda: pf, run=run, today=TODAY
+        ns(root, **(flags or {})), load_portfolio=lambda: pf, run=run, today=TODAY
     )
     return code, run
 
@@ -297,7 +314,8 @@ def test_by_default_only_portfolio_and_new_repos_are_audited_and_old_ones_are_ne
     out = capsys.readouterr().out
     assert "mine" in out and "fresh" in out and "old-thing" not in out
     assert "1 older repo(s) outside the portfolio were not audited" in out
-    assert not any(c[:3] == ["gh", "repo", "clone"] for c in run.calls)
+    cloned = {c[3] for c in run.base.calls if c[:3] == ["gh", "repo", "clone"]}  # the wrapper's own .calls holds only issue commands
+    assert cloned == {"Ryan/mine", "Ryan/fresh"}  # the old repo outside the portfolio is never cloned
 
 
 def test_all_includes_old_repos_in_the_report(tmp_path, capsys):
@@ -406,7 +424,7 @@ def test_a_dry_run_writes_no_status_file(tmp_path, status_file):
 
 def test_a_failed_listing_is_recorded_as_not_ok_so_a_silent_failure_is_visible(tmp_path, status_file):
     command.cmd_converge(
-        ns(tmp_path, apply=True), repo_name=lambda p: p.name, load_portfolio=portfolio, run=fake_run([], list_rc=1), today=TODAY
+        ns(tmp_path, apply=True), load_portfolio=portfolio, run=fake_run([], list_rc=1), today=TODAY
     )
     data = json.loads(status_file.read_text())
     assert data["ok"] is False and data["exit"] == 1 and "cannot list repos" in data["errors"][0]
@@ -534,6 +552,26 @@ def test_the_job_finds_uv_without_a_zshrc(tmp_path):
     r = subprocess.run(["sh", "-c", cmd], capture_output=True, text=True, env={"HOME": str(home), "PATH": "/usr/bin:/bin"})
     assert r.returncode == 0, r.stderr
     assert "FAKE-UV run ap standard converge --apply" in r.stdout
+
+
+# --- a repo's age comes from GitHub, so a shallow clone is neither old nor new by accident ------------------------------------
+
+
+def audited_fail_level(root, capsys, created):
+    """How many fail-level gaps converge reports for a bare repo that GitHub says was created on `created`."""
+    root.mkdir()
+    clone(root, "proj", {"README.md": "bare"})
+    n = ns(root)
+    n.json = True
+    run = fake_run([row("proj", createdAt=created)], remote_root=root)
+    command.cmd_converge(n, load_portfolio=portfolio, run=run, today=TODAY)
+    return json.loads(capsys.readouterr().out)["audits"][0]["fail_level"]
+
+
+def test_a_repo_created_after_a_rule_is_held_to_it_even_though_a_shallow_clone_has_no_history(tmp_path, capsys):
+    old = audited_fail_level(tmp_path / "a", capsys, "2025-01-01T00:00:00Z")
+    new = audited_fail_level(tmp_path / "b", capsys, "2026-11-12T00:00:00Z")
+    assert new > old, "a repo created after the day-0 rules must fail them at full strength; an old one only warns"
 
 
 # --- repos with issues disabled, and public repos ------------------------------------------------------------------------

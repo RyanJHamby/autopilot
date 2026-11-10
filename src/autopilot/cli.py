@@ -2258,6 +2258,13 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--root", action="append", help="where clones live; repeat for more (default ~/dev and ~/Documents)")
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_gate)
+    s = gsub.add_parser("seed", help="add a gate's manual steps to the control repo as draft pawl steps (dry run unless --apply)")
+    s.add_argument("bet")
+    s.add_argument("gate", help="beta or charge")
+    s.add_argument("--control", help="the pawl control repo (default $PAWL_ROOT, else ~/dev/control)")
+    s.add_argument("--apply", action="store_true", help="write the steps (without it, only print the pawl commands)")
+    s.add_argument("--push", action="store_true", help="let pawl push each step as it is added (default: commit locally, push later)")
+    s.set_defaults(fn=cmd_gate)
     ns = ap.parse_args(argv)
     return ns.fn(ns)
 

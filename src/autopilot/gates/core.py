@@ -159,3 +159,50 @@ def render(bet: str, gate_name: str, gate: dict, items: list[Item]) -> str:
     if any(i.state == "not-seeded" for i in items):
         lines.append(f"Seed the missing steps with: ap gate seed {bet} {gate_name} --apply")
     return "\n".join(lines)
+
+
+# --- seeding -----------------------------------------------------------------------------------------------------------------------------
+
+
+@dataclass
+class Seed:
+    item_id: str
+    step_id: str
+    title: str
+    note: str
+    exists: bool
+
+
+def seed_plan(gate_name: str, gate: dict, bet: str, control: Path, run=subprocess.run) -> list[Seed]:
+    """The gate's manual steps, each marked as already in pawl or not. Matched by the explicit id, never by title: a title can be
+    edited and an auto-derived id drifts, but `g-GATE-ITEM` is ours and stays put."""
+    existing = {s["id"] for s in pawl_steps(control, bet, run)["steps"]}
+    return [
+        Seed(i["id"], step_id(gate_name, i["id"]), i["title"], i["note"], step_id(gate_name, i["id"]) in existing)
+        for i in gate["items"]
+        if i["kind"] == "step"
+    ]
+
+
+def seed_command(control: Path, bet: str, seed: Seed, push: bool) -> list[str]:
+    """The exact pawl command for one step. The global --no-push goes before the verb; pawl then still commits locally and leaves the
+    push to `pawl sync` or the scheduled tick. An explicit --id makes a repeat run a no-op instead of a duplicate."""
+    return ["pawl", "--root", str(control), *([] if push else ["--no-push"]), "step", "add", bet, seed.title,
+            "--id", seed.step_id, "--note", seed.note, "--draft"]
+
+
+def apply_seed(plan: list[Seed], control: Path, bet: str, push: bool, run=subprocess.run) -> tuple[list[str], str | None]:
+    """Add each missing step. Returns (step ids written, error or None). Stops at the first failure and says what was written, so the
+    next run resumes from there. A step pawl says already exists is a skip, not a failure (it was added between plan and write)."""
+    written: list[str] = []
+    for s in plan:
+        if s.exists:
+            continue
+        r = run(seed_command(control, bet, s, push), capture_output=True, text=True)
+        if r.returncode != 0:
+            msg = (r.stderr or r.stdout or "").strip()
+            if "already has a step" in msg:
+                continue
+            return written, msg or f"pawl exited {r.returncode}"
+        written.append(s.step_id)
+    return written, None

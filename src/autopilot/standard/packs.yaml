@@ -1,0 +1,6 @@
+# Capability packs: what a repo must have once it can take payments, call an LLM or run a deployment. See autopilot/standard/packs.py.
+# Each pack is required by a rule in checks.yaml; the rule is strict for repos born on or after its `since` date and warns for older ones.
+# A `record` item is self-attested (the repo holds a note, it cannot prove the fact), and goes stale after 180 days.
+# Agents must not edit this file. It is part of the standard (src/autopilot/standard/**).
+
+packs: {}

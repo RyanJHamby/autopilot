@@ -31,6 +31,11 @@ SKIP_DIRS = {
     "vendor", "third_party", ".claude", ".autopilot", "tests", "test", "__tests__", "fixtures", "__fixtures__", "__golden__", "docs",
     "doc", "examples", "example", "template", "templates", "worktrees",
 }
+# Never the repo's own files in any scope. The wider `SKIP_DIRS` is only for code that decides what the repo does.
+HARD_SKIP = {
+    "node_modules", ".venv", "venv", ".git", ".next", ".turbo", "dist", "build", "target", "__pycache__", "site-packages", "coverage",
+    "vendor", "third_party", ".claude", "worktrees",
+}
 SKIP_NAME = re.compile(r"(\.test\.|\.spec\.|\.d\.ts$|\.min\.js$|^test_.*\.py$|_test\.py$|^conftest\.py$|^mock)")
 MAX_BYTES = 512 * 1024
 
@@ -91,8 +96,8 @@ def _skipped(rel: str) -> bool:
     return any(p in SKIP_DIRS for p in parts[:-1]) or bool(SKIP_NAME.search(parts[-1]))
 
 
-def listed(root: Path) -> list[str]:
-    """Repo-relative paths that are the repo's own: tracked or new-but-not-ignored when it is a git repo, else a pruned walk."""
+def _enumerate(root: Path) -> list[str]:
+    """Every file path that is the repo's own, repo-relative: tracked or new-but-not-ignored in a git repo, else a pruned walk."""
     root = Path(root)
     if _own_toplevel(root):
         r = subprocess.run(
@@ -102,9 +107,23 @@ def listed(root: Path) -> list[str]:
     else:
         paths = []
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            dirnames[:] = [d for d in dirnames if d not in HARD_SKIP]
             paths += [str((Path(dirpath) / f).relative_to(root)) for f in filenames]
-    return sorted(p for p in paths if not _skipped(p) and (root / p).is_file())
+    return sorted(p for p in paths if not any(part in HARD_SKIP for part in PurePosixPath(p).parts[:-1]) and (root / p).is_file())
+
+
+PAGE_SKIP_DIRS = {"tests", "test", "__tests__", "fixtures", "__fixtures__", "__golden__", "examples", "example", "template", "templates", ".autopilot"}
+
+
+def is_page_candidate(rel: str) -> bool:
+    """A path that can honestly satisfy "this page or route exists": docs and public files count, tests, fixtures and examples do not."""
+    parts = PurePosixPath(rel).parts
+    return not any(p in PAGE_SKIP_DIRS for p in parts[:-1]) and not SKIP_NAME.search(parts[-1])
+
+
+def listed(root: Path) -> list[str]:
+    """The repo's own running code and config: `_enumerate` minus tests, fixtures, docs, templates, examples and agent config."""
+    return [p for p in _enumerate(root) if not _skipped(p)]
 
 
 def strip_comments(text: str, python: bool = False) -> str:
@@ -130,14 +149,14 @@ def _norm(name: str) -> str:
     return re.split(r"[\s<>=!~;\[\(@]", name.strip().lower().replace("_", "-"), maxsplit=1)[0] if not name.startswith("@") else name.lower()
 
 
-def _dep_capabilities(name: str) -> set[str]:
+def matches_any(name: str, patterns: list[str]) -> bool:
+    """Whether a dependency name matches any pattern: exact, or a prefix when the pattern ends in `*`."""
     n = _norm(name)
-    out = set()
-    for capability, patterns in DEPS.items():
-        for pat in patterns:
-            if (pat.endswith("*") and n.startswith(pat[:-1])) or n == pat:
-                out.add(capability)
-    return out
+    return any((pat[:-1] == n[: len(pat) - 1] if pat.endswith("*") else n == pat) for pat in patterns)
+
+
+def _dep_capabilities(name: str) -> set[str]:
+    return {capability for capability, patterns in DEPS.items() if matches_any(name, patterns)}
 
 
 def manifest_deps(root: Path, paths: list[str]) -> list[tuple[str, str]]:
@@ -167,16 +186,63 @@ def manifest_deps(root: Path, paths: list[str]) -> list[tuple[str, str]]:
     return out
 
 
-def capabilities(root: Path) -> dict[str, list[Evidence]]:
+class Scan:
+    """One cached look at a repo, shared by capability detection and the pack evaluator so each file is listed and read once."""
+
+    def __init__(self, root: Path):
+        self.root = Path(root)
+        self._all: list[str] | None = None
+        self._stripped: dict[str, str | None] = {}
+        self._deps: list[tuple[str, str]] | None = None
+        self._caps: dict[str, list[Evidence]] | None = None
+
+    @property
+    def all_paths(self) -> list[str]:
+        if self._all is None:
+            self._all = _enumerate(self.root)
+        return self._all
+
+    @property
+    def code_paths(self) -> list[str]:
+        return [p for p in self.all_paths if not _skipped(p)]
+
+    @property
+    def page_paths(self) -> list[str]:
+        return [p for p in self.all_paths if is_page_candidate(p)]
+
+    @property
+    def deps(self) -> list[tuple[str, str]]:
+        if self._deps is None:
+            self._deps = manifest_deps(self.root, self.code_paths)
+        return self._deps
+
+    def raw(self, rel: str) -> str | None:
+        return _read(self.root, rel)
+
+    def code(self, rel: str) -> str | None:
+        """A code file with comments (and, in Python, docstrings) stripped; None if unreadable or over the size cap."""
+        if rel not in self._stripped:
+            raw = _read(self.root, rel)
+            self._stripped[rel] = None if raw is None else strip_comments(raw, python=rel.endswith(".py"))
+        return self._stripped[rel]
+
+    @property
+    def caps(self) -> dict[str, list[Evidence]]:
+        if self._caps is None:
+            self._caps = capabilities(self.root, self)
+        return self._caps
+
+
+def capabilities(root: Path, scan: Scan | None = None) -> dict[str, list[Evidence]]:
     """{capability: [evidence]} for the capabilities this repo has. A capability with no evidence is absent from the dict."""
-    root = Path(root)
-    paths = listed(root)
+    scan = scan or Scan(root)
+    paths = scan.code_paths
     found: dict[str, list[Evidence]] = {}
 
     def add(cap: str, e: Evidence) -> None:
         found.setdefault(cap, []).append(e)
 
-    for dep, manifest in manifest_deps(root, paths):
+    for dep, manifest in scan.deps:
         caps = _dep_capabilities(dep)
         if manifest.endswith(("go.mod", "Cargo.toml")):
             caps |= {c for c, kws in KEYWORD_DEPS.items() if any(k in dep.lower() for k in kws)}
@@ -191,10 +257,9 @@ def capabilities(root: Path) -> dict[str, list[Evidence]]:
             add("db", Evidence("file", rel, "database migrations"))
         if PurePosixPath(rel).suffix not in CODE_EXT:
             continue
-        raw = _read(root, rel)
-        if raw is None:
+        text = scan.code(rel)
+        if text is None:
             continue
-        text = strip_comments(raw, python=rel.endswith(".py"))
         for cap, pattern in HOSTS.items():
             for m in re.finditer(pattern, text):
                 add(cap, Evidence("source", rel, f"calls {m.group(0)} (line {text.count(chr(10), 0, m.start()) + 1})"))

@@ -126,6 +126,13 @@ Two kinds of item, and the difference matters:
 These rules carry `enforced` like the others, with the same third limit described above: for a repo made by `ap new`, nothing runs
 `ap standard check` in CI, so the pack is checked when `make check` runs it, when `converge` runs, or when someone runs the standard.
 
+## Gates
+
+What the packs cannot see from code (whether the entity exists, whether the payment account is in the business's name, whether sales tax was
+decided) is a **gate**: a checklist a bet clears before real users arrive (`beta`) and before the first payment (`charge`). `ap gate show BET
+GATE` reports where a bet stands, read-only; `ap gate seed` adds the manual steps to the control repo as draft pawl steps. Each item says how
+it is known, and the manual steps are self-attested. See `docs/gates.md`.
+
 ## Waivers
 
 A repo that can't meet a rule yet needs a waiver. Waivers live in one central file, `policy/waivers.yaml` in the

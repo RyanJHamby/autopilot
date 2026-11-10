@@ -30,6 +30,17 @@ def check_name(name: str, owner: str) -> str | None:
     return None
 
 
+def _link_hook(path: Path) -> None:
+    """Install the pre-commit hook in the repo `ap new` just made, the same link `make setup` makes, so the very first clone is
+    covered. It never replaces anything: a clone made later has no hook until someone runs `make setup`, which a hook cannot avoid."""
+    if not (path / ".githooks/pre-commit").is_file():
+        return
+    link = path / ".git/hooks/pre-commit"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    if not (link.exists() or link.is_symlink()):
+        link.symlink_to("../../.githooks/pre-commit")
+
+
 def create(
     root: Path, name: str, kind: str, owner: str, holder: str | None, public: bool, run=subprocess.run
 ) -> tuple[Path, list[str], list[core.Action]]:
@@ -55,6 +66,7 @@ def create(
         if made.returncode != 0:
             raise ValueError(f"git init failed: {made.stderr.strip()}")
         written = core.write(path, actions)
+        _link_hook(path)
         if not (path / "README.md").exists():
             (path / "README.md").write_text(t.readme(name), encoding="utf-8")
             written.append("README.md")
@@ -136,7 +148,9 @@ def publish(path: Path, name: str, owner: str, kind: str, public: bool, *, run=s
 def next_steps(name: str, owner: str, public: bool) -> list[str]:
     vis = "--public" if public else "--private"
     return [
+        "brew install gitleaks actionlint zizmor   (once per machine; `make quick` and `make check` warn when one is missing)",
         f"cd {name} && pow init",
+        "make setup   (installs the pre-commit hook; `ap new` already did it here, so run it in every other clone, agents' too)",
         "git add -A && git commit -S -m 'Start on the standard'   (signed, by you)",
         f"gh repo create {owner}/{name} {vis} --source . --push   (outward-facing: yours to run)",
         f"add {name} to policy/portfolio.yaml if autopilot should manage it, and set the ruleset",

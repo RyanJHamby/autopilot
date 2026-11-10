@@ -117,3 +117,15 @@ def test_every_skeleton_readme_has_the_ai_disclosure_heading(tmp_path):
 def test_the_cli_command_is_wired():
     r = subprocess.run(["uv", "run", "ap", "new", "--help"], capture_output=True, text=True)
     assert r.returncode == 0 and "--kind" in r.stdout
+
+
+def test_the_pre_commit_hook_is_installed_in_the_repo_ap_new_just_made(tmp_path):
+    # `ap new` makes the directory, so linking the hook there is local and in scope. Without it the first clone has no hook.
+    path, _, _ = make(tmp_path, kind="app", public=False)
+    link = path / ".git/hooks/pre-commit"
+    assert link.is_symlink() and link.resolve() == (path / ".githooks/pre-commit").resolve()
+
+
+def test_next_steps_say_how_the_hook_and_tools_reach_every_other_clone_and_machine():
+    text = "\n".join(new.next_steps("n", "o", False))
+    assert "make setup" in text and "gitleaks" in text and "zizmor" in text and "actionlint" in text

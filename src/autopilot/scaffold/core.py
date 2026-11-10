@@ -236,9 +236,17 @@ def layout_notes(root: Path, ctx: Ctx) -> list[str]:
     return notes
 
 
+def _new_repo_only(ctx: Ctx) -> tuple[str, str] | None:
+    """The day-0 layer goes only into a brand-new repo. In an existing one a hook or a `setup` target would point at files that are
+    not there, and a new convention is theirs to adopt at retrofit, not something a routine fix should drop in."""
+    return None if ctx.empty else ("skip", "day-0 files go only into a new repo; an existing repo adopts them at retrofit")
+
+
 def _make_check(ctx: Ctx) -> str:
+    if ctx.empty and "uv" in ctx.ecosystems:
+        return t.makefile_new(lint="uv run ruff check .", test="uv run pytest -q", audit="uv audit")
     if _generic_new(ctx):
-        return t.MAKEFILE_GENERIC
+        return t.makefile_new()
     return t.MAKEFILE[next(e for e in ctx.ecosystems if e in t.MAKEFILE)]
 
 
@@ -287,6 +295,11 @@ ITEMS: list[Item] = [
     Item(".github/ISSUE_TEMPLATE/bug.md", "templates-present", lambda c: t.ISSUE_BUG, _unmanaged, (".github/ISSUE_TEMPLATE/*",)),
     Item("CHANGELOG.md", None, lambda c: t.CHANGELOG, _changelog),
     Item("Makefile", "one-check-entrypoint", _make_check, _makefile),
+    # Day-0 layer, new repos only. The hook is executable because git silently ignores one that is not.
+    Item(".githooks/pre-commit", None, lambda c: t.HOOK_PRE_COMMIT, _new_repo_only, mode=0o755),
+    Item(".editorconfig", None, lambda c: t.EDITORCONFIG, _new_repo_only),
+    Item("docs/decisions/README.md", None, lambda c: t.DECISIONS_README, _new_repo_only),
+    Item("docs/runbooks/README.md", None, lambda c: t.RUNBOOKS_README, _new_repo_only),
     Item("justfile", "commands-documented", _just_commands, _justfile, ("Justfile",)),
     # Any existing workflow counts as CI: a second competing ci.yml is worse than none.
     Item(

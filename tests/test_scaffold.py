@@ -218,10 +218,18 @@ def test_github_actions_expressions_do_not_look_like_tokens():
     assert t.fill("${{ secrets.X }} @@a@@", a="b") == "${{ secrets.X }} b"
 
 
+DAY_ZERO = {".githooks/pre-commit", ".editorconfig", "docs/decisions/README.md", "docs/runbooks/README.md"}
+
+
 def test_every_rendered_file_is_free_of_tokens(tmp_path):
     root = make(tmp_path, {"pyproject.toml": "", "uv.lock": ""})
     for a in core.plan(root, ctx(kind="library", ecosystems=["uv"], has_workflows=True)):
-        assert a.status == "create" and "@@" not in a.content, a.path
+        # An existing repo skips the day-0 files (see test_scaffold_day0); everything else is created.
+        assert a.path in DAY_ZERO or a.status == "create", a.path
+        assert "@@" not in a.content, a.path
+    fresh = make(tmp_path, name="fresh")
+    for a in core.plan(fresh, ctx(kind="library", ecosystems=["uv"], has_workflows=True, empty=True)):
+        assert "@@" not in a.content, a.path
 
 
 def test_every_item_names_a_rule_that_exists_or_is_proposed():

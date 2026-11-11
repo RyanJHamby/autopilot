@@ -528,3 +528,7 @@ Host move: a real Linux kernel caught what my simulation could not. Ran the apx 
 ## 2026-11-10 18:52 EST (at 9294248)
 
 P2 step 1: nftrules renderer (per-uid lanes, dnsmasq allowlist) with 51 render tests. Text only; kernel enforcement is still unverified until the container selftest. A loose test filter matched 127.0.0.0/8 in the blocked list and was narrowed.
+
+## 2026-11-10 19:01 EST (at 9028a71)
+
+P2 step 2: egress selftest on a real Linux kernel (linuxkit 6.10, nftables 1.1.3, dnsmasq 2.91, NET_ADMIN-only container): 42 checks pass via scripts/linux-egress-test.sh. First run had one bad control (nobody could not reach the fake 8.8.8.8), fixed by querying the fake upstream directly. Mutation checks: removing the DNS redirect gave 10 failures, removing only the private-range exclusion gave 3 (rebinding), so the test can fail. Proves the rules on Linux, not the VPS.

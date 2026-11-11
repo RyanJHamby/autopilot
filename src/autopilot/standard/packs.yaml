@@ -221,3 +221,78 @@ packs:
         deps: ['cronitor']
         paths: ['docs/decisions/*heartbeat*', 'docs/runbooks/*heartbeat*']
         fix: Ping a heartbeat monitor (Healthchecks.io, Cronitor, Sentry cron monitors) at the end of each scheduled job and alert when it stops, or write docs/decisions/NNNN-cron-heartbeat.md saying why not.
+
+  # LLM practice: judgment (a one-prompt prototype can reasonably skip these), so they only warn.
+  llm-advisory:
+    needs: llm
+    items:
+      - id: versioned-prompts
+        kind: code
+        title: Prompts carry a version, so a change in behaviour can be traced to a change in the prompt
+        match: ['(?i)prompt[_-]?version', '(?i)prompt[_-]?id\b', '(?i)promptId\b']
+        paths: ['docs/decisions/*prompt*']
+        fix: Give each prompt a version constant (PROMPT_VERSION) and log it with every call, so a bad answer can be tied to the prompt that produced it; or write docs/decisions/NNNN-prompts.md saying why not.
+
+      - id: model-fallback
+        kind: code
+        title: There is a fallback when the model or provider is unavailable
+        match: ['(?i)fallback[_-]?models?', '(?i)\bfallbacks?\s*[:=]\s*\[']
+        deps: ['litellm']
+        paths: ['docs/decisions/*fallback*']
+        fix: Name a second model or provider and switch to it on an error or timeout, or write docs/decisions/NNNN-model-fallback.md saying the feature may simply be off when the provider is down.
+
+      - id: boundary-validation
+        kind: code
+        title: Data crossing a boundary (model output, request bodies) is validated at runtime
+        deps: ['zod', 'valibot', 'yup', 'ajv', '@sinclair/typebox', 'io-ts', 'pydantic', 'jsonschema', 'instructor', 'marshmallow']
+        fix: Parse model output and request bodies with a schema library (zod, pydantic) before using them, so a malformed answer fails loudly at the edge.
+
+  # Testing payments against the provider cannot be seen from code: the scanner never reads the test directories.
+  payments-advisory:
+    needs: payments
+    items:
+      - id: contract-testing
+        kind: record
+        title: How payment webhooks and API calls are tested against the provider is written down
+        path: ['docs/runbooks/payments-testing.md']
+        min_lines: 6
+        fix: Write docs/runbooks/payments-testing.md (which recorded events or provider test mode the tests replay, how a new event type is added, and when the fixtures were last refreshed).
+
+  # Direct database access has habits worth checking. Judgment, so warn-only.
+  db-hygiene:
+    needs: db
+    items:
+      - id: least-privilege-roles
+        kind: code
+        title: The app connects with a role that has only the access it needs
+        match: ['(?i)\bcreate\s+role\b', '(?i)\bgrant\s+(?:select|insert|update|delete|execute|usage|all)\b']
+        paths: ['docs/runbooks/db-roles.md', 'docs/decisions/*role*', 'docs/decisions/*privilege*']
+        include_sql: true
+        fix: Create a limited role for the app (not the owner or service role) with only the grants it needs, in a migration or a documented step; or write docs/runbooks/db-roles.md explaining how access is limited.
+
+      - id: connection-pooling
+        kind: code
+        when: driver
+        title: Database connections are pooled, or a pooler sits in front of the database
+        match: ['new\s+Pool\(', '(?i)create_pool', '(?i)pool_size', '(?i)pool_pre_ping', '(?i)pgbouncer', '(?i)pooler\.supabase\.com', '(?i)poolSize', '(?i)connection_limit']
+        deps: ['pg-pool', '@neondatabase/serverless', '@vercel/postgres', '@prisma/extension-accelerate']
+        paths: ['docs/decisions/*pool*']
+        fix: Use a connection pool or the provider's pooler URL (serverless functions can otherwise exhaust the database's connections), or write docs/decisions/NNNN-connection-pooling.md saying why this repo does not need one.
+
+      - id: no-prod-data-in-dev
+        kind: code
+        title: Development uses synthetic seed data, not a copy of production
+        paths: ['supabase/seed.sql', '**/seed.sql', '**/seed.ts', '**/seed.js', '**/seed.py', '**/seeds/**', 'prisma/seed.*', 'docs/runbooks/dev-data.md', 'docs/decisions/*dev-data*']
+        fix: Add a seed script that creates fake data (supabase/seed.sql, prisma/seed.ts), and never restore a production dump into dev; or write docs/runbooks/dev-data.md explaining how dev data is made.
+
+  # Mail that lands in spam is silently lost. The records are external facts, so this one is dated.
+  mail:
+    needs: mail
+    items:
+      - id: mail-auth-records
+        kind: record
+        verified: true
+        title: SPF, DKIM and DMARC are set for the sending domain, recorded with the date they were checked
+        path: ['docs/gates/email-deliverability.md']
+        min_lines: 6
+        fix: "Write docs/gates/email-deliverability.md (the sending domain, that SPF, DKIM and DMARC pass in a real test message, and where each record is set), ending with a `Verified: YYYY-MM-DD` line. Re-check it within 180 days."

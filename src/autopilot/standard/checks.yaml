@@ -212,6 +212,38 @@ checks:
     why: A deployed app with real users needs somebody told when it is down or a job silently stops, but how much of this a small app needs is a judgment call.
     fix: Add each missing item the finding names, or write the decision record that says why this repo does not need it.
 
+  - id: llm-advisory-pack
+    title: A repo that calls an LLM versions its prompts, has a model fallback and validates data at the boundary
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: A one-prompt prototype can reasonably skip these, but a product with real users cannot trace a bad answer or survive a provider outage without them.
+    fix: Add each missing item the finding names, or write the decision record that says why this repo does not need it.
+
+  - id: payments-advisory-pack
+    title: A repo that takes payments writes down how webhooks and provider calls are tested
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: The tests live where the scanner cannot read, so the evidence is a short record of how they are run.
+    fix: Write docs/runbooks/payments-testing.md, or decide the tests need no record.
+
+  - id: db-hygiene-pack
+    title: A repo with a database uses a limited role, pools connections and seeds dev with synthetic data
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: These are habits whose value depends on the size and shape of the app, so this is a judgment call.
+    fix: Add each missing item the finding names, or write the decision record that says why this repo does not need it.
+
+  - id: mail-pack
+    title: A repo that sends email records that SPF, DKIM and DMARC pass for its domain
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: Mail that lands in spam is silently lost. The records are an external fact, so the note is dated.
+    fix: Write docs/gates/email-deliverability.md with a Verified date.
+
   - id: journal-present
     title: docs/journal.md exists
     level: warn

@@ -57,7 +57,16 @@ DEPS = {
         "@supabase/supabase-js", "@supabase/ssr", "prisma", "@prisma/client", "drizzle-orm", "sqlalchemy", "psycopg", "psycopg2",
         "psycopg2-binary", "asyncpg", "pg", "mongoose", "mongodb", "pymongo", "mysql2", "mysqlclient", "typeorm", "knex", "sequelize",
     ],
+    "mail": [
+        "resend", "nodemailer", "@sendgrid/*", "sendgrid", "postmark", "postmarker", "@postmark/*", "mailgun.js", "mailgun-js", "mailgun",
+        "@aws-sdk/client-ses", "@aws-sdk/client-sesv2", "@mailchimp/mailchimp-transactional", "mailchimp-transactional", "react-email-sender",
+    ],
 }
+# A direct database driver (as opposed to a client that goes through an HTTP API such as supabase-js). Connection pooling only matters here.
+DB_DRIVERS = [
+    "pg", "postgres", "psycopg", "psycopg2", "psycopg2-binary", "asyncpg", "prisma", "@prisma/client", "drizzle-orm", "sqlalchemy", "typeorm",
+    "knex", "sequelize", "mysql2", "mysqlclient",
+]
 # For languages whose package names are module paths, a keyword in the path is enough.
 KEYWORD_DEPS = {"payments": ("stripe",), "llm": ("openai", "anthropic", "genai")}
 
@@ -68,11 +77,13 @@ HOSTS = {
     "payments": _SCHEME + r"(?:api\.stripe\.com|api\.paddle\.com|api\.lemonsqueezy\.com|api-m\.paypal\.com|api\.sandbox\.paypal\.com)",
     "llm": _SCHEME
     + r"(?:api\.openai\.com|api\.anthropic\.com|generativelanguage\.googleapis\.com|api\.groq\.com|api\.mistral\.ai|api\.cohere\.(?:com|ai))",
+    "mail": _SCHEME + r"(?:api\.resend\.com|api\.sendgrid\.com|api\.postmarkapp\.com|api\.mailgun\.net|api\.eu\.mailgun\.net)",
 }
 ENV_READ = r"(?:process\.env|import\.meta\.env|os\.environ|os\.getenv|getenv|Deno\.env\.get)[^\n]{0,40}?\b"
 ENV_NAMES = {
     "payments": r"(STRIPE_(?:SECRET|WEBHOOK|PUBLISHABLE)\w*|PADDLE_API_KEY|LEMON_?SQUEEZY\w*)",
     "llm": r"((?:OPENAI|ANTHROPIC|GEMINI|GOOGLE_AI|GROQ|MISTRAL|COHERE)_API_KEY)",
+    "mail": r"((?:RESEND|SENDGRID|MAILGUN)_API_KEY|POSTMARK_(?:SERVER_)?(?:API_)?TOKEN)",
 }
 IMPORTS = {"llm": r"^\s*(?:import|from)\s+(?:openai|anthropic)\b"}
 HAND_ROLLED = re.compile(r"\bcreateHmac\b|\bcreateSign\b|\bjwt\.sign\(|\bbcrypt\.hash|\bhashlib\.pbkdf2|\bhmac\.new\b")
@@ -296,3 +307,8 @@ def has_cron(scan: Scan) -> bool:
             except (ValueError, AttributeError):
                 continue
     return False
+
+
+def has_db_driver(scan: Scan) -> bool:
+    """Whether the repo's runtime dependencies include a direct database driver or ORM (not an HTTP-API client like supabase-js)."""
+    return any(matches_any(name, DB_DRIVERS) for name, _ in scan.deps)

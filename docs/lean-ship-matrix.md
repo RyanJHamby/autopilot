@@ -327,3 +327,6 @@ Status: **done** = already enforced somewhere (named), **partial** = exists but 
   186 (gated production deploys note), 200 (cron heartbeats, only when the repo has scheduled jobs). Records are self-attested; the heartbeat check is a word match.
 - 2026-11-11, `scale` gate (new) and two beta steps: tips 197, 198, 209, 145 (scale) and 64, 79 (beta). Seeding was proven against a real `pawl` on a
   throwaway control repo, not against the real control repo or GitHub.
+- 2026-11-11, tranche 3, four warn-only packs: `llm-advisory-pack` (128 versioned prompts, 130 model fallback, 175 boundary validation), `payments-advisory-pack`
+  (39, a record: tests in `tests/` are never seen), `db-hygiene-pack` (194 limited role, 208 pooling only for repos with a direct driver, 179 seed data for dev),
+  `mail-pack` (87, new `mail` capability, dated record). Detection is by dependency or word match, so a configured but unused fallback passes.

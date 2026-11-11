@@ -580,3 +580,7 @@ tranche 1 (branch feat/lean-ship-tranche-1-2): deploy-advisory pack, 6 items, wa
 ## 2026-11-11 08:05 EST (at f757c4b)
 
 tranche 2 (branch feat/lean-ship-tranche-1-2): scale gate (4 steps + repo-standard), beta gets domains and free-tier-ledger, docs/gates.md says three gates. 14 tests written first (7 failed), 2 mutants caught, real pawl accepted all steps on a throwaway control repo and a re-seed added nothing. Full suite 1848 passed. NOT verified: seed against the real control repo or GitHub. Matrix status column is still the baseline; a dated 'built since' section was added.
+
+## 2026-11-11 10:58 EST (at 1388792)
+
+tranche 3 (branch feat/lean-ship-tranche-3): llm-advisory, payments-advisory, db-hygiene and mail packs, all warn-only; new mail capability and when:driver condition. 39 tests red first (37 failed), 4 mutants caught, suite 1887 passed. Ran on real stencil: warn-level, pooling correctly not asked (supabase-js only). MISTAKE: undoing a mutant with git checkout on packs.yaml wiped the uncommitted pack definitions; noticed via git status (file no longer modified), re-added from the same text, tests green again. Lesson: restore mutants from a saved copy, never git checkout over uncommitted work. NOT verified: merged-main CI, other repos.

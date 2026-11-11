@@ -525,6 +525,30 @@ def dependency_cooldown(repo: Repo) -> Outcome:
     return "skip", ["no Dependabot or Renovate config (dependency-updates reports that)"]
 
 
+def install_scripts_off(repo: Repo) -> Outcome:
+    """A node repo tells its package manager not to run install scripts: `ignore-scripts=true` in `.npmrc`, or `enableScripts: false` in
+    `.yarnrc.yml`. Only the repo root is read, so a monorepo workspace or a user-level ~/.npmrc is not seen."""
+    if repo.read("package.json") is None:
+        return "skip", ["no package.json at the repo root"]
+    state = None
+    for raw in (repo.read(".npmrc") or "").splitlines():
+        line = re.split(r"\s[;#]", raw.strip(), maxsplit=1)[0].strip()
+        if not line:
+            continue
+        key, sep, value = line.partition("=")
+        if sep and key.strip() == "ignore-scripts":
+            state = value.strip().lower() == "true"
+    if state:
+        return _ok()
+    try:
+        yarn = yaml.safe_load(repo.read(".yarnrc.yml") or "") or {}
+    except yaml.YAMLError:
+        yarn = {}
+    if isinstance(yarn, dict) and yarn.get("enableScripts") is False:
+        return _ok()
+    return "fail", ["package.json is present but nothing stops install scripts from running (add `ignore-scripts=true` to .npmrc)"]
+
+
 CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "pinned-actions": pinned_actions,
     "workflow-permissions": workflow_permissions,
@@ -540,6 +564,7 @@ CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "secret-scan-wired": secret_scan_wired,
     "workflow-lint-wired": workflow_lint_wired,
     "dependency-cooldown": dependency_cooldown,
+    "install-scripts-off": install_scripts_off,
     "standard-wired": standard_wired,
     "payments-pack": _pack_rule("payments"),
     "llm-pack": _pack_rule("llm"),

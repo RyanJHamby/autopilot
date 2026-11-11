@@ -218,7 +218,14 @@ def test_github_actions_expressions_do_not_look_like_tokens():
     assert t.fill("${{ secrets.X }} @@a@@", a="b") == "${{ secrets.X }} b"
 
 
-DAY_ZERO = {".githooks/pre-commit", ".editorconfig", "docs/decisions/README.md", "docs/runbooks/README.md"}
+DAY_ZERO = {
+    ".githooks/pre-commit",
+    ".editorconfig",
+    ".gitattributes",
+    "docs/decisions/README.md",
+    "docs/runbooks/README.md",
+    "docs/postmortems/TEMPLATE.md",
+}
 
 
 def test_every_rendered_file_is_free_of_tokens(tmp_path):

@@ -122,6 +122,13 @@ checks:
     why: Most malicious package releases are caught and pulled within days, so a version a week old is far less likely to be one.
     fix: "Add `cooldown: {default-days: 7}` to every Dependabot entry, or set `minimumReleaseAge` in Renovate."
 
+  - id: install-scripts-off
+    title: A node repo does not let installed packages run install scripts
+    level: warn
+    label: audited
+    why: Install scripts run arbitrary code from every dependency, on every machine that installs, before anyone has read it. Turning them off removes the most common way a poisoned package gets in.
+    fix: "Add `ignore-scripts=true` to .npmrc (or `enableScripts: false` to .yarnrc.yml), then run the install and the tests. A package that really needs a build step can be rebuilt by name afterwards."
+
   - id: standard-wired
     title: "`make check` runs the standard, so a new capability is noticed"
     level: fail

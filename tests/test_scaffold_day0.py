@@ -12,7 +12,14 @@ import yaml
 from autopilot.scaffold import core
 from autopilot.scaffold import templates as t
 
-DAY_ZERO = {".githooks/pre-commit", ".editorconfig", "docs/decisions/README.md", "docs/runbooks/README.md"}
+DAY_ZERO = {
+    ".githooks/pre-commit",
+    ".editorconfig",
+    ".gitattributes",
+    "docs/decisions/README.md",
+    "docs/runbooks/README.md",
+    "docs/postmortems/TEMPLATE.md",
+}
 NEEDS = pytest.mark.skipif(shutil.which("make") is None, reason="make is not installed")
 GITLEAKS = pytest.mark.skipif(shutil.which("gitleaks") is None, reason="gitleaks is not installed")
 # A made-up, high-entropy value in a keyed assignment: what gitleaks's generic rule looks for. It is not a credential for anything.

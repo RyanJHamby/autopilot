@@ -24,7 +24,7 @@ pass() { echo "PASS  $*"; }
 fail() { echo "FAIL  $*"; fails=$((fails + 1)); }
 check() { if eval "$2" >/dev/null 2>&1; then pass "$1"; else fail "$1"; fi; }
 echo "kernel: $(uname -sr)"
-apt-get update -qq >/dev/null && apt-get install -y -qq git sudo nftables util-linux systemd >/dev/null 2>&1
+apt-get update -qq >/dev/null && apt-get install -y -qq git sudo nftables util-linux systemd iproute2 netcat-openbsd >/dev/null 2>&1
 # a local stand-in for the public repo (the real run clones it from GitHub)
 cp -r /src /work && cd /work
 git init -q && git add -A && git -c user.name=t -c user.email=t@example.invalid commit -qm export
@@ -102,6 +102,24 @@ ADMIN_USER=owner bash $B >/tmp/run2.out 2>&1; rc=$?
 [ $rc -eq 0 ] && pass "second run exits 0" || { fail "second run exit $rc"; tail -15 /tmp/run2.out; }
 [ "$(snap)" = "$before" ] && pass "second run left the tree, rules and sudoers byte-identical" || fail "second run changed something"
 grep -q "unchanged: /etc/apx/apx.nft" /tmp/run2.out && pass "second run says the rules were unchanged" || fail "second run rewrote the rules"
+
+echo "--- the other scripts run"
+bash /work/deploy/linux/preflight.sh >/tmp/pre.out 2>&1; prc=$?
+{ [ $prc -le 1 ] && grep -q "^PASS  python" /tmp/pre.out; } && pass "preflight runs read-only and reports (exit $prc; FAILs are expected here: no systemd in a container)" || fail "preflight crashed (exit $prc)"
+DO=0 bash /work/deploy/linux/retire.sh >/tmp/ret.out 2>&1; rrc=$?
+{ [ $rrc -eq 0 ] && grep -q "Preview only" /tmp/ret.out; } && pass "retire previews and changes nothing by default" || fail "retire preview broke (exit $rrc)"
+
+echo "--- the egress probe, against the real internet from inside the container"
+nft -f /etc/apx/apx.nft && pass "the installed rules load" || fail "the installed rules did not load"
+chmod 644 /etc/apx/dnsmasq.conf
+setpriv --reuid=$(id -u apx-dns) --regid=$(id -g apx-dns) --clear-groups --inh-caps=+net_admin --ambient-caps=+net_admin --bounding-set=-all,+net_admin \
+  dnsmasq --keep-in-foreground --conf-file=/etc/apx/dnsmasq.conf --pid-file= >/tmp/dnsmasq.out 2>&1 &
+sleep 1
+check "CONTROL: an unrestricted account can reach a public address on 443 (so the probe refusing it means something)" "setpriv --reuid=\$(id -u nobody) --regid=\$(id -g nobody) --clear-groups nc -z -w 4 1.1.1.1 443"
+bash /work/deploy/linux/egress-probe.sh >/tmp/probe.out 2>&1; erc=$?
+grep -E "^(LEAK|BROKEN|sealed|[0-9]+ problem)" /tmp/probe.out
+[ $erc -eq 0 ] && pass "the probe found no leak and the allowed path worked, for all three accounts" || fail "the probe reported problems (exit $erc)"
+[ "$(grep -c "^ok" /tmp/probe.out)" -ge 45 ] && pass "the probe ran its full set of attempts ($(grep -c "^ok" /tmp/probe.out) ok)" || fail "the probe ran too few attempts"
 
 echo
 echo "failed: $fails"

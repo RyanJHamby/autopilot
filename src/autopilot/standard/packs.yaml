@@ -96,3 +96,73 @@ packs:
         path: ['docs/runbooks/rollback.md']
         min_lines: 6
         fix: Write docs/runbooks/rollback.md (the exact command or click that returns to the previous deploy, and how you know it worked).
+
+  # Auth is judgment: "don't build your own auth" cannot be detected reliably, so this pack backs an advisory rule that only warns.
+  auth:
+    needs: auth
+    items:
+      - id: managed-auth
+        kind: code
+        title: Sign-in uses a managed provider, or a decision record says why not
+        deps: ['next-auth', '@auth/*', '@clerk/*', '@supabase/ssr', '@supabase/auth-helpers-*', '@auth0/*', 'auth0', 'fastapi-users', 'authlib', 'django-allauth']
+        paths: ['docs/decisions/*auth*']
+        fix: "Use a maintained provider (Clerk, Auth.js, Supabase Auth, Auth0), or write docs/decisions/NNNN-auth.md saying why this repo runs its own sign-in and how passwords, sessions and resets are handled."
+
+      - id: signup-abuse
+        kind: code
+        title: Sign-up and sign-in have abuse defenses (a rate limit or a CAPTCHA)
+        match: ['(?i)rate[_-]?limit', '(?i)throttle', '(?i)turnstile', '(?i)recaptcha', '(?i)hcaptcha']
+        deps: ['@upstash/ratelimit', 'rate-limiter-flexible', 'express-rate-limit', 'slowapi', '@hcaptcha/*', '@marsidev/react-turnstile', 'react-turnstile', 'react-google-recaptcha*']
+        paths: ['docs/decisions/*abuse*']
+        fix: "Add a rate limit on the sign-up, sign-in and password-reset routes, or a CAPTCHA, so one bot cannot create or probe accounts without limit; or write docs/decisions/NNNN-signup-abuse.md explaining why not."
+
+      - id: account-deletion
+        kind: code
+        title: A user can delete their account and data
+        match: ['auth\.admin\.deleteUser', '(?i)delete_?(user|account)']
+        paths: ['**/delete-account*', '**/delete_account*', '**/account/delete*', '**/account/delete/**']
+        fix: "Add an account deletion route or function that removes the user's rows and files (and a data export if you hold personal data), or write docs/decisions/NNNN-account-deletion.md saying how a user gets their data removed."
+
+      - id: threat-model
+        kind: record
+        title: A one-page threat model exists
+        path: ['docs/threat-model.md']
+        min_lines: 8
+        fix: Write docs/threat-model.md (what is valuable, how it is reached, what an agent holding the repo's credentials could touch). No TODO or placeholder text.
+
+  # A database with no tested backup and no migration runbook is the failure that is worst to learn about late. Enforced.
+  db:
+    needs: db
+    items:
+      - id: backups
+        kind: record
+        verified: true
+        title: Database backups are on and a restore has been tried, recorded with the date it was checked
+        path: ['docs/gates/db-backups.md']
+        min_lines: 6
+        fix: "Write docs/gates/db-backups.md saying where backups are taken and how often, how long they are kept, and the date you last restored one into a scratch database, ending with a `Verified: YYYY-MM-DD` line. Re-check it within 180 days."
+
+      - id: safe-migrations
+        kind: record
+        title: There is a written way to change the schema without breaking the running app
+        path: ['docs/runbooks/migrations.md']
+        min_lines: 6
+        fix: Write docs/runbooks/migrations.md (add first, backfill, switch the code, remove last; how a bad migration is rolled back; who may run one against production).
+
+      - id: threat-model
+        kind: record
+        title: A one-page threat model exists
+        path: ['docs/threat-model.md']
+        min_lines: 8
+        fix: Write docs/threat-model.md (what is valuable, how it is reached, what an agent holding the repo's credentials could touch). No TODO or placeholder text.
+
+  # Judgment again: a mock can hide the bug a real database would show, but not every repo needs the cost of running one in CI.
+  db-advisory:
+    needs: db
+    items:
+      - id: real-db-in-tests
+        kind: code
+        title: Tests run against a real database, not only a mock
+        # Test directories are never read by the scanner, so the evidence is a file outside them.
+        paths: ['**/docker-compose*.y*ml', '**/compose*.y*ml', 'supabase/config.toml', '**/testcontainers*']
+        fix: Run a real database in tests (a docker compose file, testcontainers, or `supabase start`), so a query or migration that only fails on a real engine fails before production.

@@ -191,11 +191,18 @@ STRIPE = {"package.json": '{"dependencies": {"stripe": "^23"}}'}
 COMPLETE_PAYMENTS = {
     **STRIPE,
     "src/app/api/stripe/webhook/route.ts": "const e = stripe.webhooks.constructEvent(raw, sig, secret);\n",
-    "supabase/migrations/0005_events.sql": "create table processed_stripe_events (event_id text primary key);\n",
-    "docs/threat-model.md": "# Threat model\n\n" + "\n".join(f"Line {i} of real content about what could go wrong." for i in range(8)) + "\n",
+    # A decision record satisfies event-dedupe without a SQL migration, which would also make this a database repo that owes the DB pack.
+    "docs/decisions/0002-webhook-idempotency.md": "# Webhook idempotency\n\n"
+    + "\n".join(f"Line {i}: replaying an event is harmless because it only sets a flag." for i in range(8))
+    + "\n",
+    "docs/threat-model.md": "# Threat model\n\n"
+    + "\n".join(f"Line {i} of real content about what could go wrong." for i in range(8))
+    + "\n",
     "public/terms.html": "<h1>Terms and refund policy</h1>\n",
 }
-STRIPE_OWNER = "/src/app/api/stripe/ @o\n"  # appended to the scaffolded CODEOWNERS, as a person would; replacing it drops the other cover
+STRIPE_OWNER = (
+    "/src/app/api/stripe/ @o\n"  # appended to the scaffolded CODEOWNERS, as a person would; replacing it drops the other cover
+)
 
 
 def add(root, files):

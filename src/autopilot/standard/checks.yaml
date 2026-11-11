@@ -162,6 +162,15 @@ checks:
     why: You should hear about a broken deploy before a user tells you, and know how to undo it.
     fix: "Add each missing item the finding names. Records are self-attested."
 
+  - id: db-pack
+    title: A repo with a database has the DB pack (a tested-backup record, a migration runbook, a threat model)
+    level: fail
+    label: enforced
+    since: 2026-11-10
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
+    why: A database with no backup anyone has restored, and no written way to change its schema, is the failure that is worst to find out about late.
+    fix: "Add each missing item the finding names; `packs.yaml` says exactly what satisfies it. Records are self-attested, and the backup record goes stale after 180 days."
+
   # Advisory rules: judgment. They warn and never fail a run, and nothing here claims they improve outcomes.
   - id: agents-md-budget
     title: AGENTS.md is 60 lines or fewer
@@ -178,6 +187,22 @@ checks:
     evidence: judgment
     why: Public claims about authorship should match what happened. Accuracy needs a human to judge.
     fix: Add or update the section to say what AI assistance was used and what was reviewed.
+
+  - id: auth-pack
+    title: A repo with sign-in has the auth pack (managed provider, abuse defenses, account deletion, threat model)
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: Hand-rolled sign-in, unlimited sign-ups and no way to delete an account are common, but whether each one matters depends on the product.
+    fix: Add each missing item the finding names, or write the decision record that says why this repo does not need it.
+
+  - id: db-advisory-pack
+    title: A repo with a database runs its tests against a real one
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: A mock can hide the bug a real database would show, but running one in CI has a cost, so this is a judgment call.
+    fix: Add a compose file, testcontainers or `supabase start` for the tests, or decide the mock is enough for this repo.
 
   - id: journal-present
     title: docs/journal.md exists

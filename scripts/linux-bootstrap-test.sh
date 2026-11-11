@@ -76,10 +76,24 @@ check "apx-ci cannot sudo to apx-agent" "! setpriv --reuid=\$(id -u apx-ci) --re
 check "apx can act as apx-ci" "setpriv --reuid=\$(id -u apx) --regid=\$(id -g apx) --init-groups sudo -n -u apx-ci id -un | grep -qx apx-ci"
 check "apx cannot act as the owner or root" "! setpriv --reuid=\$(id -u apx) --regid=\$(id -g apx) --init-groups sudo -n -u owner id && ! setpriv --reuid=\$(id -u apx) --regid=\$(id -g apx) --init-groups sudo -n id"
 
+echo "--- controls: weaken the split on purpose; the same probes must now see the leak (so a pass above means something)"
+chmod 755 /home/apx /home/apx/.apx; chmod 644 /home/apx/.apx/app.pem
+check "CONTROL: with apx home opened up, apx-ci CAN read the secret" "setpriv --reuid=\$(id -u apx-ci) --regid=\$(id -g apx-ci) --init-groups cat /home/apx/.apx/app.pem"
+chmod 700 /home/apx /home/apx/.apx; chmod 600 /home/apx/.apx/app.pem
+check "CONTROL: restored, apx-ci cannot read it again" "! setpriv --reuid=\$(id -u apx-ci) --regid=\$(id -g apx-ci) --init-groups cat /home/apx/.apx/app.pem"
+echo "apx-ci ALL=(apx) NOPASSWD: ALL" > /etc/sudoers.d/zz-control; chmod 440 /etc/sudoers.d/zz-control
+check "CONTROL: with a sudo rule added, apx-ci CAN become apx" "setpriv --reuid=\$(id -u apx-ci) --regid=\$(id -g apx-ci) --init-groups sudo -n -u apx id"
+rm -f /etc/sudoers.d/zz-control
+check "CONTROL: rule removed, apx-ci cannot become apx again" "! setpriv --reuid=\$(id -u apx-ci) --regid=\$(id -g apx-ci) --init-groups sudo -n -u apx id"
+
 echo "--- the units"
 cp /work/deploy/linux/systemd/* /etc/systemd/system/ 2>/dev/null
 v="$(systemd-analyze verify /etc/systemd/system/apx-nft.service /etc/systemd/system/apx-dns.service /etc/systemd/system/apx.service /etc/systemd/system/apx.timer /etc/systemd/system/apx-updater.service /etc/systemd/system/apx-updater.timer 2>&1)"
-echo "$v" | grep -iE "unknown (key|section|lvalue)|bad (setting|unit)|invalid|failed to parse|not a valid" && fail "systemd-analyze found a problem" || pass "systemd-analyze verify found no syntax problem"
+PROBLEM="unknown (key|section|lvalue)|bad (setting|unit)|invalid|failed to parse|not a valid|unknown key"
+printf "[Service]\nBogusKey=1\nExecStart=/bin/true\n" > /tmp/bad.service
+if systemd-analyze verify /tmp/bad.service 2>&1 | grep -iE "$PROBLEM" >/dev/null; then pass "CONTROL: systemd-analyze flags a broken unit"; else fail "CONTROL: systemd-analyze did not flag a broken unit, so the check below proves nothing"; fi
+if echo "$v" | grep -iE "$PROBLEM"; then fail "systemd-analyze found a problem in our units"; else pass "systemd-analyze verify found no syntax problem in our six units"; fi
+echo "verify output (informational):"; echo "$v" | head -12
 
 echo "--- a second run changes nothing"
 snap() { { find /srv/apx /etc/apx /etc/sudoers.d /home -path /srv/apx/venv -prune -o -path "*/.git" -prune -o -printf "%p %m %u %g %l\n"; cat /etc/apx/apx.nft /etc/apx/dnsmasq.conf /etc/sudoers.d/apx-ci /etc/sudoers.d/apx-agent; ls /srv/apx/releases; } 2>/dev/null | sort | sha256sum | cut -d" " -f1; }

@@ -334,3 +334,22 @@ def test_json_output_carries_label_level_and_findings(tmp_path):
             {"id": "journal-present", "label": "advisory", "level": "warn", "result": "fail", "findings": ["no docs/journal.md"]}
         ],
     }
+
+
+def test_a_codeowners_file_under_dot_github_is_covered_by_the_dot_github_entry_not_a_root_entry(tmp_path):
+    """The protected list names `CODEOWNERS`, but GitHub reads the file from .github/ too. Where the file really lives is what must be owned;
+    demanding a separate root entry made every repo with .github/CODEOWNERS fail (found by running the check on stencil)."""
+    without_self = FULL_OWNERS.replace("/CODEOWNERS @me\n", "")
+    assert check("codeowners-cover-protected-paths", write(tmp_path, {".github/CODEOWNERS": without_self}))[0] == "pass"
+
+
+def test_a_codeowners_file_that_nothing_covers_still_fails_wherever_it_lives(tmp_path):
+    without_self = FULL_OWNERS.replace("/CODEOWNERS @me\n", "").replace("/.github/ @me\n", "")
+    result, findings = check("codeowners-cover-protected-paths", write(tmp_path, {".github/CODEOWNERS": without_self}))
+    assert result == "fail" and any("CODEOWNERS" in f for f in findings)
+    root = tmp_path / "root"
+    root.mkdir()
+    result, findings = check(
+        "codeowners-cover-protected-paths", write(root, {"CODEOWNERS": FULL_OWNERS.replace("/CODEOWNERS @me\n", "")})
+    )
+    assert result == "fail" and any(f.startswith("CODEOWNERS ") for f in findings)

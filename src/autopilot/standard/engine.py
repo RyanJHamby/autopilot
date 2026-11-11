@@ -278,9 +278,11 @@ def codeowners_cover(repo: Repo) -> Outcome:
     This is a path-prefix test, not GitHub's matcher: it handles the plain, directory and `dir/**` forms. Wildcard
     patterns in the middle of a path aren't understood, so such an entry is not counted as covering anything."""
     text = None
+    where = "CODEOWNERS"
     for rel in ("CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"):
         text = repo.read(rel)
         if text is not None:
+            where = rel
             break
     if text is None:
         return "fail", ["no CODEOWNERS file"]
@@ -288,6 +290,10 @@ def codeowners_cover(repo: Repo) -> Outcome:
     missing = []
     for pattern in repo.protected():
         path = _norm(pattern)
+        if path == "CODEOWNERS":
+            path = (
+                where  # the file itself, wherever GitHub is reading it from: .github/CODEOWNERS is covered by a `/.github/` entry
+            )
         covered = any(e == "*" or e == path or path.startswith(e + "/") for e in entries if "*" not in e or e == "*")
         if not covered:
             missing.append(f"{pattern} is not owned in CODEOWNERS")
@@ -443,7 +449,9 @@ def hook_wired(repo: Repo) -> Outcome:
     else:
         if not os.access(hook, os.X_OK):
             findings.append(".githooks/pre-commit is not executable (git ignores a hook that is not)")
-        body = "\n".join(ln for ln in hook.read_text(encoding="utf-8", errors="replace").splitlines() if not ln.lstrip().startswith("#"))
+        body = "\n".join(
+            ln for ln in hook.read_text(encoding="utf-8", errors="replace").splitlines() if not ln.lstrip().startswith("#")
+        )
         if not re.search(r"\bmake\b", body):
             findings.append(".githooks/pre-commit does not run make, so it cannot run the repo's checks")
     code = _make_code(repo)
@@ -506,7 +514,9 @@ def dependency_cooldown(repo: Repo) -> Outcome:
             cool = u.get("cooldown") if isinstance(u, dict) else None
             ok = isinstance(cool, dict) and any(isinstance(cool.get(k), int) and cool[k] > 0 for k in _COOLDOWN_KEYS)
             if not ok:
-                bad.append(f"the {u.get('package-ecosystem', '?') if isinstance(u, dict) else '?'} entry has no cooldown of one or more days")
+                bad.append(
+                    f"the {u.get('package-ecosystem', '?') if isinstance(u, dict) else '?'} entry has no cooldown of one or more days"
+                )
         return _verdict(bad)
     for name in ("renovate.json", ".renovaterc", ".github/renovate.json"):
         text = repo.read(name)

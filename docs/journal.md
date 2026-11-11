@@ -572,3 +572,11 @@ stencil Tier 2 step 2 (branch feat/health-endpoint off main, local, unpushed): /
 ## 2026-11-10 21:42 EST (at ee57a85)
 
 stencil Tier 2 step 3 (branch feat/error-tracking-seam off main, local, unpushed): src/lib/error-tracking.ts, no vendor, console by default, redaction and a reporter that cannot throw into the caller. 18 tests (red first: module missing), 3 mutants each failed a test, stencil suite 975 passed. NOT done: not called from any route yet, the error message itself is logged unredacted, redaction is key-name based so a secret under a harmless key name is not caught.
+
+## 2026-11-11 08:00 EST (at 5e17a37)
+
+tranche 1 (branch feat/lean-ship-tranche-1-2): deploy-advisory pack, 6 items, warn-only, new when:cron. 24 tests written first (rule missing), 3 mutants caught, full suite 1834 passed via .venv/bin/python. Mistake: bare python lacks the package so a subprocess test failed; not a code bug. Known limits recorded as LIMIT tests: heartbeat is a word match; records self-attested. NOT verified: against stencil's real tree.
+
+## 2026-11-11 08:05 EST (at f757c4b)
+
+tranche 2 (branch feat/lean-ship-tranche-1-2): scale gate (4 steps + repo-standard), beta gets domains and free-tier-ledger, docs/gates.md says three gates. 14 tests written first (7 failed), 2 mutants caught, real pawl accepted all steps on a throwaway control repo and a re-seed added nothing. Full suite 1848 passed. NOT verified: seed against the real control repo or GitHub. Matrix status column is still the baseline; a dated 'built since' section was added.

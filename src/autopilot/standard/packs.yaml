@@ -166,3 +166,58 @@ packs:
         # Test directories are never read by the scanner, so the evidence is a file outside them.
         paths: ['**/docker-compose*.y*ml', '**/compose*.y*ml', 'supabase/config.toml', '**/testcontainers*']
         fix: Run a real database in tests (a docker compose file, testcontainers, or `supabase start`), so a query or migration that only fails on a real engine fails before production.
+
+  # Being deployed is not the same as being run: with real users, somebody has to be told when it is down, what the logs hold, and when a
+  # scheduled job silently stops. Judgment (a small hobby app may reasonably skip some), so these only warn.
+  deploy-advisory:
+    needs: deploy
+    items:
+      - id: uptime-monitor
+        kind: record
+        when: hosted
+        verified: true
+        title: An uptime and certificate-expiry monitor watches the live app, recorded with the date it was checked
+        path: ['docs/gates/uptime.md']
+        min_lines: 6
+        fix: "Write docs/gates/uptime.md (what is monitored, from where, who is alerted and how), ending with a `Verified: YYYY-MM-DD` line. Re-check it within 180 days."
+
+      - id: structured-logs
+        kind: code
+        when: hosted
+        title: Logs are structured (one JSON object per line) so they can be searched
+        deps: ['pino', 'winston', 'bunyan', '@logtail/*', 'structlog', 'loguru', 'python-json-logger', 'logrus', 'zerolog', 'zap']
+        match: ['(?i)\bpino\(', '(?i)\bstructlog\.', '(?i)json\.dumps\([^)]*level']
+        fix: Use a structured logger (pino, structlog, loguru) with a request id on each line, and keep secrets and personal data out of the fields.
+
+      - id: log-retention
+        kind: record
+        when: hosted
+        title: How long logs are kept and how personal data is kept out of them is written down
+        path: ['docs/runbooks/logging.md', 'docs/gates/log-retention.md']
+        min_lines: 6
+        fix: Write docs/runbooks/logging.md (where logs go, how long they are kept, what is redacted, who can read them).
+
+      - id: dev-prod-separation
+        kind: record
+        when: hosted
+        title: Dev and prod are separate (databases, keys, accounts), written down
+        path: ['docs/runbooks/environments.md']
+        min_lines: 6
+        fix: Write docs/runbooks/environments.md (which project, database and keys each environment uses, and that no prod key lives on a dev machine or in an agent session).
+
+      - id: protected-prod
+        kind: record
+        when: hosted
+        title: Production deploys are gated (an approval, a protected branch or environment) and that is written down
+        path: ['docs/runbooks/prod-protection.md']
+        min_lines: 6
+        fix: Write docs/runbooks/prod-protection.md (what has to be true before a production deploy, who or what approves it, and what this plan cannot enforce).
+
+      - id: cron-heartbeat
+        kind: code
+        when: cron
+        title: Each scheduled job reports in, so a job that stops running is noticed
+        match: ['(?i)hc-ping', '(?i)healthchecks\.io', '(?i)\bcronitor\b', '(?i)betteruptime', '(?i)heartbeat', '(?i)checkIn\(']
+        deps: ['cronitor']
+        paths: ['docs/decisions/*heartbeat*', 'docs/runbooks/*heartbeat*']
+        fix: Ping a heartbeat monitor (Healthchecks.io, Cronitor, Sentry cron monitors) at the end of each scheduled job and alert when it stops, or write docs/decisions/NNNN-cron-heartbeat.md saying why not.

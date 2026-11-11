@@ -62,6 +62,7 @@ A rule's **level** says what a failing result does to the run: `fail` exits non-
 | `db-pack` | fail | enforced | all |
 | `auth-pack` | warn | advisory | all |
 | `db-advisory-pack` | warn | advisory | all |
+| `deploy-advisory-pack` | warn | advisory | all |
 | `agents-md-budget` | warn | advisory | all |
 | `how-this-was-built` | warn | advisory | all |
 | `journal-present` | warn | advisory | all |
@@ -116,6 +117,7 @@ remember or record. What each pack requires is in `src/autopilot/standard/packs.
 | `db-pack` | a database dependency (Prisma, Supabase, SQLAlchemy and similar) or a migrations directory | a dated backup-and-restore record (`docs/gates/db-backups.md`), a migration runbook (`docs/runbooks/migrations.md`), a threat model |
 | `auth-pack` (advisory) | a sign-in dependency (Clerk, Auth.js, Supabase Auth, and also `jsonwebtoken` or `bcrypt`) | a managed provider or a decision record, a rate limit or CAPTCHA, account deletion, a threat model |
 | `db-advisory-pack` (advisory) | the same database signal | a real database in tests, seen as a compose file, a local Supabase config or a `testcontainers` module outside the test directories (the scanner never reads `tests/`) |
+| `deploy-advisory-pack` (advisory) | the same deploy signal; most items only when the app is hosted (deployed, and people sign in or pay); the heartbeat item only when there are scheduled jobs (a `cron` directory or `crons` in `vercel.json`) | an uptime monitor record (dated), structured logs, a log-retention note, a dev/prod separation note, a gated-deploy note, a heartbeat ping for each scheduled job. Notes are self-attested. The heartbeat check is a word match, so a keep-alive that is called a heartbeat also passes |
 
 Detection is scoped so a mention is not a capability: runtime dependencies only (not dev dependencies, optional extras or lockfiles), code
 files only (not docs, tests, fixtures, examples, templates or agent config), comments and Python docstrings stripped, and a call needs a URL

@@ -1,9 +1,10 @@
 # Gates: what a bet clears before real users and before the first payment
 
-A **gate** is a checklist for a bet, kept as data in `src/autopilot/gates/gates.yaml`. There are two:
+A **gate** is a checklist for a bet, kept as data in `src/autopilot/gates/gates.yaml`. There are three:
 
 - `beta`: real users' data is about to arrive.
 - `charge`: ready to take the first payment.
+- `scale`: real growth is coming (more users, more money, more at stake if a vendor or a secret fails).
 
 They cover what the capability packs (`STANDARD.md`, "Capability packs") cannot see from code: whether the entity exists, whether the
 processor account is in the business's name, whether sales tax was decided. The packs stop the code from shipping without its controls;

@@ -536,3 +536,7 @@ P2 step 2: egress selftest on a real Linux kernel (linuxkit 6.10, nftables 1.1.3
 ## 2026-11-10 19:07 EST (at 3fb2f67)
 
 dnsmasq-base (no default service on :53) runs fine as an unprivileged apx-dns account with only CAP_NET_ADMIN (ambient), --pid-file= disables the pid file; selftest 42/42 on linuxkit 6.10. Under real systemd this is AmbientCapabilities=CAP_NET_ADMIN, still unverified until the VPS. Also found P1 had missed two /Users paths (status defaults, updater test home): fixed 3fb2f67.
+
+## 2026-11-10 19:11 EST (at 2f01dbc)
+
+P2 step 3: deploy/linux/bootstrap.sh + six systemd units, run for real in a Debian container via scripts/linux-bootstrap-test.sh: refusals change nothing, dry run changes nothing, 4 accounts non-admin/nologin/700, sudoers visudo-checked, release layout, rules pass nft -c with real uids, apx-ci/apx-agent cannot read apx's stand-in secret or become apx, second run byte-identical. Negative controls (open the home, add a sudo rule, a broken unit) are flagged, so passes mean something. NOT verified: real systemd start/ordering, sshd drop-in, apt on the VPS image, dnsmasq ambient cap under systemd, the Claude/uv/node toolchain (deliberately not installed by the script).

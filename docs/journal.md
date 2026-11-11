@@ -560,3 +560,15 @@ Retrofit step 3 (stencil): branch chore/standard-wiring off origin/main, 3 signe
 ## 2026-11-10 20:11 EST (at feb7f42)
 
 Auth/DB packs: db-pack (enforced, since 2026-11-10: backups record with Verified date, migrations runbook, threat model), auth-pack and db-advisory-pack (advisory, warn only). 32 new tests, each item checked present and absent. Two things I got wrong first and fixed: (1) real-db-in-tests matched testcontainers in dependencies/test files, but the scanner reads runtime deps only and never reads tests/, so it could never pass; narrowed to files outside tests (compose, supabase/config.toml, a testcontainers module) and recorded the limit as a test. (2) the payments scaffold fixture used a SQL migration, which now also makes it a db repo owing the DB pack; switched it to a decision record. Full suite 1810 passed (this Mac, not a pow run). On stencil: db-pack grandfathered to warn, auth and real-db advisories warn. Records stay self-attested: a plausible backup note passes.
+
+## 2026-11-10 21:28 EST (at ee57a85)
+
+stencil Tier 2 step 1 (branch feat/stripe-webhook-dedupe, local, unpushed): webhook now claims event ids in a new stripe_events table and releases the claim on failure. Found and fixed a silent loss: failed subscriptions upsert returned 200. 6 new tests (3 failed first), full stencil vitest 963 passed. NOT done: migration not applied to any database, no real Stripe replay, out-of-order events not handled, tsc has one unrelated LayoutProps error (needs next typegen).
+
+## 2026-11-10 21:41 EST (at ee57a85)
+
+stencil Tier 2 step 2 (branch feat/health-endpoint off main, local, unpushed): /api/health with a 3s DB probe, 503 on failure, no error text in the body. 7 tests; three mutants (ignore db error, no timeout, cacheable) each failed a test. Tests and code were written together, not red-first. NOT done: no monitor points at it yet, not run against a real database or deployed, subscriptions table used as the probe target.
+
+## 2026-11-10 21:42 EST (at ee57a85)
+
+stencil Tier 2 step 3 (branch feat/error-tracking-seam off main, local, unpushed): src/lib/error-tracking.ts, no vendor, console by default, redaction and a reporter that cannot throw into the caller. 18 tests (red first: module missing), 3 mutants each failed a test, stencil suite 975 passed. NOT done: not called from any route yet, the error message itself is logged unredacted, redaction is key-name based so a secret under a harmless key name is not caught.

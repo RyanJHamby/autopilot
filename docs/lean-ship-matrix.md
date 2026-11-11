@@ -19,8 +19,9 @@ the plan; classification is judgment, not measurement. Nothing here quotes a ben
 Status: **done** = already enforced somewhere (named), **partial** = exists but has a gap, **gap** = nothing yet.
 
 ## Gaps found outside the tip list (from the 2026-11-10 exploration)
-1. Autopilot's managed CODEOWNERS block has no `/CODEOWNERS` line, so any `ap init`'d repo without a `*` catch-all fails
-   `codeowners-cover-protected-paths` (stencil and launch-scratch fail; benchsane passes only because of its `*` line).
+1. ~~The managed CODEOWNERS block has no `/CODEOWNERS` line, so repos without a `*` catch-all fail `codeowners-cover-protected-paths`.~~
+   Resolved 2026-11-10, and the diagnosis was wrong: the managed block writes `.github/CODEOWNERS`, which its `/.github/` entry already covers.
+   The rule was demanding a separate root `CODEOWNERS` entry, a false positive in the rule (fixed in `engine.py`, with tests), not a gap in the block.
 2. Two incompatible repo-creation paths: `ap new --create` (ruleset `autopilot-main`, required job `test`/`check`) and
    `admin/scripts/new-repo.sh` + `protect-repo.sh` (classic protection, required check `ci`, a third template at `admin/templates/repo`).
 3. The daily doctor cannot list GitHub repos (log shows every repo "cannot audit"), so the `enforce_after=2026-11-10` audit of new repos is blind.
@@ -265,7 +266,7 @@ Status: **done** = already enforced somewhere (named), **partial** = exists but 
 | 116 | Bus-factor doc | S | partial | admin runbook exists; per-product at first charge |
 | 221 | NY publication, if NY | C | open | only if the entity is in NY; `llc` |
 | 222 | D-U-N-S before app stores | C | | only for a store-published app |
-| 223 | Name and trademark search | C | partial | done informally for benchsane |
+| 223 | Name and trademark search | C | partial | done informally for one project |
 | 224 | Compliance calendar | C | gap | after the entity |
 | 225 | Privacy basics | S | gap | beta and first-charge gates |
 | 226 | Decide sales tax and VAT early | S | gap | first-charge gate (merchant of record vs register) |

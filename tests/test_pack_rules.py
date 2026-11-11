@@ -1,6 +1,6 @@
 """payments-pack, llm-pack and deploy-pack: each starts from a complete repo, removes one item's files, and expects exactly that item reported.
 
-The fixtures mirror the live stencil checkout, the only repo that has all of these capabilities today (surveyed 2026-11-10)."""
+The fixtures mirror a real portfolio checkout, the only repo that has all of these capabilities today (surveyed 2026-11-10)."""
 
 import datetime
 import os

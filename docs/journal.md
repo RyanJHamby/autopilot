@@ -544,3 +544,7 @@ P2 step 3: deploy/linux/bootstrap.sh + six systemd units, run for real in a Debi
 ## 2026-11-10 19:18 EST (at 5b9e240)
 
 P2 step 4: preflight/egress-probe/retire scripts + docs/apx-linux-host.md. Container run (real internet): probe sealed all three accounts, 72 ok; a hole punched in apx-ci's lane made the probe fail and blame only apx-ci. The real daemon --doctor ran as apx on Linux: sandbox checks pass, only the claude CLI is missing (owner step). Doc corrected after read-back: claude-oauth install now via admin+sudo install, no restart needed after APX_SHADOW change. Still unverified: real systemd, sshd, VPS network, toolchain installs.
+
+## 2026-11-10 19:25 EST (at 425d280)
+
+Retrofit step 1 (stencil): running the standard on stencil showed codeowners-cover-protected-paths failing on a false positive: the protected list names root CODEOWNERS, but stencil's file is .github/CODEOWNERS, already covered by /.github/. Fixed in the engine with two tests (the file's real location is what must be owned; an uncovered file still fails). Stencil after pull: 9 pass/14 fail before the fix, 10/13 after.

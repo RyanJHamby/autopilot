@@ -175,3 +175,63 @@ def test_timers_start_nothing_until_enabled_and_say_how_to_stop(timer):
     t = (LINUX / "systemd" / timer).read_text()
     assert "NOT enabled" in t and "disable --now" in t or "Stop" in t
     assert unit(timer)["Timer"]["OnUnitInactiveSec"] == "2min"
+
+
+# --- the other three scripts ---------------------------------------------------------------------------------------------------------
+
+PREFLIGHT = LINUX / "preflight.sh"
+PROBE = LINUX / "egress-probe.sh"
+RETIRE = LINUX / "retire.sh"
+
+
+@pytest.mark.parametrize("script", [PREFLIGHT, PROBE, RETIRE], ids=["preflight", "probe", "retire"])
+def test_the_other_scripts_are_valid_bash_executable_and_shellcheck_clean(script):
+    assert subprocess.run(["bash", "-n", str(script)], capture_output=True).returncode == 0
+    assert script.stat().st_mode & 0o111
+    if shutil.which("shellcheck"):
+        r = subprocess.run(["shellcheck", str(script)], capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout
+
+
+def test_preflight_is_read_only():
+    c = code(PREFLIGHT)
+    for mutating in (
+        "sudo",
+        "apt-get",
+        "useradd",
+        "systemctl enable",
+        "systemctl start",
+        "rm ",
+        "chmod",
+        "chown",
+        "install ",
+        "tee ",
+        "> /etc",
+        ">/etc",
+    ):
+        assert mutating not in c, mutating
+
+
+def test_retire_previews_by_default_and_never_deletes_anything():
+    c = code(RETIRE)
+    assert 'DO="${DO:-0}"' in c and 'if [ "$DO" = 1 ]' in c
+    for destructive in ("rm ", "shred", "userdel", "nft delete", "nft flush", "--now apx-nft", "apx-dns", "dnsmasq"):
+        assert destructive not in c, destructive
+    assert "disable --now" in c and "systemctl stop" in c
+
+
+def test_the_probe_needs_root_and_the_rules_loaded_and_pairs_every_refusal_with_a_working_path():
+    c = code(PROBE)
+    assert '"$(id -u)" = 0' in c and "nft list table inet apx" in c
+    assert "must_pass" in c and "BROKEN" in c and "the probe proves nothing" in c
+    for case in (
+        "169.254.169.254",
+        "1.1.1.1 443",
+        "2606:4700:4700::1111",
+        "github.com 22",
+        "1.1.1.1 853",
+        "dns_works 1.1.1.1 example.com",
+        "for WHO in apx-ci apx-agent apx",
+    ):
+        assert case in c, case
+    assert c.rstrip().endswith('exit "$problems"')

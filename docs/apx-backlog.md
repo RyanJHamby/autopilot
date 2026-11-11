@@ -45,6 +45,7 @@ agent's test) can read them. Fix by separating roles, not by hoping.
 |---|---|---|---|---|---|
 | H1 | **Oracle Always Free ARM VM**, hardened OS, key-only SSH, no other credentials. | VM reachable only by Ryan's key; baseline probe clean | Ryan (signup, SSH key) + me | M | |
 | H2 | **Linux install + service.** systemd unit instead of launchd; per-job sandbox (rootless podman or gVisor); the fabric nftables rules rendered and `nft -c` checked on the real host (never run yet). | apx runs on the VM; `redteam_probe.sh` green there | me | L | H1 |
+| | *Status 2026-11-10: the kit for a Debian/Ubuntu server is built and checked in a container (bootstrap, systemd units, per-account nftables allowlist, a probe for the real host): [apx-linux-host.md](apx-linux-host.md). Not yet run on a real server; the per-job sandbox is still stage 2.* | | | |
 | H3 | **Move the role off the Mac.** New App key generated on the host, old key revoked, Mac timer removed. | Mac holds no apx secrets | me + Ryan | S | H2 |
 | H4 | Optional second worker (the Pi after its Wi-Fi reflash, see `docs/pi-runner-handoff.md`). | Throughput need shown by the meter (O4) first | me + Ryan | M | O4 |
 

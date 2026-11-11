@@ -16,7 +16,7 @@ well agents work. Where a rule is judgment, it says so.
 | `audited` | `ap standard check` reports it when someone runs it | Yes, but nothing blocks a merge |
 | `advisory` | Judgment, not enforced anywhere | No, it only warns |
 
-The `fail`-level rules are the `enforced` ones: six from the start, then five day-0 rules and three capability-pack rules (all `since: 2026-11-10`, see "Phasing a
+The `fail`-level rules are the `enforced` ones: six from the start, then five day-0 rules and four capability-pack rules (all `since: 2026-11-10`, see "Phasing a
 rule in" and "Capability packs"). They are enforced by the `ci.yml` step
 `uv run ap standard check . --offline`, which exits non-zero when one of them fails. That step runs offline, so it
 never asks GitHub anything. Two limits: nothing has yet run on GitHub Actions, so "enforced" is the design until a real
@@ -59,6 +59,9 @@ A rule's **level** says what a failing result does to the run: `fail` exits non-
 | `payments-pack` | fail | enforced | all |
 | `llm-pack` | fail | enforced | all |
 | `deploy-pack` | fail | enforced | all |
+| `db-pack` | fail | enforced | all |
+| `auth-pack` | warn | advisory | all |
+| `db-advisory-pack` | warn | advisory | all |
 | `agents-md-budget` | warn | advisory | all |
 | `how-this-was-built` | warn | advisory | all |
 | `journal-present` | warn | advisory | all |
@@ -101,7 +104,7 @@ How a repo's age is read, and the edge cases:
 
 ## Capability packs
 
-A repo that can take payments, call an LLM or run a deployment must have the pack for that capability. The capability is read from the
+A repo that can take payments, call an LLM, run a deployment or hold a database must have the pack for that capability (sign-in and a real database in tests are advisory packs: they warn and never fail). The capability is read from the
 repo's own content (`src/autopilot/standard/capabilities.py`), so the requirement appears the moment the capability does, with nothing to
 remember or record. What each pack requires is in `src/autopilot/standard/packs.yaml`.
 
@@ -110,6 +113,9 @@ remember or record. What each pack requires is in `src/autopilot/standard/packs.
 | `payments-pack` | a payments dependency, a call to a payment API by URL, or a `STRIPE_*` env read | webhook signature check, event dedupe (or a decision record on idempotency), a threat model, a terms page, billing paths in CODEOWNERS |
 | `llm-pack` | an LLM dependency, a call to an LLM API by URL, an `import`, or an `*_API_KEY` env read | when **hosted** (deployed, with users or payments): a dated spend-cap record, a kill-switch runbook, an eval suite; when there are users: a per-user limit |
 | `deploy-pack` | `vercel.json`, a Dockerfile, `fly.toml`, `netlify.toml`, `render.yaml` | a health endpoint, error tracking, a rollback runbook |
+| `db-pack` | a database dependency (Prisma, Supabase, SQLAlchemy and similar) or a migrations directory | a dated backup-and-restore record (`docs/gates/db-backups.md`), a migration runbook (`docs/runbooks/migrations.md`), a threat model |
+| `auth-pack` (advisory) | a sign-in dependency (Clerk, Auth.js, Supabase Auth, and also `jsonwebtoken` or `bcrypt`) | a managed provider or a decision record, a rate limit or CAPTCHA, account deletion, a threat model |
+| `db-advisory-pack` (advisory) | the same database signal | a real database in tests, seen as a compose file, a local Supabase config or a `testcontainers` module outside the test directories (the scanner never reads `tests/`) |
 
 Detection is scoped so a mention is not a capability: runtime dependencies only (not dev dependencies, optional extras or lockfiles), code
 files only (not docs, tests, fixtures, examples, templates or agent config), comments and Python docstrings stripped, and a call needs a URL

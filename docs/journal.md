@@ -580,3 +580,7 @@ tranche 1 (branch feat/lean-ship-tranche-1-2): deploy-advisory pack, 6 items, wa
 ## 2026-11-11 08:05 EST (at f757c4b)
 
 tranche 2 (branch feat/lean-ship-tranche-1-2): scale gate (4 steps + repo-standard), beta gets domains and free-tier-ledger, docs/gates.md says three gates. 14 tests written first (7 failed), 2 mutants caught, real pawl accepted all steps on a throwaway control repo and a re-seed added nothing. Full suite 1848 passed. NOT verified: seed against the real control repo or GitHub. Matrix status column is still the baseline; a dated 'built since' section was added.
+
+## 2026-11-11 11:34 EST (at 1388792)
+
+tranche 4 (branch feat/lean-ship-tranche-4 off main): .gitattributes and postmortem template (new repos only), install-scripts-off rule (warn/audited, repo root .npmrc/.yarnrc.yml). 21 tests red first (20 failed), full suite 1869 passed, ruff clean. Mutant 2 SURVIVED: the comment guard was dead code (a commented key never equals the setting), so I removed it rather than add a test. Skipped on purpose: strict types in make check (16), needs a decision; no .npmrc written into existing repos. Ran on real stencil: fails as warn (no .npmrc). Unverified: whether stencil's npm ci still works with scripts off.

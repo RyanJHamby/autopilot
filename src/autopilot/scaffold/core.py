@@ -298,8 +298,10 @@ ITEMS: list[Item] = [
     # Day-0 layer, new repos only. The hook is executable because git silently ignores one that is not.
     Item(".githooks/pre-commit", None, lambda c: t.HOOK_PRE_COMMIT, _new_repo_only, mode=0o755),
     Item(".editorconfig", None, lambda c: t.EDITORCONFIG, _new_repo_only),
+    Item(".gitattributes", None, lambda c: t.GITATTRIBUTES, _new_repo_only),
     Item("docs/decisions/README.md", None, lambda c: t.DECISIONS_README, _new_repo_only),
     Item("docs/runbooks/README.md", None, lambda c: t.RUNBOOKS_README, _new_repo_only),
+    Item("docs/postmortems/TEMPLATE.md", None, lambda c: t.POSTMORTEM_TEMPLATE, _new_repo_only),
     Item("justfile", "commands-documented", _just_commands, _justfile, ("Justfile",)),
     # Any existing workflow counts as CI: a second competing ci.yml is worse than none.
     Item(

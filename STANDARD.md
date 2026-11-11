@@ -55,6 +55,7 @@ A rule's **level** says what a failing result does to the run: `fail` exits non-
 | `secret-scan-wired` | fail | enforced | all |
 | `workflow-lint-wired` | fail | enforced | all |
 | `dependency-cooldown` | fail | enforced | all |
+| `install-scripts-off` | warn | audited | all |
 | `standard-wired` | fail | enforced | all |
 | `payments-pack` | fail | enforced | all |
 | `llm-pack` | fail | enforced | all |

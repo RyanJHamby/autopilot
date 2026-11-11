@@ -315,6 +315,35 @@ indent_size = 2
 indent_style = tab
 """
 
+GITATTRIBUTES = """* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.woff2 binary
+
+package-lock.json -diff linguist-generated
+pnpm-lock.yaml -diff linguist-generated
+yarn.lock -diff linguist-generated
+uv.lock -diff linguist-generated
+"""
+
+POSTMORTEM_TEMPLATE = """# Postmortem: <short title>
+
+Copy this file to `YYYY-MM-DD-title.md`. Spend 15 minutes, not an afternoon. It is about the system, not a person: no blame, only what
+made the mistake easy to make and what makes it harder next time.
+
+- **What happened**: one or two sentences, in plain words.
+- **Impact**: who or what was affected, and for how long.
+- **Timeline**: when it started, when it was noticed (and how), when it was fixed. Times, not adjectives.
+- **Cause**: the chain of reasons, ending at something that can be changed. Stop at "a person made a mistake" and keep going.
+- **What worked**: what limited the damage or found it early. Keep doing that.
+- **What we change**: each item has an owner and a date, and is small enough to finish. A test, an alert or a runbook beats "be more careful".
+"""
+
 DECISIONS_README = """# Decisions
 
 One short file per decision that someone would otherwise have to re-argue: `NNNN-title.md`, numbered in order and never

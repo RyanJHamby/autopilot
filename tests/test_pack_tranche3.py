@@ -4,7 +4,7 @@ Each test starts from a complete repo, removes one item's evidence, and expects 
 (a small app may reasonably skip some), so none of them can fail a repo."""
 
 import pytest
-from test_pack_rules import FRESH, STALE, named, record, run, tree
+from test_pack_rules import STALE, named, record, run, tree
 
 from autopilot.standard import capabilities, load_checks, packs
 

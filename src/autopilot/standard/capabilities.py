@@ -278,3 +278,21 @@ def capabilities(root: Path, scan: Scan | None = None) -> dict[str, list[Evidenc
 def hosted(caps: dict[str, list[Evidence]]) -> bool:
     """Deployed, and either somebody logs in or somebody pays. A local tool that uses its owner's own key is not hosted."""
     return "deploy" in caps and ("auth" in caps or "payments" in caps)
+
+
+_CRON_PATH = re.compile(r"(^|/)cron(/|$)")
+
+
+def has_cron(scan: Scan) -> bool:
+    """Whether the repo runs scheduled jobs: a `cron` directory in its own code, or a non-empty `crons` list in `vercel.json`.
+    Tests and docs never count (they are not in `code_paths`)."""
+    if any(_CRON_PATH.search(p) for p in scan.code_paths):
+        return True
+    for rel in scan.code_paths:
+        if PurePosixPath(rel).name.lower() == "vercel.json":
+            try:
+                if (json.loads(scan.raw(rel) or "{}").get("crons") or []):
+                    return True
+            except (ValueError, AttributeError):
+                continue
+    return False

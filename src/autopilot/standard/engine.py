@@ -547,6 +547,7 @@ CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "db-pack": _pack_rule("db"),
     "auth-pack": _pack_rule("auth"),
     "db-advisory-pack": _pack_rule("db-advisory"),
+    "deploy-advisory-pack": _pack_rule("deploy-advisory"),
     "agents-md-budget": agents_md_budget,
     "how-this-was-built": how_this_was_built,
     "journal-present": journal_present,

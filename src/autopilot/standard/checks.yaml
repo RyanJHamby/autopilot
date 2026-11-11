@@ -204,6 +204,14 @@ checks:
     why: A mock can hide the bug a real database would show, but running one in CI has a cost, so this is a judgment call.
     fix: Add a compose file, testcontainers or `supabase start` for the tests, or decide the mock is enough for this repo.
 
+  - id: deploy-advisory-pack
+    title: A hosted app has uptime monitoring, structured logs, a retention note, separate environments, gated deploys and cron heartbeats
+    level: warn
+    label: advisory
+    evidence: judgment
+    why: A deployed app with real users needs somebody told when it is down or a job silently stops, but how much of this a small app needs is a judgment call.
+    fix: Add each missing item the finding names, or write the decision record that says why this repo does not need it.
+
   - id: journal-present
     title: docs/journal.md exists
     level: warn

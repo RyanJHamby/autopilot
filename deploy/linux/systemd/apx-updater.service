@@ -1,0 +1,25 @@
+[Unit]
+Description=apx updater (dry-run unless the live drop-in is installed; docs/apx-updater-design.md)
+Documentation=https://github.com/RyanJHamby/autopilot/blob/main/docs/apx-linux-host.md
+Requires=apx-nft.service apx-dns.service
+After=apx-nft.service apx-dns.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=apx
+Group=apx
+# Runs from its own copy, which is never updated automatically.
+WorkingDirectory=/srv/apx/updater
+Environment=HOME=/home/apx
+Environment=PATH=/home/apx/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/sh -c 'set -a; . /home/apx/.apx/apx.env; set +a; export PYTHONPATH=/srv/apx/updater/src; exec /srv/apx/venv/bin/python -m autopilot.apx.update_main'
+TimeoutStartSec=1h
+MemoryMax=8G
+TasksMax=2048
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+# NoNewPrivileges is deliberately NOT set: the updater runs a new tree's tests as apx-ci through sudo.

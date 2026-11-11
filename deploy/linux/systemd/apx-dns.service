@@ -1,0 +1,29 @@
+[Unit]
+Description=apx allowlist resolver (dnsmasq): answers only the names each lane may reach and records them in the nft sets
+Documentation=https://github.com/RyanJHamby/autopilot/blob/main/docs/apx-linux-host.md
+After=apx-nft.service network.target
+Requires=apx-nft.service
+Before=apx.service apx-updater.service
+
+[Service]
+Type=simple
+User=apx-dns
+Group=apx-dns
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/etc/apx/dnsmasq.conf --pid-file=
+Restart=on-failure
+RestartSec=5
+# CAP_NET_ADMIN is the only privilege: it lets dnsmasq add answers to the nft sets. No root, no other capability.
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK AF_UNIX
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the apx updater every two minutes
+# Installed but NOT enabled by bootstrap:  systemctl enable --now apx-updater.timer
+# To make it live, add a drop-in (systemctl edit apx-updater.service) that sets Environment=APX_UPDATE_LIVE=1 and passes --live. Stop adoption: touch /srv/apx/HOLD
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=2min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

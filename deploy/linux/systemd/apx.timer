@@ -1,0 +1,12 @@
+[Unit]
+Description=Run an apx pass every two minutes
+# Installed but NOT enabled by bootstrap. Enable it only after the doctor is green:  systemctl enable --now apx.timer
+# Stop at once:  systemctl disable --now apx.timer
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=2min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

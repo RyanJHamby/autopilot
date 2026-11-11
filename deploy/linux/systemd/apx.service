@@ -1,0 +1,27 @@
+[Unit]
+Description=apx executor, one pass (the timer runs it every two minutes)
+Documentation=https://github.com/RyanJHamby/autopilot/blob/main/docs/apx-linux-host.md
+Requires=apx-nft.service apx-dns.service
+After=apx-nft.service apx-dns.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=apx
+Group=apx
+WorkingDirectory=/srv/apx/current
+Environment=HOME=/home/apx
+Environment=PATH=/home/apx/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Same shape as the macOS job. Settings (paths and ids, no secrets) come from apx.env; shadow mode stays on unless APX_SHADOW=0 is set there.
+ExecStart=/bin/sh -c 'set -a; . /home/apx/.apx/apx.env; set +a; export APX_LIVE=1 PYTHONPATH=/srv/apx/current/src; exec /srv/apx/venv/bin/python -m autopilot.apx.daemon --once --live'
+TimeoutStartSec=3h
+# These limits cover the sandboxed children too: sudo keeps them in this unit's control group.
+MemoryMax=12G
+TasksMax=4096
+CPUQuota=300%
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+# NoNewPrivileges is deliberately NOT set: sudo is setuid, and sudo is how untrusted steps are dropped to apx-ci and apx-agent.

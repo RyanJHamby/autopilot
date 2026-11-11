@@ -58,6 +58,11 @@ def test_the_ci_lane_can_reach_the_registries_and_the_agent_lane_can_reach_the_m
 # --- the ruleset ------------------------------------------------------------------------------------------------------------------
 
 
+def test_loading_the_file_twice_replaces_the_table_instead_of_failing_or_stacking(nft):
+    head = nft.splitlines()[:3]
+    assert head == ["table inet apx", "delete table inet apx", "table inet apx {"], "declare, delete, redefine: one atomic reload"
+
+
 def test_one_table_with_a_timed_set_per_lane(nft):
     assert "table inet apx {" in nft
     for s in ("ci_v4", "exec_v4", "orch_v4"):

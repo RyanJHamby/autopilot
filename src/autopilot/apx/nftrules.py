@@ -72,6 +72,8 @@ def render_nft(uids: dict[str, int], dns_port: int = DEFAULT_DNS_PORT) -> str:
     blocked = ", ".join(firewall.BLOCKED_V4)
     lane_names = ("ci", "exec", "orch")
     out = [
+        "table inet apx",  # declare, then delete, then redefine: reloading the file replaces the table in one transaction
+        "delete table inet apx",
         "table inet apx {",
     ]
     for lane in lane_names:

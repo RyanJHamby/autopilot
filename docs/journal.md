@@ -532,3 +532,7 @@ P2 step 1: nftrules renderer (per-uid lanes, dnsmasq allowlist) with 51 render t
 ## 2026-11-10 19:01 EST (at 9028a71)
 
 P2 step 2: egress selftest on a real Linux kernel (linuxkit 6.10, nftables 1.1.3, dnsmasq 2.91, NET_ADMIN-only container): 42 checks pass via scripts/linux-egress-test.sh. First run had one bad control (nobody could not reach the fake 8.8.8.8), fixed by querying the fake upstream directly. Mutation checks: removing the DNS redirect gave 10 failures, removing only the private-range exclusion gave 3 (rebinding), so the test can fail. Proves the rules on Linux, not the VPS.
+
+## 2026-11-10 19:07 EST (at 3fb2f67)
+
+dnsmasq-base (no default service on :53) runs fine as an unprivileged apx-dns account with only CAP_NET_ADMIN (ambient), --pid-file= disables the pid file; selftest 42/42 on linuxkit 6.10. Under real systemd this is AmbientCapabilities=CAP_NET_ADMIN, still unverified until the VPS. Also found P1 had missed two /Users paths (status defaults, updater test home): fixed 3fb2f67.

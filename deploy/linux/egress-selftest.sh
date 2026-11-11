@@ -31,7 +31,7 @@ PY="${PYTHON:-python3}"
 export PYTHONPATH="$src/src"
 
 # --- accounts (numeric uids are what the rules match) --------------------------------------------------------------------------------
-for u in apx apx-ci apx-agent; do id "$u" >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin "$u"; done
+for u in apx apx-ci apx-agent apx-dns; do id "$u" >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin "$u"; done
 uid_of() { id -u "$1"; }
 gid_of() { id -g "$1"; }
 as() { # as USER cmd...  (no supplementary groups, so nothing leaks in from root)
@@ -109,7 +109,10 @@ if [ "$(nft list tables | grep -c 'inet apx')" = 1 ]; then pass "exactly one apx
 
 if dnsmasq --version | grep -q nftset; then pass "this dnsmasq has nftset support"; else fail "dnsmasq lacks nftset support, so the allowlist cannot be fed"; fi
 if dnsmasq --test --conf-file="$work/dnsmasq.conf" 2>&1 | grep -qi 'syntax check OK'; then pass "dnsmasq accepts the generated config"; else fail "dnsmasq rejected the generated config"; fi
-dnsmasq --keep-in-foreground --conf-file="$work/dnsmasq.conf" --user=root --pid-file="$work/dnsmasq.pid" >"$work/dnsmasq.out" 2>&1 &
+# As on the real host: an unprivileged account that holds only CAP_NET_ADMIN (needed to add answers to the nft sets), not root.
+chmod 755 "$work"
+setpriv --reuid="$(uid_of apx-dns)" --regid="$(gid_of apx-dns)" --clear-groups --inh-caps=+net_admin --ambient-caps=+net_admin \
+  --bounding-set=-all,+net_admin dnsmasq --keep-in-foreground --conf-file="$work/dnsmasq.conf" --pid-file= >"$work/dnsmasq.out" 2>&1 &
 pids+=("$!")
 sleep 1
 kill -0 "${pids[-1]}" 2>/dev/null || { say "dnsmasq did not stay up"; cat "$work/dnsmasq.out"; exit 2; }

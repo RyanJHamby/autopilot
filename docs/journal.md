@@ -540,3 +540,7 @@ dnsmasq-base (no default service on :53) runs fine as an unprivileged apx-dns ac
 ## 2026-11-10 19:11 EST (at 2f01dbc)
 
 P2 step 3: deploy/linux/bootstrap.sh + six systemd units, run for real in a Debian container via scripts/linux-bootstrap-test.sh: refusals change nothing, dry run changes nothing, 4 accounts non-admin/nologin/700, sudoers visudo-checked, release layout, rules pass nft -c with real uids, apx-ci/apx-agent cannot read apx's stand-in secret or become apx, second run byte-identical. Negative controls (open the home, add a sudo rule, a broken unit) are flagged, so passes mean something. NOT verified: real systemd start/ordering, sshd drop-in, apt on the VPS image, dnsmasq ambient cap under systemd, the Claude/uv/node toolchain (deliberately not installed by the script).
+
+## 2026-11-10 19:18 EST (at 5b9e240)
+
+P2 step 4: preflight/egress-probe/retire scripts + docs/apx-linux-host.md. Container run (real internet): probe sealed all three accounts, 72 ok; a hole punched in apx-ci's lane made the probe fail and blame only apx-ci. The real daemon --doctor ran as apx on Linux: sandbox checks pass, only the claude CLI is missing (owner step). Doc corrected after read-back: claude-oauth install now via admin+sudo install, no restart needed after APX_SHADOW change. Still unverified: real systemd, sshd, VPS network, toolchain installs.

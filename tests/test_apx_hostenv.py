@@ -107,8 +107,15 @@ def test_the_agent_request_carries_the_platforms_paths(linux, tmp_path):
         return {"ok": True, "summary": "did it", "turns": 1}, [FileChange("f.py", "100644", b"x = 1\n")]
 
     dm.work_on_issue(
-        s, _IssueApi(), lambda repo: "WRITE", REPO, 4, 77, "model=sonnet effort=low turns=12",
-        read_token_for=lambda repo: "READ", run_agent=run_agent,
+        s,
+        _IssueApi(),
+        lambda repo: "WRITE",
+        REPO,
+        4,
+        77,
+        "model=sonnet effort=low turns=12",
+        read_token_for=lambda repo: "READ",
+        run_agent=run_agent,
     )
     assert seen["req"]["work_root"] == "/home/apx-agent/work" and seen["req"]["binary"] == "/home/apx-agent/.local/bin/claude"
 
@@ -137,7 +144,14 @@ def test_the_macos_answer_is_read_as_before(mac, out, expect_admin):
 
 @pytest.mark.parametrize(
     "groups,expect_admin",
-    [("apx-ci", False), ("apx-ci users", False), ("apx-ci sudo", True), ("apx-ci admin", True), ("wheel apx-ci", True), ("", False)],
+    [
+        ("apx-ci", False),
+        ("apx-ci users", False),
+        ("apx-ci sudo", True),
+        ("apx-ci admin", True),
+        ("wheel apx-ci", True),
+        ("", False),
+    ],
 )
 def test_on_linux_membership_of_sudo_admin_or_wheel_makes_an_account_an_admin(linux, groups, expect_admin):
     assert hostenv.is_admin(result(groups + "\n"), "apx-ci") is expect_admin
@@ -195,3 +209,13 @@ def test_the_notifier_does_nothing_on_linux_instead_of_crashing(monkeypatch):
     monkeypatch.setattr(hostenv, "is_darwin", lambda: False)
     monkeypatch.setattr(status.subprocess, "run", lambda *a, **k: pytest.fail("no subprocess may run on Linux"))
     assert status.notify("title", "message") is None
+
+
+# --- where the status files live -----------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("darwin,base", [(True, "/Users/Shared/apx"), (False, "/srv/apx")])
+def test_status_files_default_into_the_hosts_shared_directory(monkeypatch, darwin, base):
+    monkeypatch.setattr(hostenv, "is_darwin", lambda: darwin)
+    assert status.default_status_path() == f"{base}/status.json"
+    assert status.default_update_path() == f"{base}/update.json"

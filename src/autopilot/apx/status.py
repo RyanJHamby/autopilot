@@ -19,8 +19,18 @@ from . import hostenv
 from .redact import redact
 
 PROBLEM_WORDS = ("planner error", "crashed", "failed", "config error", "rolled back")
-DEFAULT_STATUS = "/Users/Shared/apx/status.json"
-DEFAULT_UPDATE_STATUS = "/Users/Shared/apx/update.json"
+
+
+def default_status_path() -> str:
+    return f"{hostenv.default_shared_dir()}/status.json"
+
+
+def default_update_path() -> str:
+    return f"{hostenv.default_shared_dir()}/update.json"
+
+
+DEFAULT_STATUS = default_status_path()
+DEFAULT_UPDATE_STATUS = default_update_path()
 STALE_AFTER = dt.timedelta(minutes=15)  # the timer fires every 2 minutes; a long agent run can hold a pass for a while
 
 

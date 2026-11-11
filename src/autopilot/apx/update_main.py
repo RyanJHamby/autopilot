@@ -112,9 +112,7 @@ def main(argv: list[str] | None = None) -> int:
                             status=status,
                             can_swap=not s.active_window or window.minutes_left(s.active_window, now) >= SETTLE_MIN,
                             stage=make_stage(cache.read_token_for(REPO)),
-                            run_tests=make_run_tests(
-                                Launcher(s.ci_user or None), f"{s.shared_dir}/venv/bin/python", f"/Users/{s.ci_user}"
-                            ),
+                            run_tests=make_run_tests(Launcher(s.ci_user or None), f"{s.shared_dir}/venv/bin/python", s.ci_home()),
                         )
                     )
         except Exception as e:  # noqa: BLE001 - the updater must report, not crash silently

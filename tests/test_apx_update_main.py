@@ -86,6 +86,29 @@ def test_live_refuses_without_a_ci_account(monkeypatch, tmp_path, capsys):
     assert json.loads((tmp_path / "update.json").read_text())["ok"] is False
 
 
+def test_the_updaters_test_run_gets_the_sandbox_accounts_real_home_not_a_mac_path(monkeypatch, tmp_path):
+    from contextlib import contextmanager
+
+    from autopilot.apx import hostenv
+
+    patch_world(monkeypatch, tmp_path, "apx-ci")
+    monkeypatch.setenv("APX_UPDATE_LIVE", "1")
+    monkeypatch.setattr(hostenv, "home_of", lambda user: f"/srv/homes/{user}")
+    seen = {}
+    monkeypatch.setattr(um, "TokenCache", lambda *a, **k: type("C", (), {"read_token_for": lambda self, repo: "t"})())
+    monkeypatch.setattr(um, "make_stage", lambda token: None)
+    monkeypatch.setattr(um, "make_run_tests", lambda launcher, python, home: seen.update(home=home) or (lambda path: True))
+    monkeypatch.setattr(um, "run_update", lambda *a, **k: "update: ok")
+
+    @contextmanager
+    def got_it(work_dir):
+        yield True
+
+    monkeypatch.setattr(um, "single_instance", got_it)
+    assert um.main(["--live"]) == 0
+    assert seen["home"] == "/srv/homes/apx-ci"
+
+
 def test_an_unexpected_error_is_reported_not_raised(monkeypatch, tmp_path, capsys):
     patch_world(monkeypatch, tmp_path, "apx-ci")
     monkeypatch.setattr(um, "routed_api", lambda c: (_ for _ in ()).throw(RuntimeError("x")))

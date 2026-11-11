@@ -48,6 +48,14 @@ gates:
         kind: step
         title: "Publish a privacy page before collecting any user data, and have a professional review the wording"
         note: "Tips 96, 225. A checklist, not legal advice; confirm with a professional."
+      - id: domains
+        kind: step
+        title: "Protect your domains: registrar lock, 2FA on the registrar account, auto-renew on, and the DNS records written down"
+        note: "Tip 64. A lapsed or hijacked domain takes the product and its email with it."
+      - id: free-tier-ledger
+        kind: step
+        title: "List every free tier you depend on, its limit and when it ends, and look at the list monthly"
+        note: "Tip 79. Low priority; a free tier that quietly ends is a surprise bill or an outage."
 
   charge:
     title: "Ready to take the first payment"
@@ -129,3 +137,27 @@ gates:
         kind: step
         title: "Record every account, its owner, and where the recovery codes are kept (in the password manager)"
         note: "Tips 57, 116."
+
+  scale:
+    title: "Real growth is coming: more users, more money, more at stake if a vendor or a secret fails"
+    items:
+      - id: repo-standard
+        kind: repo-standard
+        title: "The repo meets the current standard (deploy, database and LLM packs included)"
+        tips: [63, 65, 68]
+      - id: rotation-drill
+        kind: step
+        title: "Rotate the most important secret on purpose and confirm every service still works afterwards"
+        note: "Tip 197. Practise it before a leak forces it."
+      - id: slo
+        kind: step
+        title: "Write a service-level objective for the core flow (what share of requests succeed, how fast) and alert when it is being missed"
+        note: "Tip 198. One flow, one number."
+      - id: second-backup
+        kind: step
+        title: "Keep a copy of the backups at a second provider or account and restore from it once"
+        note: "Tip 209. A backup in the same account is lost with the account."
+      - id: vendor-exit
+        kind: step
+        title: "Write a vendor exit plan: for each critical vendor, how you would leave and roughly what it costs"
+        note: "Tip 145. The plan matters more than the migration."

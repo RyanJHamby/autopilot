@@ -321,3 +321,9 @@ Status: **done** = already enforced somewhere (named), **partial** = exists but 
 - Autonomy ladder: already modeled by autopilot tiers and auto-merge classes; payments, auth and migrations stay at level 1 (payments pack
   adds the CODEOWNERS lane).
 - Buy vs build and tools to watch: reference only; revisit at the quarterly review.
+
+## Built since the baseline (the status columns above are the 2026-11-10 baseline and are not regenerated)
+- 2026-11-11, `deploy-advisory-pack` (warn-only): tips 66 (uptime monitor), 67 (structured logs), 74 (log retention note), 58 (dev/prod separation note),
+  186 (gated production deploys note), 200 (cron heartbeats, only when the repo has scheduled jobs). Records are self-attested; the heartbeat check is a word match.
+- 2026-11-11, `scale` gate (new) and two beta steps: tips 197, 198, 209, 145 (scale) and 64, 79 (beta). Seeding was proven against a real `pawl` on a
+  throwaway control repo, not against the real control repo or GitHub.

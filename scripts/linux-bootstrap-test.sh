@@ -121,6 +121,13 @@ grep -E "^(LEAK|BROKEN|sealed|[0-9]+ problem)" /tmp/probe.out
 [ $erc -eq 0 ] && pass "the probe found no leak and the allowed path worked, for all three accounts" || fail "the probe reported problems (exit $erc)"
 [ "$(grep -c "^ok" /tmp/probe.out)" -ge 45 ] && pass "the probe ran its full set of attempts ($(grep -c "^ok" /tmp/probe.out) ok)" || fail "the probe ran too few attempts"
 
+echo "--- control: punch a hole in the apx-ci lane; the probe must now report leaks for apx-ci, and only for it"
+nft insert rule inet apx lane_ci accept
+bash /work/deploy/linux/egress-probe.sh >/tmp/probe2.out 2>&1; erc2=$?
+[ $erc2 -ne 0 ] && pass "CONTROL: the probe exits non-zero when a lane leaks" || fail "CONTROL: the probe missed an open lane"
+grep -q "^LEAK    apx-ci: an arbitrary public host on 443" /tmp/probe2.out && pass "CONTROL: it names the leak (apx-ci, arbitrary public host)" || fail "CONTROL: leak not named"
+grep -q "^LEAK    apx-agent" /tmp/probe2.out && fail "CONTROL: it blamed apx-agent for apx-ci hole" || pass "CONTROL: the other lanes are still reported sealed"
+
 echo
 echo "failed: $fails"
 [ "$fails" = 0 ]

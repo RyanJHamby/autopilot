@@ -548,3 +548,7 @@ P2 step 4: preflight/egress-probe/retire scripts + docs/apx-linux-host.md. Conta
 ## 2026-11-10 19:25 EST (at 425d280)
 
 Retrofit step 1 (stencil): running the standard on stencil showed codeowners-cover-protected-paths failing on a false positive: the protected list names root CODEOWNERS, but stencil's file is .github/CODEOWNERS, already covered by /.github/. Fixed in the engine with two tests (the file's real location is what must be owned; an uncovered file still fails). Stencil after pull: 9 pass/14 fail before the fix, 10/13 after.
+
+## 2026-11-10 19:29 EST (at 503e4e8)
+
+Retrofit step 2 (stencil): branch chore/standard-tier1 in ~/dev/stencil, one signed commit (b4b1e0e): pinned 4 actions to SHAs copied from autopilot's own pinned workflows (not re-resolved against GitHub) and added top-level permissions: contents: read to ci.yml and eval-vision.yml. Stencil fail-level rules now all pass locally (12 pass/11 fail, offline; the remaining fails are warn-level). Not pushed. First attempt (rewriting workflows with a python one-liner) was denied by the permission classifier, not retried; I built the patch from scratchpad copies and applied it after the owner said to do it. Unverified: a real CI run of the pinned/permissioned workflows, and whether eval-vision needs more than contents: read.

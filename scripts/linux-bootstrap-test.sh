@@ -103,6 +103,23 @@ ADMIN_USER=owner bash $B >/tmp/run2.out 2>&1; rc=$?
 [ "$(snap)" = "$before" ] && pass "second run left the tree, rules and sudoers byte-identical" || fail "second run changed something"
 grep -q "unchanged: /etc/apx/apx.nft" /tmp/run2.out && pass "second run says the rules were unchanged" || fail "second run rewrote the rules"
 
+echo "--- the daemon and updater import with the venv bootstrap built, and the doctor runs as apx on a real Linux userland"
+APXPY="setpriv --reuid=\$(id -u apx) --regid=\$(id -g apx) --init-groups env HOME=/home/apx PYTHONPATH=/srv/apx/current/src /srv/apx/venv/bin/python"
+check "the daemon and the updater import as apx with the bootstrap venv" "$APXPY -c \"import autopilot.apx.daemon, autopilot.apx.update_main, autopilot.apx.status\""
+cat > /home/apx/.apx/apx.env <<EOF2
+APX_APP_ID=1
+APX_KEY_PATH=/home/apx/.apx/app.pem
+APX_INSTALLATIONS=RyanJHamby/autopilot=1
+APX_KIT_REPO=RyanJHamby/autopilot-kit
+APX_KIT_REF=0000000000000000000000000000000000000000
+APX_CI_USER=apx-ci
+APX_AGENT_USER=apx-agent
+EOF2
+chown apx:apx /home/apx/.apx/apx.env; chmod 600 /home/apx/.apx/apx.env
+setpriv --reuid=$(id -u apx) --regid=$(id -g apx) --init-groups sh -c "cd /srv/apx/current && set -a && . /home/apx/.apx/apx.env && set +a && env HOME=/home/apx PYTHONPATH=/srv/apx/current/src /srv/apx/venv/bin/python -m autopilot.apx.daemon --doctor" >/tmp/doctor.out 2>&1; drc=$?
+grep -q Traceback /tmp/doctor.out && fail "the doctor crashed" || pass "the doctor ran without a traceback (exit $drc; a fake key and no token mean some checks fail here, by design)"
+grep -iE "admin|home|sandbox" /tmp/doctor.out | head -12
+
 echo "--- the other scripts run"
 bash /work/deploy/linux/preflight.sh >/tmp/pre.out 2>&1; prc=$?
 { [ $prc -le 1 ] && grep -q "^PASS  python" /tmp/pre.out; } && pass "preflight runs read-only and reports (exit $prc; FAILs are expected here: no systemd in a container)" || fail "preflight crashed (exit $prc)"

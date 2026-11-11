@@ -16,8 +16,10 @@ LABEL = "standard-gap"
 LABEL_COLOR = "FBCA04"
 PREFIX = "standard: "
 # Rules whose findings would announce a weakness. Unless a repo is known to be private they are counted but never written into
-# the issue: an unknown visibility is treated as public, because the safe mistake is to say too little.
-SENSITIVE = ("no-tracked-secrets", "secret-exposed-workflows")
+# the issue: an unknown visibility is treated as public, because the safe mistake is to say too little. The three capability packs
+# are here because their findings name what the product does ("payments detected") and which control it lacks ("no webhook signature
+# check", "no spend cap"). The day-0 wiring rules are not: they are hygiene, like the unpinned actions this list already shows.
+SENSITIVE = ("no-tracked-secrets", "secret-exposed-workflows", "payments-pack", "llm-pack", "deploy-pack")
 DISABLED = {"disabled": True}  # lookup's answer for a repo with issues turned off: not an error, and nothing to file
 
 

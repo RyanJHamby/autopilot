@@ -1,5 +1,6 @@
 """The standard's engine: each rule has a passing and a failing fixture, so a check that always passes turns a test red."""
 
+import os
 import subprocess
 from types import SimpleNamespace
 
@@ -19,10 +20,16 @@ def write(root, files):
     return root
 
 
-def git_repo(root, files=None):
+OLD = "2026-01-01"  # before every rule's `since`: an existing repo, so a rule dated later is grandfathered to warn
+
+
+def git_repo(root, files=None, born=OLD):
+    """A repo with one commit dated `born`. Backdated by default so tests about exit codes and clones model an *existing* repo;
+    a test about the day-0 floor passes a recent `born` (see test_standard_since and test_standard_day0_rules)."""
     write(root, files or {"README.md": "x\n"})
+    env = {**os.environ, "GIT_AUTHOR_DATE": f"{born}T12:00:00+00:00", "GIT_COMMITTER_DATE": f"{born}T12:00:00+00:00"}
     for args in (["init", "-q", "-b", "main"], ["add", "."], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "b"]):
-        subprocess.run(["git", "-c", "commit.gpgsign=false", *args], cwd=root, check=True, capture_output=True)
+        subprocess.run(["git", "-c", "commit.gpgsign=false", *args], cwd=root, check=True, capture_output=True, env=env)
     return root
 
 
@@ -327,3 +334,22 @@ def test_json_output_carries_label_level_and_findings(tmp_path):
             {"id": "journal-present", "label": "advisory", "level": "warn", "result": "fail", "findings": ["no docs/journal.md"]}
         ],
     }
+
+
+def test_a_codeowners_file_under_dot_github_is_covered_by_the_dot_github_entry_not_a_root_entry(tmp_path):
+    """The protected list names `CODEOWNERS`, but GitHub reads the file from .github/ too. Where the file really lives is what must be owned;
+    demanding a separate root entry made every repo with .github/CODEOWNERS fail (found by running the check on stencil)."""
+    without_self = FULL_OWNERS.replace("/CODEOWNERS @me\n", "")
+    assert check("codeowners-cover-protected-paths", write(tmp_path, {".github/CODEOWNERS": without_self}))[0] == "pass"
+
+
+def test_a_codeowners_file_that_nothing_covers_still_fails_wherever_it_lives(tmp_path):
+    without_self = FULL_OWNERS.replace("/CODEOWNERS @me\n", "").replace("/.github/ @me\n", "")
+    result, findings = check("codeowners-cover-protected-paths", write(tmp_path, {".github/CODEOWNERS": without_self}))
+    assert result == "fail" and any("CODEOWNERS" in f for f in findings)
+    root = tmp_path / "root"
+    root.mkdir()
+    result, findings = check(
+        "codeowners-cover-protected-paths", write(root, {"CODEOWNERS": FULL_OWNERS.replace("/CODEOWNERS @me\n", "")})
+    )
+    assert result == "fail" and any(f.startswith("CODEOWNERS ") for f in findings)

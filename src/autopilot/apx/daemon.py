@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import gate  # noqa: E402
 import runner as kit_runner  # noqa: E402
 
-from . import cilane, claude_runner, committer, gitops, guardlane, mergelane, report, status, window  # noqa: E402
+from . import cilane, claude_runner, committer, gitops, guardlane, hostenv, mergelane, report, status, window  # noqa: E402
 from .app_auth import TokenCache  # noqa: E402
 from .executor import Deps, IssueResult, execute  # noqa: E402
 from .github import Api, GitHubError, make_api  # noqa: E402
@@ -87,6 +87,18 @@ class Settings:
     agent_binary: str = ""  # default /Users/<agent_user>/.local/bin/claude
     active_window: Optional[window.Window] = None  # None = always on; outside it a pass (and an update) does nothing
 
+    def ci_home(self) -> str:
+        return hostenv.home_of(self.ci_user)
+
+    def agent_home(self) -> str:
+        return hostenv.home_of(self.agent_user)
+
+    def agent_work_root(self) -> str:
+        return self.agent_work or f"{self.agent_home()}/work"
+
+    def agent_bin(self) -> str:
+        return self.agent_binary or f"{self.agent_home()}/.local/bin/claude"
+
     def code_dir(self) -> str:
         """The code the sandbox and the version label use: the updater's `current` release once it exists, else the manual checkout."""
         cur = os.path.join(self.shared_dir, "current")
@@ -104,7 +116,7 @@ class Settings:
                 installations={k: int(v) for k, v in inst.items()},
                 # with a dedicated agent account the token lives in ITS home and the orchestrator never reads it
                 oauth_file=e.get("APX_OAUTH_FILE")
-                or (f"/Users/{e['APX_AGENT_USER']}/.apx/claude-oauth" if e.get("APX_AGENT_USER") else e["APX_OAUTH_FILE"]),
+                or (f"{hostenv.home_of(e['APX_AGENT_USER'])}/.apx/claude-oauth" if e.get("APX_AGENT_USER") else e["APX_OAUTH_FILE"]),
                 kit_repo=e["APX_KIT_REPO"],
                 kit_ref=e["APX_KIT_REF"],
                 db_path=e.get("APX_DB", "apx.sqlite"),
@@ -116,8 +128,8 @@ class Settings:
                 cutover=frozenset(r for r in e.get("APX_CUTOVER", "").split(",") if r),
                 ci_toolchain_links=tuple(n for n in e.get("APX_CI_TOOLCHAIN_LINKS", ".cargo").split(",") if n),
                 ci_user=e.get("APX_CI_USER", ""),
-                ci_work=e.get("APX_CI_WORK", "/Users/apx-ci/work"),
-                shared_dir=e.get("APX_SHARED", "/Users/Shared/apx"),
+                ci_work=e.get("APX_CI_WORK") or f"{hostenv.home_of(e.get('APX_CI_USER') or 'apx-ci')}/work",
+                shared_dir=e.get("APX_SHARED") or hostenv.default_shared_dir(),
                 agent_user=e.get("APX_AGENT_USER", ""),
                 agent_work=e.get("APX_AGENT_WORK", ""),
                 agent_binary=e.get("APX_AGENT_BINARY", ""),
@@ -228,8 +240,8 @@ def work_on_issue(
             "effort": d["effort"],
             "max_turns": d["turns"],
             "commands": commands,
-            "work_root": s.agent_work or f"/Users/{s.agent_user}/work",
-            "binary": s.agent_binary or f"/Users/{s.agent_user}/.local/bin/claude",
+            "work_root": s.agent_work_root(),
+            "binary": s.agent_bin(),
         }
         run = run_agent or (
             lambda r, tok: run_agent_in_sandbox(
@@ -238,7 +250,7 @@ def work_on_issue(
                 tok,
                 python=f"{s.shared_dir}/venv/bin/python",
                 code_dir=s.code_dir(),
-                home=f"/Users/{s.agent_user}",
+                home=s.agent_home(),
             )
         )
         res, changes = run(req, read_token_for(repo))
@@ -334,8 +346,8 @@ def fix_pr(
         "effort": d["effort"],
         "max_turns": d["turns"],
         "commands": commands,
-        "work_root": s.agent_work or f"/Users/{s.agent_user}/work",
-        "binary": s.agent_binary or f"/Users/{s.agent_user}/.local/bin/claude",
+        "work_root": s.agent_work_root(),
+        "binary": s.agent_bin(),
     }
     run = run_agent or (
         lambda r, tok: run_agent_in_sandbox(
@@ -344,7 +356,7 @@ def fix_pr(
             tok,
             python=f"{s.shared_dir}/venv/bin/python",
             code_dir=s.code_dir(),
-            home=f"/Users/{s.agent_user}",
+            home=s.agent_home(),
         )
     )
     res, changes = run(req, read_token_for(repo))
@@ -405,7 +417,7 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_t
             work_root=s.ci_work,
             python=f"{s.shared_dir}/venv/bin/python",
             code_dir=s.code_dir(),
-            home=f"/Users/{s.ci_user}",
+            home=s.ci_home(),
             token_for=read_token_for,
             steps_for=lambda repo: [list(x) for x in cilane.parse_ci_steps(load_cfg(api, repo, s.default_branch))],
             toolchain_links=list(s.ci_toolchain_links),

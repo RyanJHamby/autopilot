@@ -1,0 +1,17 @@
+[Unit]
+Description=apx egress allowlist (nftables rules for the three apx accounts)
+Documentation=https://github.com/RyanJHamby/autopilot/blob/main/docs/apx-linux-host.md
+# Loaded before anything of apx's can start. If this fails, apx.service (which Requires= it) does not run: the host fails closed.
+Before=apx.service apx-updater.service
+DefaultDependencies=yes
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/sbin/nft -c -f /etc/apx/apx.nft
+ExecStart=/usr/sbin/nft -f /etc/apx/apx.nft
+ExecReload=/usr/sbin/nft -f /etc/apx/apx.nft
+ExecStop=/usr/sbin/nft delete table inet apx
+
+[Install]
+WantedBy=multi-user.target

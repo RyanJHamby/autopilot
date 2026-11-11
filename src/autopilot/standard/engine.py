@@ -10,6 +10,8 @@ a pass. `skip` is only for a rule whose `applies_to` doesn't match the repo, and
 
 from __future__ import annotations
 
+import datetime
+import os
 import re
 import subprocess
 from collections.abc import Callable
@@ -18,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from autopilot.standard import load_checks
+from autopilot.standard import capabilities, load_checks, packs, since_date
 
 # Mirrors kit/runtime/guard.py DEFAULT_PROTECTED. The kit isn't in the wheel, so it is copied, and a test fails if the
 # two lists drift.
@@ -69,6 +71,8 @@ class Repo:
         slug: str | None = None,
         gh: Callable | None = None,
         github_public: bool | None = None,
+        born_on: datetime.date | None = None,
+        force_new: bool = False,
     ):
         self.path = Path(path)
         self.entry = entry  # this repo's policy/portfolio.yaml entry, or None if it isn't in the portfolio
@@ -76,6 +80,52 @@ class Repo:
         self.github_public = github_public  # what GitHub says, when it could be asked; it wins over the portfolio
         self.gh = gh or subprocess.run
         self._workflows: list[tuple[Path, str, object]] | None = None
+        # A repo's age when the caller knows it better than the checkout can (converge reads GitHub's created date, because a shallow
+        # clone has no history to read). It overrides the first-commit date.
+        # `force_new` holds a repo to every dated rule as if it were born today: used when reviving a repo, which is the moment to retrofit.
+        if force_new:
+            self._born: tuple[str, datetime.date | None] | None = ("dated", datetime.date.today())
+        else:
+            self._born = ("dated", born_on) if born_on is not None else None
+        self._scan: capabilities.Scan | None = None
+
+    def scan(self) -> capabilities.Scan:
+        """One cached look at this repo's files, shared by every capability and pack rule so nothing is read twice."""
+        if self._scan is None:
+            self._scan = capabilities.Scan(self.path)
+        return self._scan
+
+    def _git(self, *args: str) -> tuple[int, str]:
+        r = subprocess.run(["git", "-C", str(self.path), *args], capture_output=True, text=True)
+        return r.returncode, r.stdout.strip()
+
+    def born(self) -> tuple[str, datetime.date | None]:
+        """How old this repo is, as ('dated', first-commit date), ('shallow', None) or ('none', None).
+
+        `none` is a directory that is not itself a git repo, or one with no commit yet (what `ap new` leaves). A shallow
+        clone cannot see its real first commit, so it is reported as such instead of guessed from its boundary commit.
+        """
+        if self._born is not None:
+            return self._born
+        rc, top = self._git("rev-parse", "--show-toplevel")
+        if rc != 0 or Path(top).resolve() != self.path.resolve():
+            self._born = ("none", None)  # not a repo of its own: never borrow a parent repo's history
+            return self._born
+        rc, shallow = self._git("rev-parse", "--is-shallow-repository")
+        if rc == 0 and shallow == "true":
+            self._born = ("shallow", None)
+            return self._born
+        rc, out = self._git("log", "--max-parents=0", "--format=%as", "HEAD")
+        days = [d for d in out.splitlines() if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d)] if rc == 0 else []
+        self._born = ("dated", min(datetime.date.fromisoformat(d) for d in days)) if days else ("none", None)
+        return self._born
+
+    def is_new_since(self, since: datetime.date) -> bool:
+        """True when a rule dated `since` should bind this repo at its full level. Unknown age leans new, except shallow."""
+        kind, day = self.born()
+        if kind == "dated":
+            return day >= since
+        return kind == "none"  # a shallow clone is grandfathered: the audit cannot prove the repo is new
 
     @property
     def public(self) -> bool | None:
@@ -228,9 +278,11 @@ def codeowners_cover(repo: Repo) -> Outcome:
     This is a path-prefix test, not GitHub's matcher: it handles the plain, directory and `dir/**` forms. Wildcard
     patterns in the middle of a path aren't understood, so such an entry is not counted as covering anything."""
     text = None
+    where = "CODEOWNERS"
     for rel in ("CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"):
         text = repo.read(rel)
         if text is not None:
+            where = rel
             break
     if text is None:
         return "fail", ["no CODEOWNERS file"]
@@ -238,6 +290,10 @@ def codeowners_cover(repo: Repo) -> Outcome:
     missing = []
     for pattern in repo.protected():
         path = _norm(pattern)
+        if path == "CODEOWNERS":
+            path = (
+                where  # the file itself, wherever GitHub is reading it from: .github/CODEOWNERS is covered by a `/.github/` entry
+            )
         covered = any(e == "*" or e == path or path.startswith(e + "/") for e in entries if "*" not in e or e == "*")
         if not covered:
             missing.append(f"{pattern} is not owned in CODEOWNERS")
@@ -376,6 +432,99 @@ def contributing_present(repo: Repo) -> Outcome:
     return _first_file(repo, ("CONTRIBUTING.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"), "CONTRIBUTING.md")
 
 
+# --- day-0 rules: they audit wiring, not whether a tool catches anything ----------------------------------------------------
+
+
+def _make_code(repo: Repo) -> str:
+    """The Makefile without its comment lines, so a scanner named only in a comment does not count as wired."""
+    return "\n".join(ln for ln in (repo.read("Makefile") or "").splitlines() if not ln.lstrip().startswith("#"))
+
+
+def hook_wired(repo: Repo) -> Outcome:
+    """A pre-commit hook that runs make, and a `setup` target that installs it, because a hook cannot be forced onto a clone."""
+    findings = []
+    hook = repo.path / ".githooks/pre-commit"
+    if not hook.is_file():
+        findings.append("no .githooks/pre-commit")
+    else:
+        if not os.access(hook, os.X_OK):
+            findings.append(".githooks/pre-commit is not executable (git ignores a hook that is not)")
+        body = "\n".join(
+            ln for ln in hook.read_text(encoding="utf-8", errors="replace").splitlines() if not ln.lstrip().startswith("#")
+        )
+        if not re.search(r"\bmake\b", body):
+            findings.append(".githooks/pre-commit does not run make, so it cannot run the repo's checks")
+    code = _make_code(repo)
+    if not (re.search(r"^setup\s*:", code, re.M) and ".githooks" in code):
+        findings.append("the Makefile has no `setup` target that installs .githooks/pre-commit, so a fresh clone gets no hook")
+    return _verdict(findings)
+
+
+def secret_scan_wired(repo: Repo) -> Outcome:
+    scanned = _make_code(repo) + "\n".join(
+        ln for ln in (repo.read(".pre-commit-config.yaml") or "").splitlines() if not ln.lstrip().startswith("#")
+    )
+    return _ok() if "gitleaks" in scanned else ("fail", ["no gitleaks in the Makefile or .pre-commit-config.yaml"])
+
+
+def workflow_lint_wired(repo: Repo) -> Outcome:
+    if not _has_workflows(repo):
+        return "skip", ["no workflows to lint"]
+    code = _make_code(repo)
+    missing = [tool for tool in ("actionlint", "zizmor") if tool not in code]
+    return _verdict([f"the Makefile does not run {tool} on .github/workflows" for tool in missing])
+
+
+def standard_wired(repo: Repo) -> Outcome:
+    """The Makefile runs the standard and `make check` depends on it, so the capability tripwire reaches what CI and agents run."""
+    code = _make_code(repo)
+    findings = []
+    if not re.search(r"\bap standard check\b", code):
+        findings.append("the Makefile never runs `ap standard check`, so a capability the repo gains goes unnoticed")
+    if not re.search(r"^check\s*:[^\n]*\bstandard\b", code, re.M):
+        findings.append("`make check` does not depend on a `standard` target, so nothing CI or an agent runs calls the standard")
+    return _verdict(findings)
+
+
+def _pack_rule(name: str) -> Callable[["Repo"], Outcome]:
+    def check(repo: Repo) -> Outcome:
+        return packs.check_pack(repo.scan(), name)
+
+    return check
+
+
+_COOLDOWN_KEYS = ("default-days", "semver-major-days", "semver-minor-days", "semver-patch-days")
+
+
+def dependency_cooldown(repo: Repo) -> Outcome:
+    """Every Dependabot entry waits some days before proposing a new release, or Renovate sets `minimumReleaseAge`."""
+    for name in (".github/dependabot.yml", ".github/dependabot.yaml"):
+        text = repo.read(name)
+        if text is None:
+            continue
+        try:
+            doc = yaml.safe_load(text) or {}
+        except yaml.YAMLError as e:
+            return "unknown", [f"{name} does not parse: {type(e).__name__}"]
+        updates = doc.get("updates") if isinstance(doc, dict) else None
+        if not isinstance(updates, list) or not updates:
+            return "unknown", [f"{name} has no `updates` list to check"]
+        bad = []
+        for u in updates:
+            cool = u.get("cooldown") if isinstance(u, dict) else None
+            ok = isinstance(cool, dict) and any(isinstance(cool.get(k), int) and cool[k] > 0 for k in _COOLDOWN_KEYS)
+            if not ok:
+                bad.append(
+                    f"the {u.get('package-ecosystem', '?') if isinstance(u, dict) else '?'} entry has no cooldown of one or more days"
+                )
+        return _verdict(bad)
+    for name in ("renovate.json", ".renovaterc", ".github/renovate.json"):
+        text = repo.read(name)
+        if text is not None:
+            return _ok() if "minimumReleaseAge" in text else ("fail", [f"{name} sets no minimumReleaseAge"])
+    return "skip", ["no Dependabot or Renovate config (dependency-updates reports that)"]
+
+
 CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "pinned-actions": pinned_actions,
     "workflow-permissions": workflow_permissions,
@@ -387,6 +536,17 @@ CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "one-check-entrypoint": one_check_entrypoint,
     "license-present": license_present,
     "ruleset-present": ruleset_present,
+    "hook-wired": hook_wired,
+    "secret-scan-wired": secret_scan_wired,
+    "workflow-lint-wired": workflow_lint_wired,
+    "dependency-cooldown": dependency_cooldown,
+    "standard-wired": standard_wired,
+    "payments-pack": _pack_rule("payments"),
+    "llm-pack": _pack_rule("llm"),
+    "deploy-pack": _pack_rule("deploy"),
+    "db-pack": _pack_rule("db"),
+    "auth-pack": _pack_rule("auth"),
+    "db-advisory-pack": _pack_rule("db-advisory"),
     "agents-md-budget": agents_md_budget,
     "how-this-was-built": how_this_was_built,
     "journal-present": journal_present,
@@ -427,7 +587,12 @@ def run(repo: Repo, only: list[str] | None = None, rules: dict | None = None) ->
     for rule in (rules or load_checks())["checks"]:
         if only is not None and rule["id"] not in only:
             continue
-        head = {"id": rule["id"], "label": rule["label"], "level": rule["level"]}
+        level = rule["level"]
+        since = since_date(rule.get("since"))
+        grandfathered = level == "fail" and since is not None and not repo.is_new_since(since)
+        if grandfathered:
+            level = "warn"
+        head = {"id": rule["id"], "label": rule["label"], "level": level}
         ok, why = applies(rule, repo)
         if not ok:
             results.append(Result(**head, result="skip", findings=[why]))
@@ -440,6 +605,8 @@ def run(repo: Repo, only: list[str] | None = None, rules: dict | None = None) ->
             outcome, findings = fn(repo)
         except Exception as e:  # a broken check must never read as a pass
             outcome, findings = "unknown", [f"check raised {type(e).__name__}: {e}"]
+        if grandfathered and outcome == "fail":
+            findings = [f"grandfathered to warn: this repo predates the rule ({since}); fix it to clear the warning", *findings]
         results.append(Result(**head, result=outcome, findings=findings))
     return results
 

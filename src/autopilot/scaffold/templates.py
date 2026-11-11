@@ -74,9 +74,16 @@ Commands run and what they printed (paste the real output, not a summary):
 ```
 ```
 
+## Risk and rollback
+
+- Risk (what could break, and who would notice):
+- Rollback (how to undo this, and how long that takes):
+- Does it touch money, auth, data deletion or a migration? (yes / no; if yes, read those lines twice)
+
 ## Checklist
 
 - [ ] The project's check passes locally
+- [ ] Tests were added or changed for the new behaviour, and none were deleted, skipped or loosened to get green
 - [ ] No secrets, credentials or private data in the diff
 - [ ] AI assistance disclosed above if a model drafted any of this
 """
@@ -202,14 +209,136 @@ MAKEFILE = {
 
 # The generic check for a repo with no package. `$$` is make's escape for a literal `$`. The Makefile excludes itself from the
 # key-material grep because the pattern text is in it. A test runs it with real make against a clean and a dirty repo.
-MAKEFILE_GENERIC = (
-    ".PHONY: check\ncheck:\n"
+TRACKED_SECRETS_BODY = (
     "\t@bad=$$(git ls-files | grep -E '(^|/)\\.env(\\.|$$)|\\.(pem|key|p12)$$|(^|/)id_(rsa|ed25519)' "
     "| grep -v -E '\\.(example|sample|template)$$' || true); \\\n"
     '\tif [ -n "$$bad" ]; then echo "tracked secret-like files:"; echo "$$bad"; exit 1; fi; \\\n'
     "\tif git grep -I -n -e 'BEGIN [A-Z ]*PRIVATE KEY' -- . ':!.github' ':!Makefile'; "
     'then echo "private key material is tracked"; exit 1; fi\n'
 )
+MAKEFILE_GENERIC = ".PHONY: check\ncheck:\n" + TRACKED_SECRETS_BODY
+
+# --- the day-0 layer for a new repo --------------------------------------------------------------------------------------
+# A git hook cannot be forced onto a clone, so a fresh clone has none until `make setup` runs. `setup` symlinks the hook into the
+# repo's own .git/hooks, never changes the hooks path (the machine-wide dispatcher in ~/.gitconfig finds it there and forwards
+# to it), and refuses to replace a real file someone put there. The hook runs `make quick`: lint plus a staged secret scan.
+# `check` is the full set CI runs. A missing tool warns locally instead of failing, so a laptop without gitleaks is not blocked
+# into using --no-verify; the secret scan is still wired and `make setup` says what is missing.
+HOOK_PRE_COMMIT = """#!/usr/bin/env bash
+# Runs before every commit. Install it in a clone with `make setup`.
+set -euo pipefail
+exec make --quiet quick
+"""
+
+_SETUP = (
+    "setup:\n"
+    '\t@h="$$(git rev-parse --git-common-dir)/hooks/pre-commit"; \\\n'
+    '\tif [ -e "$$h" ] && [ ! -L "$$h" ]; then echo "$$h exists and is not a symlink; left alone"; exit 1; fi; \\\n'
+    '\tln -sf ../../.githooks/pre-commit "$$h"; echo "installed $$h -> .githooks/pre-commit"\n'
+    "\t@command -v gitleaks >/dev/null 2>&1 || echo 'WARN: gitleaks is not installed (brew install gitleaks): the secret scan is skipped'\n"
+)
+_STAGED_SECRETS = (
+    "staged-secrets:\n"
+    "\t@if command -v gitleaks >/dev/null 2>&1; then gitleaks git --staged --redact --no-banner; "
+    "else echo 'WARN: gitleaks is not installed (brew install gitleaks): staged secret scan skipped'; fi\n"
+)
+# `if/else`, not `a && b || warn`: that form would report a missing tool when the tool ran and failed, and swallow the failure.
+_WORKFLOW_LINT = (
+    "workflow-lint:\n"
+    "\t@if [ -d .github/workflows ]; then \\\n"
+    "\t  if command -v actionlint >/dev/null 2>&1; then actionlint || exit 1; "
+    "else echo 'WARN: actionlint is not installed (brew install actionlint): workflow lint skipped'; fi; \\\n"
+    "\t  if command -v zizmor >/dev/null 2>&1; then zizmor .github/workflows || exit 1; "
+    "else echo 'WARN: zizmor is not installed (brew install zizmor): workflow security lint skipped'; fi; \\\n"
+    "\tfi\n"
+)
+
+
+# The tripwire: `check` runs the whole standard and fails when a capability the repo gained (payments, an LLM, a deployment) has no pack;
+# `quick`, which the hook runs, only reports those same failures so a work-in-progress commit is never blocked. A machine without `ap`
+# warns instead of failing, the same as a missing gitleaks.
+_STANDARD = (
+    "standard:\n"
+    "\t@if command -v ap >/dev/null 2>&1; then ap standard check . --offline; "
+    "else echo 'WARN: ap is not on PATH (run ./install.sh in the autopilot checkout): the standard check is skipped'; fi\n"
+)
+_STANDARD_REPORT = (
+    "standard-report:\n"
+    "\t@if command -v ap >/dev/null 2>&1; then \\\n"
+    "\t  out=$$(ap standard check . --offline 2>&1 | grep -E 'FAIL .*fail-level' || true); \\\n"
+    '\t  if [ -n "$$out" ]; then echo "$$out" | sed \'s/^/standard: /\'; '
+    "echo \"standard: run 'make standard' for details; 'make check' fails until these are fixed\"; fi; \\\n"
+    "\tfi\n"
+)
+
+
+def makefile_new(lint: str = "", test: str = "", audit: str = "") -> str:
+    """The Makefile a brand-new repo gets: setup, quick (the hook), check (what CI runs), audit (slow, uses the network)."""
+    quick = "quick: staged-secrets standard-report\n" + (f"\t{lint}\n" if lint else "")
+    check = "check: quick tracked-secrets workflow-lint standard\n" + (f"\t{test}\n" if test else "")
+    audit_body = (
+        "audit:\n"
+        "\t@if command -v gitleaks >/dev/null 2>&1; then gitleaks git --redact --no-banner; "
+        "else echo 'WARN: gitleaks is not installed (brew install gitleaks): history scan skipped'; fi\n"
+        + (f"\t{audit}\n" if audit else "")
+    )
+    return "\n".join(
+        [
+            ".PHONY: setup quick check audit staged-secrets tracked-secrets workflow-lint standard standard-report\n",
+            _SETUP,
+            quick,
+            check,
+            _STAGED_SECRETS,
+            "tracked-secrets:\n" + TRACKED_SECRETS_BODY,
+            _WORKFLOW_LINT,
+            _STANDARD,
+            _STANDARD_REPORT,
+            audit_body,
+        ]
+    )
+
+
+EDITORCONFIG = """root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json,toml,md}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+"""
+
+DECISIONS_README = """# Decisions
+
+One short file per decision that someone would otherwise have to re-argue: `NNNN-title.md`, numbered in order and never
+rewritten. If a decision changes, add a new file that says it supersedes the old one.
+
+Five lines each:
+
+- **Context**: what forced a choice.
+- **Decision**: what was chosen.
+- **Why**: the reason that mattered most.
+- **Alternatives**: what was rejected, and why.
+- **Date**: when it was decided.
+"""
+
+RUNBOOKS_README = """# Runbooks
+
+One file per alert or recurring job: `<name>.md`. Write it for someone who has never seen the system and is reading it at 2 a.m.
+(an agent counts):
+
+- **What it means**: what is wrong and who feels it.
+- **How to check**: the exact commands, and what a healthy answer looks like.
+- **How to fix**: the exact steps, and how to undo them.
+- **When to stop**: when to stop fixing and turn something off instead.
+"""
 
 JUSTFILE = {
     "uv": "# Run the tests\ntest:\n\tuv run pytest -q\n\n# Lint the code\nlint:\n\tuv run ruff check .\n",
@@ -248,6 +377,11 @@ def dependabot(ecosystems: list[str], has_workflows: bool) -> str:
     lines = ["version: 2", "updates:"]
     for k in kinds:
         lines += [f"  - package-ecosystem: {k}", '    directory: "/"', "    schedule: {interval: weekly}"]
+        # A version a week old is far less likely to be a hijacked release. `default-days` is the one cooldown key every ecosystem
+        # supports (github-actions takes no semver keys), and cooldown never delays security updates.
+        lines += ["    cooldown: {default-days: 7}"]
+        if k != "github-actions":  # one weekly pull request for the routine bumps, instead of one per package
+            lines += ["    groups:", "      minor-and-patch:", '        patterns: ["*"]', "        update-types: [minor, patch]"]
     return "\n".join(lines) + "\n"
 
 

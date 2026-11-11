@@ -14,6 +14,7 @@ reports one of:
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from autopilot import trace
+from autopilot.scaffold import core
 from autopilot.standard import engine
 
 KIT_RUNTIME = Path(__file__).resolve().parents[2] / "kit" / "runtime"
@@ -50,17 +52,27 @@ class DrillResult:
     detail: str
 
 
-def build(root: Path, files: dict[str, str] | None = None) -> Path:
-    for rel, text in {**FILES, **(files or {})}.items():
-        p = root / rel
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text)
+OLD = "2026-01-01"  # before every rule's `since`: an existing repo, which a dated rule only warns about
+NEW = "2026-11-10"  # on the day the day-0 rules start: a new repo, which they bind at full strength
+
+
+def commit_all(root: Path, born: str) -> None:
+    """`git init` and one commit dated `born`. A repo's age is its first commit's date, so this sets which rules bind it."""
+    env = {**os.environ, "GIT_AUTHOR_DATE": f"{born}T12:00:00+00:00", "GIT_COMMITTER_DATE": f"{born}T12:00:00+00:00"}
     for args in (
         ["init", "-q", "-b", "main"],
         ["add", "."],
         ["-c", "user.email=d@d", "-c", "user.name=drill", "commit", "-qm", "fixture"],
     ):
-        subprocess.run(["git", "-c", "commit.gpgsign=false", *args], cwd=root, check=True, capture_output=True)
+        subprocess.run(["git", "-c", "commit.gpgsign=false", *args], cwd=root, check=True, capture_output=True, env=env)
+
+
+def build(root: Path, files: dict[str, str] | None = None, born: str = OLD) -> Path:
+    for rel, text in {**FILES, **(files or {})}.items():
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+    commit_all(root, born)
     return root
 
 
@@ -157,10 +169,87 @@ def guard_on_diff(tmp: Path) -> list[DrillResult]:
     return out
 
 
+DAY0_RULES = ["hook-wired", "secret-scan-wired", "workflow-lint-wired", "dependency-cooldown", "standard-wired"]
+
+
+def scaffolded(root: Path, born: str = NEW) -> Path:
+    """A brand-new app repo exactly as `ap new` writes it (the real scaffolder, not a copy), committed on `born`."""
+    root.mkdir(parents=True)
+    ctx = core.Ctx(name="demo", owner="o", public=False, kind="app", empty=True, has_workflows=True)
+    core.write(root, core.plan(root, ctx))
+    commit_all(root, born)
+    return root
+
+
+def _swap(rel: str, old: str, new: str) -> Callable[[Path], None]:
+    def go(root: Path) -> None:
+        p = root / rel
+        p.write_text(p.read_text().replace(old, new))
+
+    return go
+
+
+def _write(files: dict[str, str]) -> Callable[[Path], None]:
+    def go(root: Path) -> None:
+        for rel, text in files.items():
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text)
+
+    return go
+
+
+def day_zero(tmp: Path) -> list[DrillResult]:
+    """Plant one defect per day-0 rule in a repo born on the day they start. Each must fail at full strength; an old repo with the
+    same defect must be reported but not broken; and the one blind spot (an empty `quick`) is recorded, not hidden."""
+    base = scaffolded(tmp / "baseline")
+    clean = engine.exit_code(engine.run(engine.Repo(base), only=DAY0_RULES), strict=True) == 0
+    out = [DrillResult("day0-baseline", "green" if clean else "baseline-failed", "a fresh `ap new` repo passes all five, strictly")]
+    if not clean:
+        return out
+    planted = [
+        ("day0-hook-not-executable", "hook-wired", lambda r: (r / ".githooks/pre-commit").chmod(0o644)),
+        ("day0-hook-no-setup", "hook-wired", _swap("Makefile", "setup:", "installhooks:")),
+        ("day0-secret-scan-removed", "secret-scan-wired", _swap("Makefile", "gitleaks", "scanner")),
+        ("day0-workflow-lint-removed", "workflow-lint-wired", _swap("Makefile", "zizmor", "nothing")),
+        ("day0-cooldown-removed", "dependency-cooldown", _swap(".github/dependabot.yml", "default-days: 7", "default-days: 0")),
+        ("day0-standard-removed", "standard-wired", _swap("Makefile", "ap standard check", "echo skipped")),
+        # The tripwire itself: a new repo gains a capability and has none of its pack.
+        ("tripwire-payments", "payments-pack", _write({"package.json": '{"dependencies": {"stripe": "^23"}}'})),
+        ("tripwire-deploy", "deploy-pack", _write({"vercel.json": "{}"})),
+        ("tripwire-llm-raw-fetch", "llm-pack", _write({
+            "package.json": '{"dependencies": {"@supabase/ssr": "1"}}',
+            "vercel.json": "{}",
+            "src/ai.ts": 'await fetch("https://generativelanguage.googleapis.com/v1beta/auth_tokens");\n',
+        })),
+    ]
+    for name, rule, mutate in planted:
+        root = scaffolded(tmp / name)
+        mutate(root)
+        (res,) = engine.run(engine.Repo(root), only=[rule])
+        hit = res.result == "fail" and res.level == "fail"
+        out.append(DrillResult(name, "caught" if hit else "missed", f"{rule}: {res.result} at {res.level}"))
+    old = scaffolded(tmp / "day0-old-repo", born=OLD)
+    (old / ".githooks/pre-commit").chmod(0o644)
+    results = engine.run(engine.Repo(old), only=["hook-wired"])
+    graceful = results[0].result == "fail" and results[0].level == "warn" and engine.exit_code(results) == 0
+    out.append(
+        DrillResult("day0-old-repo-not-broken", "caught" if graceful else "missed", "an old repo is reported at warn and exits 0")
+    )
+    blind = scaffolded(tmp / "day0-quick-empty")
+    _swap("Makefile", "quick: staged-secrets", "quick:")(blind)
+    (res,) = engine.run(engine.Repo(blind), only=["hook-wired"])
+    out.append(
+        DrillResult("day0-quick-empty", "limit" if res.result == "pass" else "limit-fixed", "wired, but `quick` runs nothing: invisible")
+    )
+    return out
+
+
 DRILLS: dict[str, Callable[[Path], list[DrillResult]]] = {
     "baseline-green": baseline_green,
     "hollow-link": hollow_link,
     "guard-on-diff": guard_on_diff,
+    "day-zero": day_zero,
 }
 BAD = {"missed", "baseline-failed", "limit-fixed"}
 

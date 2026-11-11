@@ -78,6 +78,8 @@ class Stub:
             raise RuntimeError("sudo failed")
         R = lambda rc, out="": type("R", (), {"returncode": rc, "stdout": out, "stderr": ""})()  # noqa: E731
         cmd, rest = argv[0], argv[1:]
+        if cmd == "/usr/bin/id" and rest[:1] == ["-nG"]:  # the Linux admin check: the account's groups
+            return R(0, "apx-ci sudo\n" if self.admin else "apx-ci\n")
         if cmd == "/usr/bin/id":
             return R(0, "someone-else\n" if self.wrong_user else "apx-ci\n")
         if cmd == "/usr/sbin/dseditgroup":
@@ -248,6 +250,8 @@ class AgentStub:
             raise RuntimeError("sudo failed")
         R = lambda rc, out="": type("R", (), {"returncode": rc, "stdout": out, "stderr": ""})()  # noqa: E731
         cmd = argv[0]
+        if cmd == "/usr/bin/id" and argv[1:2] == ["-nG"]:  # the Linux admin check: the account's groups
+            return R(0, "apx-agent sudo\n" if self.admin else "apx-agent\n")
         if cmd == "/usr/bin/id":
             return R(0, "apx-agent\n")
         if cmd == "/usr/sbin/dseditgroup":

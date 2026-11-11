@@ -41,6 +41,19 @@ def render(audits: list[core.Audit], skipped: list[tuple[str, str]], errors: lis
 
 
 STATUS = Path.home() / ".autopilot" / "converge" / "last.json"
+HISTORY = Path.home() / ".autopilot" / "converge" / "history.jsonl"  # private and local: per-repo counts, one line per applied run
+
+
+def append_history(path: Path, repos: dict) -> str:
+    """Add one line of per-repo counts. Append-only, so the past is never rewritten. A write failure is reported, never fatal."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps({"time": datetime.now().astimezone().isoformat(timespec="seconds"), "repos": repos})
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError as e:
+        return f"could not write the history file {path}: {e}"
+    return ""
 
 
 def write_status(path: Path, payload: dict) -> str:
@@ -63,13 +76,14 @@ def in_scope(r: core.Listed, portfolio: dict, today: date) -> bool:
 def cmd_converge(
     ns: argparse.Namespace,
     *,
-    repo_name,
     load_portfolio,
     run=subprocess.run,
     today: date | None = None,
     status_path: Path | None = None,
+    history_path: Path | None = None,
 ) -> int:
     status_path = status_path or STATUS  # resolved at call time so tests can redirect it
+    history_path = history_path or HISTORY
     portfolio = load_portfolio()
     owner = ns.owner or portfolio["owner"]
     today = today or date.today()
@@ -97,18 +111,16 @@ def cmd_converge(
         if not only and not show_all and not in_scope(r, portfolio, today):
             outside += 1  # never cloned or read: an old repo nobody asked this job to look at
             continue
-        path, tmp, err = core.checkout(r.name, owner, Path(ns.root).expanduser(), repo_name, run=run)
+        path, tmp, err = core.checkout(r.name, owner, run=run)
         if path is None:
             errors.append(f"{r.name}: could not get a checkout ({err})")
             continue
         try:
             a = core.audit(r, path, owner, portfolio, today)
-            if tmp is not None:
-                a.note = "audited from a shallow clone"
+            a.note = "audited from a shallow clone of GitHub's default branch"
             audits.append(a)
         finally:
-            if tmp is not None:
-                tmp.cleanup()
+            tmp.cleanup()
 
     for name in sorted(only - {r.name for r in listed}):
         errors.append(f"--only {name}: no such repo among {owner}'s repos on GitHub")
@@ -164,6 +176,12 @@ def cmd_converge(
                 "errors": errors,
             },
         )
+        if bad:
+            print(f"WARNING {bad}")
+        counted = {
+            a.name: {"fail_level": a.fail_level, "warn": a.warn, "grandfathered": a.grandfathered} for a in audits if not a.skipped
+        }
+        bad = append_history(history_path, counted)
         if bad:
             print(f"WARNING {bad}")
     return 1 if errors else 0

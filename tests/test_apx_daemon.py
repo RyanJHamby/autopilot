@@ -7,10 +7,19 @@ import textwrap
 import pytest
 
 from autopilot.apx import daemon as dm
+from autopilot.apx import hostenv
 from autopilot.apx.github import GitHubError
 
 REPO = "RyanJHamby/stencil"
 KIT = "a" * 40
+
+
+@pytest.fixture
+def mac_homes(monkeypatch):
+    """The tests that use this pin the macOS layout, so they say so. Without it the answer depends on the machine: on Linux it is /home,
+    and on a Mac that really has the apx accounts it is whatever the OS says (which is how these two passed on a Mac and failed on Linux)."""
+    monkeypatch.setattr(hostenv, "is_darwin", lambda: True)
+    monkeypatch.setattr(hostenv.pwd, "getpwnam", lambda name: (_ for _ in ()).throw(KeyError(name)))
 
 
 def env(tmp_path, **over):
@@ -716,8 +725,9 @@ def test_build_deps_uses_the_sandbox_lanes_only_when_a_ci_account_is_configured(
 
     monkeypatch.setattr(guardlane, "fetch_kit", lambda repo, ref, dest: dest)  # no network in this test
     plain = dm.build_deps(dm.Settings.from_env(env(tmp_path)), lambda *a, **k: {}, lambda r: "t", {})
+    boxed_settings = dm.Settings.from_env(env(tmp_path, APX_CI_USER="apx-ci"))
     boxed = dm.build_deps(
-        dm.Settings.from_env(env(tmp_path, APX_CI_USER="apx-ci")),
+        boxed_settings,
         lambda *a, **k: {},
         lambda r: "write",
         {},
@@ -726,7 +736,7 @@ def test_build_deps_uses_the_sandbox_lanes_only_when_a_ci_account_is_configured(
     assert not isinstance(getattr(plain.guard, "__self__", None), SandboxLanes)
     assert isinstance(boxed.guard.__self__, SandboxLanes) and isinstance(boxed.checkout.__self__, SandboxLanes)
     assert boxed.guard.__self__.launcher.user == "apx-ci"
-    assert "/Users/Shared/apx/kit" in boxed.guard.__self__.kit_dir  # the kit lives where the sandbox account can read it
+    assert f"{boxed_settings.shared_dir}/kit" in boxed.guard.__self__.kit_dir  # the kit lives where the sandbox account can read it
     assert boxed.guard.__self__.token_for("o/r") == "read"  # PR code gets the read-only token, never the write one
 
 
@@ -772,7 +782,7 @@ def _agent_settings(tmp_path):
     return dm.Settings.from_env(env(tmp_path, APX_AGENT_USER="apx-agent", APX_OAUTH_FILE=""))
 
 
-def test_with_an_agent_account_the_model_gets_a_read_only_token_and_this_account_makes_the_commit(tmp_path):
+def test_with_an_agent_account_the_model_gets_a_read_only_token_and_this_account_makes_the_commit(tmp_path, mac_homes):
     from autopilot.apx.committer import FileChange
 
     s = _agent_settings(tmp_path)
@@ -814,7 +824,7 @@ def test_an_agent_account_without_a_read_only_token_source_is_a_config_error(tmp
         dm.work_on_issue(_agent_settings(tmp_path), _IssueApi(), lambda r: "w", REPO, 4, 1, "")
 
 
-def test_with_an_agent_account_the_orchestrator_never_reads_the_claude_token(tmp_path):
+def test_with_an_agent_account_the_orchestrator_never_reads_the_claude_token(tmp_path, mac_homes):
     from autopilot.apx import redact
 
     redact.forget_all()

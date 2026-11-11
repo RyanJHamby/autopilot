@@ -2,9 +2,20 @@ import datetime as dt
 import json
 import subprocess
 
+import pytest
+
 from autopilot import cli, digest
+from autopilot.converge import command as converge_command
 
 NOW = dt.datetime(2026, 10, 16, 8, 0, tzinfo=dt.timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def history_file(tmp_path, monkeypatch):
+    """No digest test may read the real ~/.autopilot/converge/history.jsonl."""
+    path = tmp_path / "history.jsonl"
+    monkeypatch.setattr(converge_command, "HISTORY", path)
+    return path
 
 
 def iso(hours_ago):
@@ -103,6 +114,27 @@ def test_cmd_digest_is_read_only_and_calls_no_model(monkeypatch, capsys):
     assert "a #7 Hello" in out
     assert all(c[0] == "gh" and c[1] in ("pr", "run", "variable") and c[2] in ("list", "get") for c in calls)
     assert not any("off" in " ".join(c) for c in calls)
+
+
+def test_cmd_digest_shows_the_standard_burn_down_from_converges_history(monkeypatch, capsys, history_file):
+    pf = {"owner": "o", "defaults": {}, "repos": {"a": {"enabled": True, "mode": "standard", "tier": "B"}}}
+    monkeypatch.setattr(cli, "load_portfolio", lambda: pf)
+    monkeypatch.setattr(
+        cli.subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(args, 0, stdout="[]" if args[1] != "variable" else "false", stderr="")
+    )
+    old = {"time": "t1", "repos": {"a": {"fail_level": 4, "warn": 2, "grandfathered": 1}}}
+    new = {"time": "t2", "repos": {"a": {"fail_level": 1, "warn": 2, "grandfathered": 1}}}
+    history_file.write_text(json.dumps(old) + "\n" + json.dumps(new) + "\n")
+    assert cli.main(["digest"]) == 0
+    out = capsys.readouterr().out
+    assert "## Standard burn-down" in out and "a: 1 fail-level (was 4)" in out
+
+
+def test_cmd_digest_without_any_history_says_so_instead_of_inventing_a_trend(monkeypatch, capsys):
+    pf = {"owner": "o", "defaults": {}, "repos": {}}
+    monkeypatch.setattr(cli, "load_portfolio", lambda: pf)
+    assert cli.main(["digest"]) == 0
+    assert "converge has not recorded a run yet" in capsys.readouterr().out
 
 
 def rich(n, files=(), checks=(), add=0, dele=0, title="t"):

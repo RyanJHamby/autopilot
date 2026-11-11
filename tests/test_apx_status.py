@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from autopilot.apx import daemon as dm
-from autopilot.apx import status
+from autopilot.apx import hostenv, status
 
 NOW = dt.datetime(2026, 10, 29, 12, 0, tzinfo=dt.timezone.utc)
 PLIST = Path(__file__).resolve().parent.parent / "deploy" / "launchd" / "com.autopilot.apx.watch.plist"
@@ -81,6 +81,7 @@ def test_a_growing_staleness_does_not_renotify_but_a_different_problem_does(tmp_
 
 def test_the_notification_text_is_passed_as_arguments_never_spliced_into_the_script(monkeypatch):
     seen = {}
+    monkeypatch.setattr(hostenv, "is_darwin", lambda: True)  # the macOS notifier; Linux has none (see test_apx_hostenv)
     monkeypatch.setattr(status.subprocess, "run", lambda argv, **k: seen.setdefault("argv", argv))
     status.notify("apx", 'a "quote" and \\ and $(rm -rf x)')
     argv = seen["argv"]

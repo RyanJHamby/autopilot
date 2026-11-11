@@ -19,10 +19,9 @@ def targets(ns, portfolio: dict, repo_name) -> list[tuple[str, Path | None]]:
     """Same resolution as `ap standard check`: explicit paths, plus enabled portfolio repos found by origin name."""
     out: list[tuple[str, Path | None]] = [(Path(r).expanduser().name, Path(r).expanduser().resolve()) for r in ns.repos]
     if ns.portfolio:
-        root = Path(ns.root).expanduser()
         for name, entry in (portfolio.get("repos") or {}).items():
             if entry.get("enabled"):
-                out.append((name, check_command.find_clone(name, root, repo_name)))
+                out.append((name, check_command.find_clone(name, ns.root, repo_name)))
     return out
 
 
@@ -106,7 +105,7 @@ def cmd_fix(ns: argparse.Namespace, *, repo_name, load_portfolio, run=subprocess
     code, report, errors = 0, [], []
     for label, path in todo:
         if path is None or not path.is_dir():
-            errors.append(f"no clone of {label} under {ns.root} (matched by origin remote name)")
+            errors.append(f"no clone of {label} under {', '.join(str(r) for r in check_command.roots_of(ns.root))} (matched by origin remote name)")
             code = 1
             continue
         ctx = context(path, portfolio, repo_name, gh, ns)

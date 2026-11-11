@@ -1,7 +1,8 @@
 """List the owner's repos from GitHub, gate them, audit each against the standard.
 
-Everything that touches the network or the disk takes an injected function, so tests use fakes. Nothing here writes into a
-real checkout: a repo without a local clone is audited from a shallow throwaway clone."""
+Everything that touches the network or the disk takes an injected function, so tests use fakes. Nothing here reads or writes a local
+checkout: every repo is audited from a fresh shallow clone of GitHub's default branch, which is what the repo is, whatever any copy on
+this machine happens to hold. (Local clones were trusted before; a stale one gave stale gaps and could close an issue wrongly.)"""
 
 from __future__ import annotations
 
@@ -43,6 +44,8 @@ class Audit:
     skipped: str | None = None  # why this repo was not audited
     gaps: list[str] = field(default_factory=list)  # failing rules, "rule-id: first finding"
     fail_level: int = 0  # how many of the gaps are fail-level rules
+    warn: int = 0  # gaps that are warn-level rules in their own right
+    grandfathered: int = 0  # gaps that would be fail-level but the repo predates the rule, so they only warn
     fixable: list[str] = field(default_factory=list)  # files `ap standard fix` would create
     new: bool = False  # created in the last NEW_DAYS days
     in_portfolio: bool = False
@@ -105,19 +108,20 @@ def gate(r: Listed, owner: str, portfolio: dict) -> str | None:
     return None
 
 
-def is_new(created_at: str, today: date, days: int = NEW_DAYS) -> bool:
+def created_date(created_at: str) -> date | None:
     try:
-        made = datetime.fromisoformat(created_at.replace("Z", "+00:00")).date()
+        return datetime.fromisoformat(created_at.replace("Z", "+00:00")).date()
     except ValueError:
-        return False
-    return 0 <= (today - made).days <= days
+        return None
 
 
-def checkout(name: str, owner: str, root: Path, repo_name, run: Callable = subprocess.run):
-    """A local clone if one exists under `root`; otherwise a shallow throwaway clone. Returns (path, tempdir or None, error)."""
-    found = check_command.find_clone(name, root, repo_name)
-    if found is not None:
-        return found, None, ""
+def is_new(created_at: str, today: date, days: int = NEW_DAYS) -> bool:
+    made = created_date(created_at)
+    return made is not None and 0 <= (today - made).days <= days
+
+
+def checkout(name: str, owner: str, run: Callable = subprocess.run):
+    """A fresh shallow clone of the repo's default branch in a throwaway directory. Returns (path, tempdir, error)."""
     tmp = tempfile.TemporaryDirectory(prefix="converge-")
     r = run(["gh", "repo", "clone", f"{owner}/{name}", tmp.name + "/repo", "--", "--depth", "1"], capture_output=True, text=True)
     if r.returncode != 0:
@@ -143,10 +147,18 @@ def audit(listed: Listed, path: Path, owner: str, portfolio: dict, today: date) 
     if why:
         a.skipped = why
         return a
-    repo = engine.Repo(path, entry=entry, slug=None, gh=check_command.offline_gh, github_public=listed.public)
+    # The age is GitHub's created date: a shallow clone has no history, so reading it from the checkout would make every repo look old.
+    repo = engine.Repo(
+        path, entry=entry, slug=None, gh=check_command.offline_gh, github_public=listed.public, born_on=created_date(listed.created_at)
+    )
     for res in engine.run(repo):
         if res.result == "fail":
             a.gaps.append(f"{res.id}: {res.findings[0] if res.findings else 'failed'}")
-            a.fail_level += res.level == "fail"
+            if res.level == "fail":
+                a.fail_level += 1
+            elif res.findings and res.findings[0].startswith("grandfathered to warn"):
+                a.grandfathered += 1
+            else:
+                a.warn += 1
     a.fixable = [x.path for x in scaffold.plan(path, ctx) if x.status == "create"]
     return a

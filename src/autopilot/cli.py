@@ -605,8 +605,40 @@ def cmd_ruleset(ns: argparse.Namespace, run=subprocess.run) -> int:
     return 0
 
 
+def _revive_gate(ns: argparse.Namespace, pf: dict, name: str) -> bool:
+    """True when `ap enable` must stop. Reviving a repo is when agents start writing code in it, so it is checked as if it were new:
+    every rule an old repo was excused from by its age counts. No clone to look at means no enabling; --allow-gaps waves gaps through
+    (and still prints them), but nothing waves through a repo that cannot be looked at."""
+    from datetime import date
+
+    from autopilot.standard import command as standard_command
+    from autopilot.standard import waivers
+
+    text, _ = waivers.read_base(ROOT)
+    wvs, _ = waivers.parse(text)
+    explicit = Path(ns.path) if getattr(ns, "path", None) else None
+    root = getattr(ns, "root", None)
+    path, gaps, notes = standard_command.revive_check(name, pf, root, explicit, repo_name, subprocess.run, wvs, date.today())
+    if path is None:
+        searched = ", ".join(str(r) for r in standard_command.roots_of(root))
+        print(f"{name}: no clone found under {searched}, so it cannot be checked against the current standard; not enabling it (use --path)")
+        return True
+    print(f"{name}: checked as a new repo would be, from {path}")
+    for g in gaps:
+        print(f"  - {g}")
+    for n in notes:
+        print(f"  note: {n}")
+    if gaps and not getattr(ns, "allow_gaps", False):
+        print(f"{name}: {len(gaps)} fail-level gap(s). Fix them, or pass --allow-gaps to enable anyway.")
+        return True
+    if gaps:
+        print(f"{name}: --allow-gaps given, enabling with {len(gaps)} gap(s) listed above")
+    return False
+
+
 def cmd_vars(ns: argparse.Namespace) -> int:
-    """enable / pause / resume: set repo variables. Dry-run unless --apply."""
+    """enable / pause / resume: set repo variables. Dry-run unless --apply. `enable REPO` also checks the repo against the current standard
+    first (see _revive_gate); pause, resume, and `enable` with no repo (re-asserting repos that already run) are never gated."""
     pf = load_portfolio()
     repos = [ns.repo] if getattr(ns, "repo", None) else [n for n, e in pf["repos"].items() if e.get("enabled")]
     var, val = {
@@ -614,9 +646,14 @@ def cmd_vars(ns: argparse.Namespace) -> int:
         "pause": ("AUTOPILOT_PAUSED", "true"),
         "resume": ("AUTOPILOT_PAUSED", "false"),
     }[ns.cmd]
+    status = 0
     for name in repos:
         if ns.cmd == "enable" and pf["repos"].get(name, {}).get("data_class") == "restricted":
             print(f"{name}: data_class restricted; refusing to enable")
+            status = 1
+            continue
+        if ns.cmd == "enable" and getattr(ns, "repo", None) and _revive_gate(ns, pf, name):
+            status = 1
             continue
         slug = _slug(name, pf["owner"])
         if not ns.apply:
@@ -624,7 +661,8 @@ def cmd_vars(ns: argparse.Namespace) -> int:
             continue
         r = subprocess.run(["gh", "variable", "set", var, "--body", val, "-R", slug], capture_output=True, text=True)
         print(f"{slug}: {var}={val}" if r.returncode == 0 else f"{slug}: FAILED {r.stderr.strip()}")
-    return 0
+        status = status or (1 if r.returncode else 0)
+    return status
 
 
 def cmd_doctor(ns: argparse.Namespace) -> int:
@@ -685,6 +723,12 @@ def cmd_standard(ns: argparse.Namespace) -> int:
     return command.cmd_standard(ns, repo_name=repo_name, load_portfolio=load_portfolio, policy_root=ROOT)
 
 
+def cmd_gate(ns: argparse.Namespace) -> int:
+    from autopilot.gates import command
+
+    return command.cmd_gate(ns, repo_name=repo_name, load_portfolio=load_portfolio, policy_root=ROOT)
+
+
 def cmd_standard_fix(ns: argparse.Namespace) -> int:
     from autopilot.scaffold import command
 
@@ -706,7 +750,7 @@ def cmd_new(ns: argparse.Namespace) -> int:
 def cmd_standard_converge(ns: argparse.Namespace) -> int:
     from autopilot.converge import command
 
-    return command.cmd_converge(ns, repo_name=repo_name, load_portfolio=load_portfolio)
+    return command.cmd_converge(ns, load_portfolio=load_portfolio)
 
 
 def cmd_trace(ns: argparse.Namespace) -> int:
@@ -1050,7 +1094,9 @@ def cmd_digest(ns: argparse.Namespace) -> int:
         statuses[name] = digest.repo_status(e, v.returncode == 0 and v.stdout.strip() == "true", now)
         if p.returncode or r.returncode:
             statuses[name] = "cannot read GitHub" if statuses[name] == "ok" else statuses[name] + " (cannot read GitHub)"
-    text = digest.render(summaries, statuses, now)
+    from autopilot.converge import command as converge_command
+
+    text = digest.render(summaries, statuses, now, standard=digest.standard_section(digest.read_history(converge_command.HISTORY)))
     if ns.out:
         Path(ns.out).write_text(text)
         print(f"wrote {ns.out}")
@@ -1590,7 +1636,8 @@ def cmd_onboard(ns: argparse.Namespace) -> int:
         ruleset_ns = argparse.Namespace(repo=slug, check=checks, central=True, apply=ns.apply)
         if cmd_ruleset(ruleset_ns):
             return 1
-        cmd_vars(argparse.Namespace(cmd="enable", repo=name, apply=ns.apply))
+        if cmd_vars(argparse.Namespace(cmd="enable", repo=name, apply=ns.apply, allow_gaps=getattr(ns, "allow_gaps", False))):
+            return 1
         if ns.apply:
             cmd_preflight(argparse.Namespace(repos=[name], verbose=False))
         return 0
@@ -2040,7 +2087,7 @@ def main(argv: list[str] | None = None) -> int:
     p = ssub.add_parser("check", help="audit repos against the standard; exits 1 on a failing level-fail rule")
     p.add_argument("repos", nargs="*", help="repo paths")
     p.add_argument("--portfolio", action="store_true", help="every enabled portfolio repo, found under --root by origin name")
-    p.add_argument("--root", default="~/dev", help="where clones live (default ~/dev)")
+    p.add_argument("--root", action="append", help="where clones live; repeat for more (default ~/dev and ~/Documents)")
     p.add_argument("--json", action="store_true")
     p.add_argument("--strict", action="store_true", help="a level-fail rule that cannot be answered also fails")
     p.add_argument("--offline", action="store_true", help="never call gh (ruleset-present becomes unknown)")
@@ -2048,7 +2095,7 @@ def main(argv: list[str] | None = None) -> int:
     p = ssub.add_parser("fix", help="show (dry run) or --apply the standard files a repo is missing; never overwrites or commits")
     p.add_argument("repos", nargs="*", help="repo paths")
     p.add_argument("--portfolio", action="store_true", help="every enabled portfolio repo, found under --root by origin name")
-    p.add_argument("--root", default="~/dev", help="where clones live (default ~/dev)")
+    p.add_argument("--root", action="append", help="where clones live; repeat for more (default ~/dev and ~/Documents)")
     p.add_argument("--apply", action="store_true", help="write the files on a new branch standard/scaffold (clean tree required)")
     p.add_argument("--holder", help="copyright holder for LICENSE (else `holder:` in policy/portfolio.yaml; never guessed)")
     p.add_argument("--kind", choices=["library", "cli", "app", "site", "notes", "research", "fork"], help="repo kind")
@@ -2062,7 +2109,7 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_standard_template)
     p = ssub.add_parser("converge", help="audit every repo the owner has on GitHub and report the ones that miss the standard (read-only)")
     p.add_argument("--owner", help="GitHub owner (default: `owner:` in policy/portfolio.yaml)")
-    p.add_argument("--root", default="~/dev", help="where clones live; repos without one are audited from a shallow throwaway clone")
+    p.add_argument("--root", default="~/dev", help="ignored: converge audits a fresh shallow clone of GitHub's default branch, never a local clone")
     p.add_argument("--all", action="store_true", help="also audit older repos outside the portfolio (default: portfolio plus new)")
     p.add_argument("--apply", action="store_true", help="file or update one `standard-gap` issue per repo with gaps; close it when the repo conforms")
     p.add_argument("--only", action="append", metavar="REPO", help="audit (and with --apply, file for) just this repo; repeatable")
@@ -2162,6 +2209,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--kit-repo", default="RyanJHamby/autopilot-kit")
     p.add_argument("--check", action="append", default=[], help="required CI check name (default: detected)")
     p.add_argument("--finish", action="store_true")
+    p.add_argument("--allow-gaps", action="store_true", help="with --finish: enable even if the repo misses the current standard")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_onboard)
     p = sub.add_parser("preflight", help="read-only readiness check before leaving a repo unattended")
@@ -2195,7 +2243,28 @@ def main(argv: list[str] | None = None) -> int:
         p = sub.add_parser(c, help=f"{c}: set repo variable (dry run unless --apply)")
         p.add_argument("repo", nargs="?")
         p.add_argument("--apply", action="store_true")
+        if c == "enable":
+            p.add_argument("--allow-gaps", action="store_true", help="enable even if the repo misses the current standard (the gaps are still listed)")
+            p.add_argument("--path", help="the clone to check, if it is not under --root")
+            p.add_argument("--root", action="append", help="where clones live; repeat for more (default ~/dev and ~/Documents)")
         p.set_defaults(fn=cmd_vars)
+    p = sub.add_parser("gate", help="gates a bet clears before real users and before the first payment (checklists, read-only unless seeding)")
+    gsub = p.add_subparsers(dest="gate_cmd", required=True)
+    s = gsub.add_parser("show", help="where a bet stands against a gate (read-only; exit 0 only when ready)")
+    s.add_argument("bet")
+    s.add_argument("gate", help="beta or charge")
+    s.add_argument("--control", help="the pawl control repo (default $PAWL_ROOT, else ~/dev/control)")
+    s.add_argument("--path", help="the bet's repo clone, if it is not under --root")
+    s.add_argument("--root", action="append", help="where clones live; repeat for more (default ~/dev and ~/Documents)")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_gate)
+    s = gsub.add_parser("seed", help="add a gate's manual steps to the control repo as draft pawl steps (dry run unless --apply)")
+    s.add_argument("bet")
+    s.add_argument("gate", help="beta or charge")
+    s.add_argument("--control", help="the pawl control repo (default $PAWL_ROOT, else ~/dev/control)")
+    s.add_argument("--apply", action="store_true", help="write the steps (without it, only print the pawl commands)")
+    s.add_argument("--push", action="store_true", help="let pawl push each step as it is added (default: commit locally, push later)")
+    s.set_defaults(fn=cmd_gate)
     ns = ap.parse_args(argv)
     return ns.fn(ns)
 

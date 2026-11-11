@@ -15,11 +15,22 @@ import sys
 import tempfile
 from pathlib import Path
 
+from . import hostenv
 from .redact import redact
 
 PROBLEM_WORDS = ("planner error", "crashed", "failed", "config error", "rolled back")
-DEFAULT_STATUS = "/Users/Shared/apx/status.json"
-DEFAULT_UPDATE_STATUS = "/Users/Shared/apx/update.json"
+
+
+def default_status_path() -> str:
+    return f"{hostenv.default_shared_dir()}/status.json"
+
+
+def default_update_path() -> str:
+    return f"{hostenv.default_shared_dir()}/update.json"
+
+
+DEFAULT_STATUS = default_status_path()
+DEFAULT_UPDATE_STATUS = default_update_path()
 STALE_AFTER = dt.timedelta(minutes=15)  # the timer fires every 2 minutes; a long agent run can hold a pass for a while
 
 
@@ -81,7 +92,10 @@ def code_version(code_dir: str) -> str:
 
 
 def notify(title: str, message: str) -> None:
-    """A local macOS notification on the owner's own screen. Arguments are passed as argv, never interpolated into the script."""
+    """A local macOS notification on the owner's own screen. Arguments are passed as argv, never interpolated into the script.
+    Only macOS has a screen to notify: on a headless Linux host this does nothing, and the alert is the dead-man's-switch heartbeat."""
+    if not hostenv.is_darwin():
+        return
     script = "on run argv\ndisplay notification (item 2 of argv) with title (item 1 of argv)\nend run"
     subprocess.run(["/usr/bin/osascript", "-e", script, title, message], capture_output=True, timeout=15)
 

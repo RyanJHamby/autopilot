@@ -3,6 +3,8 @@
 Why: apx stops when the Mac you carry sleeps or leaves the house. A spare Mac that stays plugged in at home (the 2019 Intel MacBook Pro) can be the host instead. The Oracle VM
 (H1/H2) or a small VPS would be the same move to a Linux box; this page is only the Mac-to-Mac case, and it uses the scripts that already exist.
 
+> Moving to a Linux server instead of another Mac: see [apx-linux-host.md](apx-linux-host.md). The one rule below still applies.
+
 **The one rule: never two live hosts.** Two daemons polling the same repos post duplicate check runs and can start the same agent run twice. The new host is installed
 and tested in DRY-RUN while the old one stays live; the old one is stopped first, then the new one is switched to live. Everything before the switch is reversible.
 

@@ -327,6 +327,9 @@ Status: **done** = already enforced somewhere (named), **partial** = exists but 
   186 (gated production deploys note), 200 (cron heartbeats, only when the repo has scheduled jobs). Records are self-attested; the heartbeat check is a word match.
 - 2026-11-11, `scale` gate (new) and two beta steps: tips 197, 198, 209, 145 (scale) and 64, 79 (beta). Seeding was proven against a real `pawl` on a
   throwaway control repo, not against the real control repo or GitHub.
+- 2026-11-11, tranche 3, four warn-only packs: `llm-advisory-pack` (128 versioned prompts, 130 model fallback, 175 boundary validation), `payments-advisory-pack`
+  (39, a record: tests in `tests/` are never seen), `db-hygiene-pack` (194 limited role, 208 pooling only for repos with a direct driver, 179 seed data for dev),
+  `mail-pack` (87, new `mail` capability, dated record). Detection is by dependency or word match, so a configured but unused fallback passes.
 - 2026-11-11, tranche 4: `.gitattributes` (tip 21) and `docs/postmortems/TEMPLATE.md` (72, 105) for brand-new repos only; `install-scripts-off` (190), warn/audited,
   reads `.npmrc` or `.yarnrc.yml` at the repo root. Not built: strict types in `make check` (16): the scaffold's `check` has no type step, and adding mypy or
   pyright would force a dev dependency and config on every new repo, so it needs a decision first. The scaffolder does not write `.npmrc` into existing node repos,

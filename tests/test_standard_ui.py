@@ -85,7 +85,7 @@ def test_lucide_in_package_json_fails(tmp_path):
 
 
 def test_an_email_field_without_policy_pages_fails_and_with_them_passes(tmp_path):
-    put(tmp_path, "index.html", CLEAN + '<input type="email">')
+    put(tmp_path, "index.html", CLEAN + '<label for="e">Email</label><input id="e" type="email">')
     assert run(tmp_path)[0] == "fail"
     put(tmp_path, "privacy.html", CLEAN)
     put(tmp_path, "terms.html", CLEAN)
@@ -145,12 +145,80 @@ def test_a_focus_style_on_the_same_line_a_small_form_and_a_specific_button_pass(
         CLEAN
         + "\n<style>input:focus-visible{outline:none;box-shadow:0 0 0 2px #1d3557}</style>\n"
         + "<form>"
-        + "<input>" * 5
+        + "".join(f'<label for="f{i}">F</label><input id="f{i}">' for i in range(5))
         + "<button>Download the report</button></form>",
     )
     assert run(tmp_path) == ("pass", [])
 
 
 def test_a_password_field_needs_policy_pages_too(tmp_path):
-    put(tmp_path, "index.html", CLEAN + '<input type="password">')
+    put(tmp_path, "index.html", CLEAN + '<label for="p">Password</label><input id="p" type="password">')
     assert run(tmp_path)[0] == "fail"
+
+
+@pytest.mark.parametrize(
+    "rel,text,word",
+    [
+        ("a.css", ".dot{background:#ff5f56}", "terminal"),
+        ("a.html", "<span class='badge'>New in 2026</span>\n<h1>Ledger</h1>", "badge"),
+        ("a.html", "<p>Trusted by thousands of teams</p>", "unproven"),
+        ("a.html", "<p>Up to 40% faster</p>", "unproven"),
+        ("a.tsx", "<CheckIcon />", "checkmark icon"),
+        ("a.html", "<iframe src='https://x.test/map'></iframe>", "no title"),
+        ("a.html", "<img src='http://x.test/a.png'>", "http://"),
+        ("a.html", "<input name='q'>", "label hook"),
+        ("a.css", ".c{border-radius: 24px}", "corner radius"),
+        ("a.css", ".c{box-shadow: 0 20px 60px rgba(0,0,0,.3)}", "blurred drop shadow"),
+        ("a.css", ".c:hover{transform: translateY(-2px)}", "hover animation"),
+        ("a.css", ".h{color:#00ff66}", "neon"),
+        ("a.css", ".h{color:#ff00ff}", "neon"),
+        ("a.css", ".b{background:#6d28d9}", "purple"),
+        ("a.css", ".h{background:linear-gradient(90deg,#ff0000,#00cc00,#0000ff)}", "rainbow"),
+        ("a.css", ".h{background:linear-gradient(90deg,#d62828,#1d9bf0)}", "harsh gradient"),
+        ("a.html", "<h2>Starter</h2><h2>Pro</h2><h2>Enterprise</h2>", "pricing tiers"),
+        ("a.html", "<p>Our revolutionary, innovative platform</p>", "buzzword"),
+        ("a.html", "<p>Sarah Johnson, CEO</p>", "placeholder"),
+    ],
+)
+def test_each_audit_gap_is_now_caught(tmp_path, rel, text, word):
+    put(tmp_path, rel, "\n" + text)
+    result, findings = run(tmp_path)
+    assert result == "fail", findings
+    assert any(rel in f and word.lower() in f.lower() for f in findings), findings
+
+
+def test_a_spinner_with_no_skeleton_fails_and_with_one_passes(tmp_path):
+    put(tmp_path, "index.html", CLEAN + "<div class='animate-spin'></div>")
+    result, findings = run(tmp_path)
+    assert result == "fail" and any("skeleton" in f for f in findings)
+    put(tmp_path, "b.html", "<div class='skeleton'></div>")
+    assert run(tmp_path)[0] == "pass"
+
+
+def test_pricing_or_checkout_words_need_policy_pages(tmp_path):
+    put(tmp_path, "index.html", CLEAN + "<a href='/checkout'>Checkout</a>")
+    assert any("terms" in f for f in run(tmp_path)[1])
+
+
+@pytest.mark.parametrize(
+    "css",
+    [
+        ".a{color:#22c55e}",  # an ordinary green, not neon
+        ".a{color:#c0392b;background:#f4efe6}",
+        ".a{border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.2)}",
+        ".a{background:linear-gradient(180deg,#f4efe6,#e9dfcf)}",  # same-hue gradient
+        ".a{background:linear-gradient(90deg,#1d3557,#457b9d)}",  # two nearby blues
+        ".a:hover{color:#1d3557}",
+        ".a{color:#1d3557}",
+    ],
+)
+def test_ordinary_css_is_not_flagged_by_the_new_rules(tmp_path, css):
+    put(tmp_path, "a.css", css)
+    put(tmp_path, "index.html", CLEAN)
+    assert run(tmp_path) == ("pass", [])
+
+
+def test_line_numbers_stay_right_when_blank_lines_precede_a_comment(tmp_path):
+    put(tmp_path, "a.tsx", "const a = 1\n\n\n// a comment\nconst b = <p>x \u2014 y</p>\n")
+    _, findings = run(tmp_path)
+    assert any("a.tsx:5:" in f for f in findings), findings

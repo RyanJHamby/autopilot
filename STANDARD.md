@@ -147,13 +147,21 @@ These rules carry `enforced` like the others, with the same third limit describe
 ## UI and landing pages
 
 Partly enforced. The rule `ui-no-vibe-tells` (`since: 2026-11-11`, so strict for new repos and a warning for older ones) scans
-UI source (css, html, tsx, jsx, vue, svelte) and fails on what a pattern can see: fonts, Lucide and sparkle icons, em dashes,
-emoji and checkmark glyphs, pastel and pure-white colors, radial and purple gradients, glass, left stripes, large radii and
-shadows, hover animations, fade-on-scroll, cursor-following effects, three-column grids, "it's not X, it's Y", buzzword copy,
-vague button labels, placeholder business info, testimonials, untouched shadcn defaults, low-contrast text (WCAG 4.5:1 where a
-rule sets both colors as hex), clickable divs with no role, removed focus outlines, forms with more than five fields,
-arbitrary pixel spacing, and an email or password field with no privacy or terms page. It cannot judge layout, whether a demo
-is real, or whether a testimonial is true: those are on the agent and the owner.
+UI source (css, html, tsx, jsx, vue, svelte) and fails on what a pattern can see:
+- color: pastel, neon, purple, rainbow and harsh multi-hue gradients, radial gradients, pure-white page backgrounds, untouched
+  shadcn defaults, text under 4.5:1 contrast where one rule sets both colors as hex;
+- type and icons: Inter, Geist, Space Grotesk, Lucide, sparkle and checkmark icons, emoji and checkmark glyphs, em dashes;
+- surface and layout: glass, left stripes, large radii and blurred shadows, hover transforms, three-column grids, bento,
+  three pricing tiers (Starter, Pro, Enterprise), a badge or pill above the headline, a fake terminal window (traffic-light dots);
+- motion: fade-on-scroll, cursor-following effects, animated arrows, a spinner with no skeleton loader anywhere;
+- copy: "it's not X, it's Y", buzzwords, unproven claims ("trusted by thousands", "40% faster", "#1"), vague button labels,
+  placeholder business info and stock fake names, testimonials;
+- craft and accessibility: clickable divs with no role, removed focus outlines, inputs with no label, forms over five fields,
+  iframes with no title, insecure `http://` embeds, one-off pixel spacing;
+- trust: an email or password field, or a checkout or pricing page, with no privacy or terms page.
+
+It cannot judge whether a layout feels templated, whether a demo or screenshot is real, whether a claim is true, or whether
+spacing is consistent beyond one-off pixel values: those are on the agent and the owner.
 It applies to any landing page, marketing site, dashboard or app screen an agent builds. The goal is a UI that looks designed, not generated. Before building one,
 pick a real palette and type scale from the product itself (its logo, its domain, a reference the owner names), and
 avoid every item below. If the owner explicitly asks for one of them, do it for that item only and say so.

@@ -608,3 +608,7 @@ Built ui-no-vibe-tells (fail/enforced since 2026-11-11, pattern lint in standard
 ## 2026-11-11 20:47 EST (at 34159fd)
 
 Second owner checklist (30 items, niki.aroca reel) merged into ui-no-vibe-tells: added fade-on-scroll, cursor effects, buzzwords, vague buttons, placeholder info, clickable divs, focus outline, arbitrary spacing, shadcn defaults, purple/blue gradients, WCAG contrast (hex pairs in one rule), >5-field forms, password triggers policy pages. Manual only (not lintable): badges above headlines, terminal windows, claims without proof, broken embeds, keyboard path. Full suite 1929 passed.
+
+## 2026-11-11 21:20 EST (at 42428d9)
+
+Audit of all 59 screenshot items vs ui-no-vibe-tells found gaps; added neon, purple, rainbow/harsh multi-hue gradients, terminal traffic-light dots, badge above h1, 3 pricing tiers (Starter/Pro/Enterprise), checkmark icons, unproven claims, spinner-without-skeleton, CSS big shadow/radius/hover transform, unlabeled inputs, iframe title, http embeds, more buzzwords and fake persona names; checkout/pricing now triggers policy-page requirement. Found and fixed a real bug: LINE_COMMENT used \s* and swallowed blank lines so reported line numbers drifted (mutant killed by new test). Still manual: layout feel, real demos, claim truth, spacing consistency beyond px literals. Heuristic risks: purple/neon/label rules may over-fire; warn for old repos, waivers for exceptions.

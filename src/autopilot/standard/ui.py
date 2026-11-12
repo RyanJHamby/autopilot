@@ -36,7 +36,7 @@ MAX_BYTES = 400_000
 MAX_PER_CATEGORY = 3  # findings printed per category, so one bad file can't bury the rest
 
 BLOCK_COMMENT = re.compile(r"/\*.*?\*/|<!--.*?-->", re.S)
-LINE_COMMENT = re.compile(r"(?m)^\s*//.*$")
+LINE_COMMENT = re.compile(r"(?m)^[ \t]*//.*$")
 
 HEX = re.compile(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b")
 HSL = re.compile(r"hsla?\(\s*(-?[\d.]+)(?:deg)?[\s,]+([\d.]+)%[\s,]+([\d.]+)%")
@@ -106,7 +106,8 @@ TEXT_RULES += [
         "buzzwords",
         re.compile(
             r"\b(seamless(ly)?|supercharge[sd]?|revolutioni[sz]e[sd]?|unlock the power|elevate your|cutting-edge|game-?chang(er|ing)"
-            r"|next[- ]level|reimagine[sd]?|effortless(ly)?|all-in-one|empower(s|ing)?)\b",
+            r"|next[- ]level|reimagine[sd]?|effortless(ly)?|all-in-one|empower(s|ing)?|revolutionary|innovative|world-class|state-of-the-art|best-in-class|turbocharge[sd]?"
+            r"|unleash(es|ed)?|transform your)\b",
             re.I,
         ),
         "generic buzzword copy",
@@ -123,7 +124,7 @@ TEXT_RULES += [
         "placeholder",
         re.compile(
             r"lorem ipsum|\bjohn doe\b|\bjane doe\b|123 main st|\(555\)|\b555-\d{4}\b|\bacme (inc|corp)\b|\byour company\b"
-            r"|company name|hello@company\.com|your@email\.com",
+            r"|company name|hello@company\.com|your@email\.com|\bjohn smith\b|\bjane smith\b|\bsarah johnson\b|\bmichael chen\b|\bemily rodriguez\b",
             re.I,
         ),
         "placeholder business info",
@@ -144,6 +145,44 @@ TEXT_RULES += [
         re.compile(r"\b(?:linear|conic)-gradient\([^;{}]*\b(purple|violet|indigo|fuchsia)\b", re.I),
         "a purple/violet gradient",
     ),
+]
+TEXT_RULES += [
+    ("terminal", re.compile(r"#ff5f5[67]|#ffbd2e|#27c93f|#28c840", re.I), "a fake terminal window (traffic-light dots)"),
+    (
+        "badge",
+        re.compile(r"<(span|div|p)\b[^>]*(\bbadge\b|\bpill\b|\beyebrow\b|rounded-full)[^>]*>[^<]{1,60}</\1>\s*<h1\b", re.I),
+        "a badge or pill above the headline",
+    ),
+    (
+        "claims",
+        re.compile(
+            r"trusted by (thousands|millions|\d[\d,]*\+?)|#1 (in|for|rated)|world['\u2019]s (best|fastest|first|leading)"
+            r"|\b\d{2,3}(\.\d+)?% (faster|more|less|better)|\b10x\b",
+            re.I,
+        ),
+        "an unproven claim (name the source or drop it)",
+    ),
+    ("icons", re.compile(r"<Check(Icon|Circle|Circle2)?\s*/?>|<CheckIcon\b|<CheckCircle\b"), "a checkmark icon used as a bullet"),
+    ("embed", re.compile(r"<iframe\b(?![^>]*\btitle=)[^>]*>", re.I), "an iframe with no title"),
+    (
+        "embed",
+        re.compile(r"""<(iframe|script|img|video|source)\b[^>]*\bsrc=["']http://""", re.I),
+        "an insecure http:// embed (blocked as mixed content on https)",
+    ),
+    (
+        "label",
+        re.compile(
+            r"<input\b(?![^>]*(aria-label|aria-labelledby|\bid=|\{\.\.\.|type=[\"'](hidden|submit|button)[\"']))[^>]*>", re.I
+        ),
+        "an input with no label hook (add an id and a <label for>, or an aria-label)",
+    ),
+    ("radius", re.compile(r"border-radius:\s*(1[6-9]|[2-9]\d|\d{3})px"), "a large soft corner radius"),
+    (
+        "shadow",
+        re.compile(r"box-shadow:\s*(?:inset\s+)?-?\d+(?:px)?\s+-?\d+(?:px)?\s+(2\d|[3-9]\d|\d{3})px"),
+        "a large blurred drop shadow",
+    ),
+    ("motion", re.compile(r":hover[^{]*\{[^}]*\btransform\s*:"), "a hover animation (transform on :hover)"),
 ]
 OUTLINE_NONE = re.compile(r"\boutline-none\b|outline:\s*(none|0)\b")
 FORM = re.compile(r"<form\b.*?</form>", re.S | re.I)
@@ -223,6 +262,33 @@ def blue_purple(hexv: str) -> bool:
     return 235 <= h * 360 <= 320 and s >= 0.40 and 0.15 <= light <= 0.85
 
 
+def neon(hexv: str) -> bool:
+    h, light, sat = colorsys.rgb_to_hls(*(c / 255 for c in hex_rgb(hexv)))
+    deg = h * 360
+    return sat >= 0.95 and 0.50 <= light <= 0.62 and (75 <= deg <= 165 or 170 <= deg <= 200 or 285 <= deg <= 335)
+
+
+def purple(hexv: str) -> bool:
+    h, light, sat = colorsys.rgb_to_hls(*(c / 255 for c in hex_rgb(hexv)))
+    return 255 <= h * 360 <= 300 and sat >= 0.45 and 0.10 <= light <= 0.90
+
+
+def hue_spread(hexes: list[str]) -> tuple[float, int]:
+    """(widest hue gap in degrees, number of 30-degree hue buckets) over the saturated colors in a gradient."""
+    hues = []
+    for v in hexes:
+        h, light, sat = colorsys.rgb_to_hls(*(c / 255 for c in hex_rgb(v)))
+        if sat >= 0.40 and 0.10 <= light <= 0.90:
+            hues.append(h * 360)
+    if len(hues) < 2:
+        return 0.0, len(hues)
+    gap = max(min(abs(a - b), 360 - abs(a - b)) for a in hues for b in hues)
+    return gap, len({int(h // 30) for h in hues})
+
+
+TIERS = [re.compile(rf"\b{w}\b", re.I) for w in ("starter", "pro", "enterprise")]
+
+
 def scan_text(text: str) -> list[tuple[str, int, str]]:
     """(category, line, message) for every tell in one file's text."""
     text = strip_comments(text)
@@ -262,13 +328,26 @@ def scan_text(text: str) -> list[tuple[str, int, str]]:
             if ratio < MIN_CONTRAST:
                 out.append(("contrast", line_of(m.start()), f"low contrast text ({ratio:.1f}:1, needs {MIN_CONTRAST}:1)"))
     for m in GRADIENT_ARGS.finditer(text):
-        if any(blue_purple(h) for h in re.findall(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b", m.group(1))):
+        hexes = re.findall(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b", m.group(1))
+        if any(blue_purple(h) for h in hexes):
             out.append(("gradient", line_of(m.start()), "a purple or blue-to-purple gradient"))
+        gap, buckets = hue_spread(hexes)
+        if buckets >= 3:
+            out.append(("gradient", line_of(m.start()), "a rainbow gradient (three or more hues)"))
+        elif gap > 70:
+            out.append(("gradient", line_of(m.start()), f"a harsh gradient between hues {gap:.0f} degrees apart"))
+    for m in HEX.finditer(text):
+        if neon(m.group(1)):
+            out.append(("neon", line_of(m.start()), f"a neon color ({m.group(0)})"))
+        if purple(m.group(1)):
+            out.append(("purple", line_of(m.start()), f"a purple color ({m.group(0)}): purple-and-black is a tell"))
+    if all(t.search(text) for t in TIERS):
+        out.append(("pricing", line_of(TIERS[0].search(text).start()), "three pricing tiers (Starter, Pro, Enterprise)"))
     return out
 
 
 def asks_for_email(texts: list[str]) -> bool:
-    return any(re.search(r"type\s*=\s*[\"'](email|password)[\"']", t) for t in texts)
+    return any(re.search(r"type\s*=\s*[\"'](email|password)[\"']|\b(checkout|buy now|subscribe|pricing)\b", t, re.I) for t in texts)
 
 
 def has_policy_pages(root: Path) -> tuple[bool, bool]:
@@ -297,11 +376,14 @@ def scan(root: Path) -> tuple[bool, list[str]]:
         by_cat.setdefault("icons", []).append("package.json: depends on Lucide icons")
     if not seen:
         return False, []
+    joined = "\n".join(texts)
+    if re.search(r"animate-spin|\bspinner\b", joined, re.I) and not re.search(r"skeleton", joined, re.I):
+        by_cat.setdefault("loading", []).append("a spinner is used and there are no skeleton loaders anywhere in the UI")
     if asks_for_email(texts):
         privacy, terms = has_policy_pages(root)
         for ok, what in ((privacy, "privacy policy"), (terms, "terms of service")):
             if not ok:
-                by_cat.setdefault("policy", []).append(f"the UI collects an email or password but no {what} file or route was found")
+                by_cat.setdefault("policy", []).append(f"the UI collects an email or password, or sells something, but no {what} file or route was found")
     findings = []
     for cat in sorted(by_cat):
         items = by_cat[cat]

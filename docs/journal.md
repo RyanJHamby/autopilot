@@ -612,3 +612,7 @@ Second owner checklist (30 items, niki.aroca reel) merged into ui-no-vibe-tells:
 ## 2026-11-11 21:20 EST (at 42428d9)
 
 Audit of all 59 screenshot items vs ui-no-vibe-tells found gaps; added neon, purple, rainbow/harsh multi-hue gradients, terminal traffic-light dots, badge above h1, 3 pricing tiers (Starter/Pro/Enterprise), checkmark icons, unproven claims, spinner-without-skeleton, CSS big shadow/radius/hover transform, unlabeled inputs, iframe title, http embeds, more buzzwords and fake persona names; checkout/pricing now triggers policy-page requirement. Found and fixed a real bug: LINE_COMMENT used \s* and swallowed blank lines so reported line numbers drifted (mutant killed by new test). Still manual: layout feel, real demos, claim truth, spacing consistency beyond px literals. Heuristic risks: purple/neon/label rules may over-fire; warn for old repos, waivers for exceptions.
+
+## 2026-11-12 08:03 EST (at 0fb8f9a)
+
+ap upgrade only bumps the kit pin; the AGENTS managed block is written by ap init (init_repo), and the dry run on stencil refused (sensitive-material check, not overridden). Fixed the block heading that wrongly said to run ap upgrade. Deny rules block editing kit/repo/.github and AGENTS.md from the agent session: the two workflow comments and the repo's own AGENTS.md block copy (heading plus the ui-design pointer) are left for the owner.

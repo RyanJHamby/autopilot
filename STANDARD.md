@@ -135,6 +135,45 @@ Two kinds of item, and the difference matters:
 These rules carry `enforced` like the others, with the same third limit described above: for a repo made by `ap new`, nothing runs
 `ap standard check` in CI, so the pack is checked when `make check` runs it, when `converge` runs, or when someone runs the standard.
 
+## UI and landing pages
+
+Advisory, judgment only: no check reads a UI, so nothing here can fail a run. It applies to any landing page, marketing
+site, dashboard or app screen an agent builds. The goal is a UI that looks designed, not generated. Before building one,
+pick a real palette and type scale from the product itself (its logo, its domain, a reference the owner names), and
+avoid every item below. If the owner explicitly asks for one of them, do it for that item only and say so.
+
+**Color**
+- No pastel colors: no washed-out, low-saturation tints as the main palette or as fills (pastel blue, mint, peach, lavender).
+- No rainbow coloring, neon colors, or purple-and-black.
+- No harsh gradients, radial orbs, or blurred glow blobs.
+- No pure white (`#fff`) page background. Use an off-white or a real dark.
+
+**Layout and components**
+- No three feature cards in a row, no bento grids, no three pricing tiers by default.
+- No colored left stripe on cards or callouts.
+- No liquid glass or glassmorphism, no drop shadows as the main depth cue, no dot-grid backgrounds.
+- No soft, uniformly large corner radius on everything. Pick one radius and use it deliberately.
+- No fake terminal window as decoration.
+- Fake testimonials are banned outright (they are also a false claim). Use none, or a real quote with a name and a source.
+
+**Type, icons, copy**
+- No Inter, Geist or Space Grotesk as the default face. Choose a font on purpose.
+- No Lucide icons or sparkle icons by default; no emojis as icons or bullets; no checkmark-bullet lists.
+- No em dashes. Use a period, a comma or a colon.
+- No "it's not X, it's Y" phrasing.
+
+**Motion and states**
+- No hover animations for their own sake and no animated arrows.
+- Use skeleton loaders, not a bare spinner or an empty flash.
+
+**Substance**
+- Show the real product: an actual screenshot, recording or live demo, not a mockup of one.
+- Ship a terms of service and a privacy policy before a page collects an email or takes payment (the `payments-pack` already
+  requires a terms page).
+
+Source: a checklist of vibe-coded design tells the owner saved on 2026-11-11. Where a UI deliberately breaks a line
+above, record why in the repo's `docs/journal.md`.
+
 ## Gates
 
 What the packs cannot see from code (whether the entity exists, whether the payment account is in the business's name, whether sales tax was

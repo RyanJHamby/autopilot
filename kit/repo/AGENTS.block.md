@@ -9,3 +9,4 @@ calendars/inboxes/social/publishing, never read or print secrets, never spend mo
 - Work from an issue's acceptance commands. Say plainly when they cannot be run or do not pass.
 - Never weaken or delete tests to make a check pass.
 - Roles live in `.claude/agents/`.
+- Building a UI or landing page: follow "UI and landing pages" in autopilot's `STANDARD.md`. No pastel colors, no vibe-coded tells.

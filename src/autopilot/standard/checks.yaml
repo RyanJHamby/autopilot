@@ -138,6 +138,15 @@ checks:
     why: The capability packs only help if something that runs on every change calls them, or a repo can ship Stripe code with nothing said.
     fix: "Add a `standard` target running `ap standard check . --offline` and make `check` depend on it; `quick` should call `standard-report`."
 
+  - id: ui-no-vibe-tells
+    title: UI source avoids the banned vibe-coded tells and pastel colors (STANDARD.md "UI and landing pages")
+    level: fail
+    label: enforced
+    since: 2026-11-11
+    enforced_by: "ci.yml step `uv run ap standard check . --offline`"
+    why: Agents build UIs without being asked and drift to the same look every time (pastels, gradients, Inter, Lucide, em dashes, three-card rows). An instruction can be missed; a failing check can't. A repo with no UI source skips.
+    fix: "Fix each finding, or add a dated waiver in policy/waivers.yaml for a deliberate exception and record why in docs/journal.md. This is a pattern match over source: it sees fonts, icon packages, colors, utility classes and em dashes, not layout or whether a testimonial is real."
+
   # Capability packs, `since: 2026-11-10`. A repo that can take payments, call an LLM or run a deployment must have that capability's
   # pack (see packs.yaml). The capability is read from the repo's own content, so the requirement appears when the capability does.
   # Code items are checked against the code. Record items are SELF-ATTESTED: the repo can hold a note that a spend cap exists, not

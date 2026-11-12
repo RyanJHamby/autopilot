@@ -57,6 +57,7 @@ A rule's **level** says what a failing result does to the run: `fail` exits non-
 | `dependency-cooldown` | fail | enforced | all |
 | `install-scripts-off` | warn | audited | all |
 | `standard-wired` | fail | enforced | all |
+| `ui-no-vibe-tells` | fail | enforced | all |
 | `payments-pack` | fail | enforced | all |
 | `llm-pack` | fail | enforced | all |
 | `deploy-pack` | fail | enforced | all |
@@ -142,6 +143,73 @@ Two kinds of item, and the difference matters:
 
 These rules carry `enforced` like the others, with the same third limit described above: for a repo made by `ap new`, nothing runs
 `ap standard check` in CI, so the pack is checked when `make check` runs it, when `converge` runs, or when someone runs the standard.
+
+## UI and landing pages
+
+Partly enforced. The rule `ui-no-vibe-tells` (`since: 2026-11-11`, so strict for new repos and a warning for older ones) scans
+UI source (css, html, tsx, jsx, vue, svelte) and fails on what a pattern can see:
+- color: pastel, neon, purple, rainbow and harsh multi-hue gradients, radial gradients, pure-white page backgrounds, untouched
+  shadcn defaults, text under 4.5:1 contrast where one rule sets both colors as hex;
+- type and icons: Inter, Geist, Space Grotesk, Lucide, sparkle and checkmark icons, emoji and checkmark glyphs, em dashes;
+- surface and layout: glass, left stripes, large radii and blurred shadows, hover transforms, three-column grids, bento,
+  three pricing tiers (Starter, Pro, Enterprise), a badge or pill above the headline, a fake terminal window (traffic-light dots);
+- motion: fade-on-scroll, cursor-following effects, animated arrows, a spinner with no skeleton loader anywhere;
+- copy: "it's not X, it's Y", buzzwords, unproven claims ("trusted by thousands", "40% faster", "#1"), vague button labels,
+  placeholder business info and stock fake names, testimonials;
+- craft and accessibility: clickable divs with no role, removed focus outlines, inputs with no label, forms over five fields,
+  iframes with no title, insecure `http://` embeds, one-off pixel spacing;
+- trust: an email or password field, or a checkout or pricing page, with no privacy or terms page.
+
+It cannot judge whether a layout feels templated, whether a demo or screenshot is real, whether a claim is true, or whether
+spacing is consistent beyond one-off pixel values: those are on the agent and the owner.
+It applies to any landing page, marketing site, dashboard or app screen an agent builds. The goal is a UI that looks designed, not generated. Before building one,
+pick a real palette and type scale from the product itself (its logo, its domain, a reference the owner names), and
+avoid every item below. If the owner explicitly asks for one of them, do it for that item only and say so.
+
+**Color**
+- No pastel colors: no washed-out, low-saturation tints as the main palette or as fills (pastel blue, mint, peach, lavender).
+- No rainbow coloring, neon colors, or purple-and-black.
+- No harsh gradients, radial orbs, or blurred glow blobs.
+- No pure white (`#fff`) page background. Use an off-white or a real dark.
+
+**Layout and components**
+- No three feature cards in a row, no bento grids, no three pricing tiers by default.
+- No colored left stripe on cards or callouts.
+- No liquid glass or glassmorphism, no drop shadows as the main depth cue, no dot-grid backgrounds.
+- No soft, uniformly large corner radius on everything. Pick one radius and use it deliberately.
+- No fake terminal window as decoration.
+- Fake testimonials are banned outright (they are also a false claim). Use none, or a real quote with a name and a source.
+
+**Type, icons, copy**
+- No Inter, Geist or Space Grotesk as the default face. Choose a font on purpose.
+- No Lucide icons or sparkle icons by default; no emojis as icons or bullets; no checkmark-bullet lists.
+- No em dashes. Use a period, a comma or a colon.
+- No "it's not X, it's Y" phrasing.
+
+**Motion and states**
+- No hover animations for their own sake and no animated arrows.
+- No fade-in-on-scroll on everything, and no cursor-following beams or spotlights.
+- Use skeleton loaders, not a bare spinner or an empty flash.
+
+**Craft and accessibility**
+- Change the shadcn/ui theme tokens to your own palette. A default shadcn look is a tell.
+- Dark mode needs real contrast: body text at least 4.5:1 against its background.
+- Use a spacing scale, not one-off pixel values.
+- Button labels say what happens ("Download the report"), not "Learn more", "Get started" or "Submit".
+- Everything clickable is a button or link and keyboard-reachable, with a visible focus style. Forms ask only for what the
+  next step needs (no more than five fields) and every input has a label.
+- No generic buzzword copy (seamless, supercharge, unlock the power, game-changer, effortless, all-in-one). Say the specific thing.
+- No badges or pills above headlines by default, and no placeholder business info (lorem ipsum, John Doe, 123 Main St, (555)).
+- Third-party embeds (maps, videos, widgets) are tested and load; a broken embed is worse than none.
+
+**Substance**
+- Show the real product: an actual screenshot, recording or live demo, not a mockup of one. Back each claim with proof (a
+  number with its source, a customer, a result) or drop it.
+- Ship a terms of service and a privacy policy before a page collects an email or takes payment (the `payments-pack` already
+  requires a terms page).
+
+Source: two checklists of vibe-coded design tells (29 and 30 items) the owner saved on 2026-11-11. Where a UI deliberately breaks a line
+above, record why in the repo's `docs/journal.md`.
 
 ## Gates
 

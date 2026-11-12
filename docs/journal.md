@@ -592,3 +592,23 @@ tranche 3 packs re-cut onto main: PR #241 conflicted after #242 merged (journal,
 ## 2026-11-11 20:38 EST (at d57f6b2)
 
 Correction to the three stencil Tier 2 entries above (they say 'local, unpushed'): all three are now merged into stencil main, as #146 (webhook dedupe), #144 (/api/health) and #145 (error-tracking seam); the stripe_events migration was renamed 0026 to 0027 in #148 because main already had a 0026. Still true from those entries: the stripe_events table has not been created in any database (do not deploy the webhook before it exists), no real Stripe replay, no monitor on /api/health, error-tracking not called from any route. Stencil's own hosted checks (build, guard / guard) fail with zero steps; the admin repo shows the same pattern is the GitHub Actions billing limit (annotation: 'job was not started because recent account payments have failed'), not code. Not confirmed for stencil specifically.
+
+## 2026-11-11 14:06 EST (at aea9c46)
+
+Correction to the three stencil Tier 2 entries above (they say 'local, unpushed'): all three are now merged into stencil main, as #146 (webhook dedupe), #144 (/api/health) and #145 (error-tracking seam); the stripe_events migration was renamed 0026 to 0027 in #148 because main already had a 0026. Still true from those entries: the stripe_events table has not been created in any database (do not deploy the webhook before it exists), no real Stripe replay, no monitor on /api/health, error-tracking not called from any route. Stencil's own hosted checks (build, guard / guard) fail with zero steps; the admin repo shows the cause for the same pattern: GitHub Actions billing limit, not code. Not confirmed for stencil specifically.
+
+## 2026-11-11 20:21 EST (at baf9d51)
+
+Added advisory 'UI and landing pages' section to STANDARD.md and pointer in kit AGENTS block, from owner's saved vibe-coded-design checklist. Decision: advisory only; enforcement (lint check + skill) proposed, not built. Not yet pushed; ap upgrade not run.
+
+## 2026-11-11 20:34 EST (at 0a76779)
+
+Built ui-no-vibe-tells (fail/enforced since 2026-11-11, pattern lint in standard/ui.py) and kit/skills/ui-design (symlinked into ~/.claude/skills). Wrote module before tests (not TDD); checked after on real repos: stencil/drillpad flag real tells, lift_app skips, .claude/worktrees was wrongly scanned and is now skipped. ruff format reformatted 4 unrelated files; reverted. Not done: authoring-time PostToolUse hook (lives in ~/dev/admin live hooks, needs scratch clone), ap upgrade to managed repos, push/PR. Limit: lint cannot see layout or real demos.
+
+## 2026-11-11 20:47 EST (at 34159fd)
+
+Second owner checklist (30 items, niki.aroca reel) merged into ui-no-vibe-tells: added fade-on-scroll, cursor effects, buzzwords, vague buttons, placeholder info, clickable divs, focus outline, arbitrary spacing, shadcn defaults, purple/blue gradients, WCAG contrast (hex pairs in one rule), >5-field forms, password triggers policy pages. Manual only (not lintable): badges above headlines, terminal windows, claims without proof, broken embeds, keyboard path. Full suite 1929 passed.
+
+## 2026-11-11 21:20 EST (at 42428d9)
+
+Audit of all 59 screenshot items vs ui-no-vibe-tells found gaps; added neon, purple, rainbow/harsh multi-hue gradients, terminal traffic-light dots, badge above h1, 3 pricing tiers (Starter/Pro/Enterprise), checkmark icons, unproven claims, spinner-without-skeleton, CSS big shadow/radius/hover transform, unlabeled inputs, iframe title, http embeds, more buzzwords and fake persona names; checkout/pricing now triggers policy-page requirement. Found and fixed a real bug: LINE_COMMENT used \s* and swallowed blank lines so reported line numbers drifted (mutant killed by new test). Still manual: layout feel, real demos, claim truth, spacing consistency beyond px literals. Heuristic risks: purple/neon/label rules may over-fire; warn for old repos, waivers for exceptions.

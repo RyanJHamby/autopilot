@@ -584,3 +584,7 @@ tranche 2 (branch feat/lean-ship-tranche-1-2): scale gate (4 steps + repo-standa
 ## 2026-11-11 11:34 EST (at 1388792)
 
 tranche 4 (branch feat/lean-ship-tranche-4 off main): .gitattributes and postmortem template (new repos only), install-scripts-off rule (warn/audited, repo root .npmrc/.yarnrc.yml). 21 tests red first (20 failed), full suite 1869 passed, ruff clean. Mutant 2 SURVIVED: the comment guard was dead code (a commented key never equals the setting), so I removed it rather than add a test. Skipped on purpose: strict types in make check (16), needs a decision; no .npmrc written into existing repos. Ran on real stencil: fails as warn (no .npmrc). Unverified: whether stencil's npm ci still works with scripts off.
+
+## 2026-11-11 20:32 EST (at aea9c46)
+
+tranche 3 packs re-cut onto main: PR #241 conflicted after #242 merged (journal, matrix, STANDARD.md, checks.yaml, engine.py). Rebase and merge were denied, so the same change was applied three-way onto a fresh branch from main in a scratch clone; only the matrix doc conflicted (kept both entries). Full suite on the merged tree: 1908 passed (run 2026-11-11, ruff clean). The old branch's per-step journal entries are not replayed; this one stands for them. The shared autopilot checkout was on another session's branch with uncommitted edits to the same files, so nothing was done there.

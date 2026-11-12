@@ -26,8 +26,8 @@ from autopilot.standard import capabilities as cap
 
 PACKS_FILE = Path(__file__).with_name("packs.yaml")
 KINDS = ("code", "record", "codeowners")
-WHEN = ("always", "hosted", "auth", "cron")
-NEEDS = ("payments", "llm", "auth", "db", "deploy")
+WHEN = ("always", "hosted", "auth", "cron", "driver")
+NEEDS = ("payments", "llm", "auth", "db", "deploy", "mail")
 STALE_DAYS = 180
 DEFAULT_MIN_LINES = 5
 ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -200,13 +200,19 @@ _CHECKS: dict[str, Callable[[cap.Scan, dict, datetime.date], tuple[bool, str]]] 
 
 
 def evaluate(scan: cap.Scan, pack: dict, today: datetime.date | None = None) -> list[ItemResult]:
-    """One result per item that applies to this repo. An item whose `when` is not met (hosted, auth, cron) is left out, not passed."""
+    """One result per item that applies to this repo. An item whose `when` is not met (hosted, auth, cron, driver) is left out, not passed."""
     today = today or datetime.date.today()
     caps = scan.caps
     out = []
     for item in pack["items"]:
         when = item.get("when", "always")
-        if (when == "hosted" and not cap.hosted(caps)) or (when == "auth" and "auth" not in caps) or (when == "cron" and not cap.has_cron(scan)):
+        skip = (
+            (when == "hosted" and not cap.hosted(caps))
+            or (when == "auth" and "auth" not in caps)
+            or (when == "cron" and not cap.has_cron(scan))
+            or (when == "driver" and not cap.has_db_driver(scan))
+        )
+        if skip:
             continue
         ok, why = _CHECKS[item["kind"]](scan, item, today)
         out.append(ItemResult(item["id"], ok, "" if ok else f"{why}. Fix: {item['fix']}"))

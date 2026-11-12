@@ -588,3 +588,11 @@ tranche 4 (branch feat/lean-ship-tranche-4 off main): .gitattributes and postmor
 ## 2026-11-11 14:06 EST (at aea9c46)
 
 Correction to the three stencil Tier 2 entries above (they say 'local, unpushed'): all three are now merged into stencil main, as #146 (webhook dedupe), #144 (/api/health) and #145 (error-tracking seam); the stripe_events migration was renamed 0026 to 0027 in #148 because main already had a 0026. Still true from those entries: the stripe_events table has not been created in any database (do not deploy the webhook before it exists), no real Stripe replay, no monitor on /api/health, error-tracking not called from any route. Stencil's own hosted checks (build, guard / guard) fail with zero steps; the admin repo shows the cause for the same pattern: GitHub Actions billing limit, not code. Not confirmed for stencil specifically.
+
+## 2026-11-11 20:21 EST (at baf9d51)
+
+Added advisory 'UI and landing pages' section to STANDARD.md and pointer in kit AGENTS block, from owner's saved vibe-coded-design checklist. Decision: advisory only; enforcement (lint check + skill) proposed, not built. Not yet pushed; ap upgrade not run.
+
+## 2026-11-11 20:34 EST (at 0a76779)
+
+Built ui-no-vibe-tells (fail/enforced since 2026-11-11, pattern lint in standard/ui.py) and kit/skills/ui-design (symlinked into ~/.claude/skills). Wrote module before tests (not TDD); checked after on real repos: stencil/drillpad flag real tells, lift_app skips, .claude/worktrees was wrongly scanned and is now skipped. ruff format reformatted 4 unrelated files; reverted. Not done: authoring-time PostToolUse hook (lives in ~/dev/admin live hooks, needs scratch clone), ap upgrade to managed repos, push/PR. Limit: lint cannot see layout or real demos.

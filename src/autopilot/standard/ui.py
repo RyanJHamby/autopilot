@@ -95,6 +95,65 @@ TEXT_RULES: list[tuple[str, re.Pattern, str]] = [
         "a testimonials block (the standard allows only real quotes with a name and a source)",
     ),
 ]
+TEXT_RULES += [
+    (
+        "scroll",
+        re.compile(r"data-aos|\bwhileInView\b|from\s*['\"]aos['\"]|scrollreveal|animate-on-scroll", re.I),
+        "everything fades in on scroll",
+    ),
+    ("cursor", re.compile(r"\bmousemove\b|\bonMouseMove\b|\bpointermove\b|\bonPointerMove\b"), "a cursor-following effect"),
+    (
+        "buzzwords",
+        re.compile(
+            r"\b(seamless(ly)?|supercharge[sd]?|revolutioni[sz]e[sd]?|unlock the power|elevate your|cutting-edge|game-?chang(er|ing)"
+            r"|next[- ]level|reimagine[sd]?|effortless(ly)?|all-in-one|empower(s|ing)?)\b",
+            re.I,
+        ),
+        "generic buzzword copy",
+    ),
+    (
+        "button",
+        re.compile(
+            r"<(button|a|Button|Link)\b[^>]*>\s*(learn more|get started|click here|submit|read more|sign up now|try it now|explore)\s*</",
+            re.I,
+        ),
+        "a vague button label (say what happens: 'Start the free trial', 'Download the report')",
+    ),
+    (
+        "placeholder",
+        re.compile(
+            r"lorem ipsum|\bjohn doe\b|\bjane doe\b|123 main st|\(555\)|\b555-\d{4}\b|\bacme (inc|corp)\b|\byour company\b"
+            r"|company name|hello@company\.com|your@email\.com",
+            re.I,
+        ),
+        "placeholder business info",
+    ),
+    (
+        "keyboard",
+        re.compile(r"<(div|span)\b(?![^>]*\brole=)[^>]*\bonClick="),
+        "a clickable div or span with no role (not reachable by keyboard; use a button or link)",
+    ),
+    ("spacing", re.compile(r"\b(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|space-x|space-y)-\[\d+px\]"), "arbitrary pixel spacing (inconsistent spacing)"),
+    (
+        "shadcn",
+        re.compile(r"--primary:\s*(222\.2 47\.4% 11\.2%|0 0% 9%|oklch\(0\.205 0 0\))"),
+        "untouched shadcn/ui default theme (change the tokens to your own palette)",
+    ),
+    (
+        "gradient",
+        re.compile(r"\b(?:linear|conic)-gradient\([^;{}]*\b(purple|violet|indigo|fuchsia)\b", re.I),
+        "a purple/violet gradient",
+    ),
+]
+OUTLINE_NONE = re.compile(r"\boutline-none\b|outline:\s*(none|0)\b")
+FORM = re.compile(r"<form\b.*?</form>", re.S | re.I)
+FIELD = re.compile(r"<(input|textarea|select|Input|Textarea|Select)\b(?![^>]*type=[\"'](hidden|submit|checkbox|radio)[\"'])")
+MAX_FIELDS = 5
+RULE_BLOCK = re.compile(r"\{([^{}]*)\}")
+TEXT_COLOR = re.compile(r"(?<![-\w])color\s*:\s*#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b")
+BG_COLOR = re.compile(r"(?<![-\w])background(?:-color)?\s*:\s*#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b")
+MIN_CONTRAST = 4.5  # WCAG AA for body text
+GRADIENT_ARGS = re.compile(r"(?:linear|conic)-gradient\(([^;{}]*)")
 PASTEL_CLASS = re.compile(rf"\b(bg|from|via|to)-({FAMILIES})-(100|200|300)\b")
 WHITE_BODY_CLASS = re.compile(r"<(body|html)\b[^>]*\bbg-white\b")
 WHITE_RULE = re.compile(r"(?:^|[}\s,])(html|body|:root|#root|#__next)\s*\{([^}]*)\}", re.S)
@@ -140,6 +199,30 @@ def pastel_colors(text: str) -> list[str]:
     return found
 
 
+def hex_rgb(v: str) -> tuple[int, int, int]:
+    v = "".join(c * 2 for c in v) if len(v) == 3 else v
+    return int(v[0:2], 16), int(v[2:4], 16), int(v[4:6], 16)
+
+
+def luminance(rgb: tuple[int, int, int]) -> float:
+    def lin(c: int) -> float:
+        c = c / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (lin(c) for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
+    hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def blue_purple(hexv: str) -> bool:
+    h, light, s = colorsys.rgb_to_hls(*(c / 255 for c in hex_rgb(hexv)))
+    return 235 <= h * 360 <= 320 and s >= 0.40 and 0.15 <= light <= 0.85
+
+
 def scan_text(text: str) -> list[tuple[str, int, str]]:
     """(category, line, message) for every tell in one file's text."""
     text = strip_comments(text)
@@ -164,11 +247,28 @@ def scan_text(text: str) -> list[tuple[str, int, str]]:
     for m in WHITE_RULE.finditer(text):
         if WHITE_VALUE.search(m.group(2)):
             out.append(("white", line_of(m.start(1)), f"a pure white page background ({m.group(1)})"))
+    for m in OUTLINE_NONE.finditer(text):
+        line = text[text.rfind("\n", 0, m.start()) + 1 : text.find("\n", m.end()) if "\n" in text[m.end() :] else len(text)]
+        if "focus" not in line and "ring" not in line:
+            out.append(("keyboard", line_of(m.start()), "focus outline removed with no focus style (keyboard users lose their place)"))
+    for m in FORM.finditer(text):
+        n = len(FIELD.findall(m.group(0)))
+        if n > MAX_FIELDS:
+            out.append(("form", line_of(m.start()), f"a form with {n} fields (more than {MAX_FIELDS}: ask only for what you need)"))
+    for m in RULE_BLOCK.finditer(text):
+        fg, bg = TEXT_COLOR.search(m.group(1)), BG_COLOR.search(m.group(1))
+        if fg and bg:
+            ratio = contrast(hex_rgb(fg.group(1)), hex_rgb(bg.group(1)))
+            if ratio < MIN_CONTRAST:
+                out.append(("contrast", line_of(m.start()), f"low contrast text ({ratio:.1f}:1, needs {MIN_CONTRAST}:1)"))
+    for m in GRADIENT_ARGS.finditer(text):
+        if any(blue_purple(h) for h in re.findall(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b", m.group(1))):
+            out.append(("gradient", line_of(m.start()), "a purple or blue-to-purple gradient"))
     return out
 
 
 def asks_for_email(texts: list[str]) -> bool:
-    return any(re.search(r"type\s*=\s*[\"']email[\"']", t) for t in texts)
+    return any(re.search(r"type\s*=\s*[\"'](email|password)[\"']", t) for t in texts)
 
 
 def has_policy_pages(root: Path) -> tuple[bool, bool]:
@@ -201,7 +301,7 @@ def scan(root: Path) -> tuple[bool, list[str]]:
         privacy, terms = has_policy_pages(root)
         for ok, what in ((privacy, "privacy policy"), (terms, "terms of service")):
             if not ok:
-                by_cat.setdefault("policy", []).append(f"the UI collects an email but no {what} file or route was found")
+                by_cat.setdefault("policy", []).append(f"the UI collects an email or password but no {what} file or route was found")
     findings = []
     for cat in sorted(by_cat):
         items = by_cat[cat]

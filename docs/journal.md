@@ -596,3 +596,7 @@ Added advisory 'UI and landing pages' section to STANDARD.md and pointer in kit 
 ## 2026-11-11 20:34 EST (at 0a76779)
 
 Built ui-no-vibe-tells (fail/enforced since 2026-11-11, pattern lint in standard/ui.py) and kit/skills/ui-design (symlinked into ~/.claude/skills). Wrote module before tests (not TDD); checked after on real repos: stencil/drillpad flag real tells, lift_app skips, .claude/worktrees was wrongly scanned and is now skipped. ruff format reformatted 4 unrelated files; reverted. Not done: authoring-time PostToolUse hook (lives in ~/dev/admin live hooks, needs scratch clone), ap upgrade to managed repos, push/PR. Limit: lint cannot see layout or real demos.
+
+## 2026-11-11 20:47 EST (at 34159fd)
+
+Second owner checklist (30 items, niki.aroca reel) merged into ui-no-vibe-tells: added fade-on-scroll, cursor effects, buzzwords, vague buttons, placeholder info, clickable divs, focus outline, arbitrary spacing, shadcn defaults, purple/blue gradients, WCAG contrast (hex pairs in one rule), >5-field forms, password triggers policy pages. Manual only (not lintable): badges above headlines, terminal windows, claims without proof, broken embeds, keyboard path. Full suite 1929 passed.

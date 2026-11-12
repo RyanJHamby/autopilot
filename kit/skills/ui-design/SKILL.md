@@ -24,8 +24,13 @@ fails a new repo's CI. Passing the check is necessary, not sufficient: it sees s
 - **Type and icons:** Inter, Geist, Space Grotesk; Lucide icons; sparkle icons; emojis; checkmark bullets.
 - **Copy:** em dashes (use a period, comma or colon); "it's not X, it's Y"; fake testimonials (none, or a real quote with a
   name and a source).
-- **Motion:** hover animations for their own sake, animated arrows. Use skeleton loaders for loading states.
-- **Substance:** show the real product (screenshot, recording, live demo), not a mockup of one. A page that collects an email
+- **Motion:** hover animations for their own sake, animated arrows, everything fading in on scroll, cursor-following beams. Use
+  skeleton loaders for loading states.
+- **Craft:** an untouched shadcn/ui theme, low-contrast dark mode (4.5:1 minimum), inconsistent one-off spacing, vague button
+  labels ("Learn more", "Get started", "Submit"), clickable divs and missing focus styles, forms asking for too much (5 fields max),
+  generic buzzword copy (seamless, supercharge, game-changer), badges above headlines, placeholder business info, broken
+  third-party embeds.
+- **Substance:** show the real product (screenshot, recording, live demo), not a mockup of one. Back every claim with proof or drop it. A page that collects an email
   or takes payment needs a terms page and a privacy policy.
 
 If the owner explicitly asks for one of these, do it for that item only and say so in your reply.
@@ -33,6 +38,7 @@ If the owner explicitly asks for one of these, do it for that item only and say 
 ## Before you say it is done
 1. Run `ap standard check .` from the repo root (or `uv run ap standard check .` in autopilot) and read the `ui-no-vibe-tells`
    result. Fix every finding. Do not edit `checks.yaml` or add a waiver to get past it: a waiver is the owner's call.
-2. Check by eye what the lint cannot: no three-up card rows or bento layouts, a real product demo is present, nothing reads
+2. Check by eye what the lint cannot: no three-up card rows or bento layouts, no badge above a headline, no decorative terminal window, a real product demo is present,
+   every claim has proof, third-party embeds actually load, tab through the page to check the keyboard path, nothing reads
    like template copy, contrast is readable in the palette you chose.
 3. Say plainly what you verified (the check output, a screenshot you looked at) and what you did not.

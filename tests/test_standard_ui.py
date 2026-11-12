@@ -53,6 +53,22 @@ def test_clean_ui_passes(tmp_path):
         ("a.css", ".tag{background:#bfdbfe}", "pastel"),
         ("a.css", ".tag{background:hsl(210, 90%, 85%)}", "pastel"),
         ("a.tsx", "<div className='bg-pink-200'/>", "pastel"),
+        ("a.tsx", "<div data-aos='fade-up'/>", "fades in on scroll"),
+        ("a.tsx", "<motion.div whileInView={{opacity:1}}/>", "fades in on scroll"),
+        ("a.tsx", "window.addEventListener('mousemove', f)", "cursor-following"),
+        ("a.html", "<p>Seamless, effortless workflows.</p>", "buzzword"),
+        ("a.html", "<button>Get started</button>", "vague button"),
+        ("a.tsx", "<Button>Learn more</Button>", "vague button"),
+        ("a.html", "<p>Lorem ipsum dolor</p>", "placeholder"),
+        ("a.html", "<p>Call (555) 123-4567</p>", "placeholder"),
+        ("a.tsx", "<div onClick={go}>Go</div>", "no role"),
+        ("a.css", "input{outline: none}", "focus outline"),
+        ("a.tsx", "<div className='p-[13px]'/>", "arbitrary pixel spacing"),
+        ("a.css", ":root{--primary: 222.2 47.4% 11.2%}", "shadcn"),
+        ("a.css", ".hero{background: linear-gradient(90deg, #4f46e5, #7c3aed)}", "purple"),
+        ("a.css", ".hero{background: linear-gradient(90deg, #2563eb, #9333ea)}", "purple"),
+        ("a.css", ".t{color:#777777;background:#888888}", "low contrast"),
+        ("a.html", "<form>" + "<input>" * 6 + "</form>", "6 fields"),
     ],
 )
 def test_each_tell_fails_and_names_the_file_and_line(tmp_path, rel, text, word):
@@ -115,3 +131,26 @@ def test_hidden_directories_such_as_claude_worktrees_are_not_scanned(tmp_path):
     put(tmp_path, "index.html", CLEAN)
     put(tmp_path, ".claude/worktrees/x/bad.html", "<p>—</p>")
     assert run(tmp_path) == ("pass", [])
+
+
+def test_a_dark_theme_with_enough_contrast_passes(tmp_path):
+    put(tmp_path, "index.html", CLEAN + "<style>.t{color:#f4efe6;background:#14110f}</style>")
+    assert run(tmp_path) == ("pass", [])
+
+
+def test_a_focus_style_on_the_same_line_a_small_form_and_a_specific_button_pass(tmp_path):
+    put(
+        tmp_path,
+        "index.html",
+        CLEAN
+        + "\n<style>input:focus-visible{outline:none;box-shadow:0 0 0 2px #1d3557}</style>\n"
+        + "<form>"
+        + "<input>" * 5
+        + "<button>Download the report</button></form>",
+    )
+    assert run(tmp_path) == ("pass", [])
+
+
+def test_a_password_field_needs_policy_pages_too(tmp_path):
+    put(tmp_path, "index.html", CLEAN + '<input type="password">')
+    assert run(tmp_path)[0] == "fail"

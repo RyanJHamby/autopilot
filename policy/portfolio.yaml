@@ -26,7 +26,7 @@ defaults:
     B: 1
     C: 0
   hard_runs_per_day: 1      # opus, tier A only
-  global_runs_per_day: 12
+  global_runs_per_day: 20
   max_open_agent_prs: 3
   breaker_failures: 2       # consecutive failed runs before the repo auto-disables
 

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from autopilot.standard import capabilities, load_checks, packs, since_date
+from autopilot.standard import capabilities, load_checks, packs, since_date, ui
 
 # Mirrors kit/runtime/guard.py DEFAULT_PROTECTED. The kit isn't in the wheel, so it is copied, and a test fails if the
 # two lists drift.
@@ -549,6 +549,14 @@ def install_scripts_off(repo: Repo) -> Outcome:
     return "fail", ["package.json is present but nothing stops install scripts from running (add `ignore-scripts=true` to .npmrc)"]
 
 
+def ui_no_vibe_tells(repo: Repo) -> Outcome:
+    """UI source avoids the banned tells in STANDARD.md "UI and landing pages". A repo with no UI source skips. Pattern match only."""
+    had_ui, findings = ui.scan(repo.path)
+    if not had_ui:
+        return "skip", ["no UI source (css, html, tsx, jsx, vue, svelte) found"]
+    return _verdict(findings)
+
+
 CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "pinned-actions": pinned_actions,
     "workflow-permissions": workflow_permissions,
@@ -566,6 +574,7 @@ CHECKS: dict[str, Callable[[Repo], Outcome]] = {
     "dependency-cooldown": dependency_cooldown,
     "install-scripts-off": install_scripts_off,
     "standard-wired": standard_wired,
+    "ui-no-vibe-tells": ui_no_vibe_tells,
     "payments-pack": _pack_rule("payments"),
     "llm-pack": _pack_rule("llm"),
     "deploy-pack": _pack_rule("deploy"),

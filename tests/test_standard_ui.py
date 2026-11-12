@@ -1,0 +1,117 @@
+"""`ui-no-vibe-tells`: each banned tell has a failing fixture, clean UI passes, and comments, tests and non-UI repos are left alone."""
+
+import pytest
+
+from autopilot.standard import engine, load_checks, ui
+
+
+def run(root):
+    (r,) = engine.run(engine.Repo(root, force_new=True), only=["ui-no-vibe-tells"])
+    return r.result, r.findings
+
+
+def put(root, rel, text):
+    p = root / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+
+
+CLEAN = """<body style="background:#f4efe6;color:#1a1a1a"><h1>Ledger</h1><p>Track orders. Ship faster.</p>
+<style>body{font-family:"Newsreader",serif;border-radius:4px}.cta{background:#1d3557;color:#f4efe6}</style></body>"""
+
+
+def test_a_repo_with_no_ui_skips(tmp_path):
+    put(tmp_path, "main.py", "print('hi')")
+    assert run(tmp_path)[0] == "skip"
+
+
+def test_clean_ui_passes(tmp_path):
+    put(tmp_path, "index.html", CLEAN)
+    assert run(tmp_path) == ("pass", [])
+
+
+@pytest.mark.parametrize(
+    "rel,text,word",
+    [
+        ("a.css", "body{font-family: Inter, sans-serif}", "typeface"),
+        ("a.tsx", "import { Geist } from 'next/font/google'", "next/font"),
+        ("a.tsx", "import { Menu } from 'lucide-react'", "Lucide"),
+        ("a.html", "<p>Fast — and simple</p>", "em dash"),
+        ("a.html", "<li>✓ Included</li>", "glyph"),
+        ("a.html", "<h1>Launch \U0001f680</h1>", "glyph"),
+        ("a.css", ".card{backdrop-filter: blur(8px)}", "glass"),
+        ("a.css", ".hero{background: radial-gradient(circle, #123, #456)}", "radial"),
+        ("a.tsx", "<div className='bg-gradient-to-r from-purple-500 to-pink-500'/>", "purple"),
+        ("a.tsx", "<div className='border-l-4 border-blue-600'/>", "left stripe"),
+        ("a.tsx", "<div className='rounded-3xl shadow-2xl'/>", "radius"),
+        ("a.tsx", "<div className='hover:scale-105'/>", "hover"),
+        ("a.tsx", "<div className='grid md:grid-cols-3'/>", "three-column"),
+        ("a.html", "<p>It's not a tool, it's a movement.</p>", "it's not X"),
+        ("a.tsx", "<Testimonials />", "testimonials"),
+        ("a.css", "body{background:#fff}", "pure white"),
+        ("a.tsx", "<body className='bg-white'>", "pure white"),
+        ("a.css", ".tag{background:#bfdbfe}", "pastel"),
+        ("a.css", ".tag{background:hsl(210, 90%, 85%)}", "pastel"),
+        ("a.tsx", "<div className='bg-pink-200'/>", "pastel"),
+    ],
+)
+def test_each_tell_fails_and_names_the_file_and_line(tmp_path, rel, text, word):
+    put(tmp_path, rel, "\n" + text)
+    result, findings = run(tmp_path)
+    assert result == "fail", findings
+    assert any(rel in f and ":2:" in f and word.lower() in f.lower() for f in findings), findings
+
+
+def test_lucide_in_package_json_fails(tmp_path):
+    put(tmp_path, "index.html", CLEAN)
+    put(tmp_path, "package.json", '{"dependencies": {"lucide-react": "^0.4"}}')
+    assert run(tmp_path)[0] == "fail"
+
+
+def test_an_email_field_without_policy_pages_fails_and_with_them_passes(tmp_path):
+    put(tmp_path, "index.html", CLEAN + '<input type="email">')
+    assert run(tmp_path)[0] == "fail"
+    put(tmp_path, "privacy.html", CLEAN)
+    put(tmp_path, "terms.html", CLEAN)
+    assert run(tmp_path)[0] == "pass"
+
+
+def test_comments_tests_and_node_modules_are_ignored(tmp_path):
+    put(tmp_path, "index.html", CLEAN + "<!-- Inter — lucide-react ✓ -->")
+    put(tmp_path, "a.css", "/* font-family: Inter; background:#bfdbfe */ .x{color:#111}")
+    put(tmp_path, "tests/bad.html", "<p>—</p>")
+    put(tmp_path, "node_modules/x/bad.css", "body{font-family:Inter}")
+    assert run(tmp_path) == ("pass", [])
+
+
+@pytest.mark.parametrize("color", ["#faf8f5", "#f4efe6", "#f5ecd9", "#1d3557", "#e5e5e5", "#c0392b", "#0b0b0f"])
+def test_off_whites_greys_paper_and_saturated_colors_are_not_pastel(color):
+    assert ui.pastel_colors(f"x{{color:{color}}}") == []
+
+
+@pytest.mark.parametrize("color", ["#bfdbfe", "#aec6ff", "#ffd1dc", "#b5ead7", "#e6e6fa"])
+def test_known_pastels_are_found(color):
+    assert ui.pastel_colors(f"x{{color:{color}}}") == [color]
+
+
+def test_findings_are_capped_per_category_with_a_count_of_the_rest(tmp_path):
+    put(tmp_path, "a.html", "".join(f"<p>a — b {i}</p>\n" for i in range(10)))
+    _, findings = run(tmp_path)
+    assert len(findings) == ui.MAX_PER_CATEGORY + 1 and "7 more" in findings[-1]
+
+
+def test_the_rule_is_fail_level_enforced_and_dated_so_old_repos_only_warn():
+    rule = {c["id"]: c for c in load_checks()["checks"]}["ui-no-vibe-tells"]
+    assert (rule["level"], rule["label"], str(rule["since"])) == ("fail", "enforced", "2026-11-11")
+
+
+def test_limit_a_pattern_cannot_see_layout_or_whether_a_demo_is_real(tmp_path):
+    """Known blind spot, recorded so it stays visible: a vibe-coded layout with clean source passes."""
+    put(tmp_path, "index.html", CLEAN + "<section><div>Card</div><div>Card</div><div>Card</div></section>")
+    assert run(tmp_path)[0] == "pass"
+
+
+def test_hidden_directories_such_as_claude_worktrees_are_not_scanned(tmp_path):
+    put(tmp_path, "index.html", CLEAN)
+    put(tmp_path, ".claude/worktrees/x/bad.html", "<p>—</p>")
+    assert run(tmp_path) == ("pass", [])

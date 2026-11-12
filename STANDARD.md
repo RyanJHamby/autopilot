@@ -57,6 +57,7 @@ A rule's **level** says what a failing result does to the run: `fail` exits non-
 | `dependency-cooldown` | fail | enforced | all |
 | `install-scripts-off` | warn | audited | all |
 | `standard-wired` | fail | enforced | all |
+| `ui-no-vibe-tells` | fail | enforced | all |
 | `payments-pack` | fail | enforced | all |
 | `llm-pack` | fail | enforced | all |
 | `deploy-pack` | fail | enforced | all |
@@ -137,8 +138,12 @@ These rules carry `enforced` like the others, with the same third limit describe
 
 ## UI and landing pages
 
-Advisory, judgment only: no check reads a UI, so nothing here can fail a run. It applies to any landing page, marketing
-site, dashboard or app screen an agent builds. The goal is a UI that looks designed, not generated. Before building one,
+Partly enforced. The rule `ui-no-vibe-tells` (`since: 2026-11-11`, so strict for new repos and a warning for older ones) scans
+UI source (css, html, tsx, jsx, vue, svelte) and fails on what a pattern can see: fonts, Lucide and sparkle icons, em dashes,
+emoji and checkmark glyphs, pastel and pure-white colors, radial and purple gradients, glass, left stripes, large radii and
+shadows, hover animations, three-column grids, "it's not X, it's Y", testimonials, and an email field with no privacy or terms
+page. It cannot judge layout, whether a demo is real, or whether a testimonial is true: those are on the agent and the owner.
+It applies to any landing page, marketing site, dashboard or app screen an agent builds. The goal is a UI that looks designed, not generated. Before building one,
 pick a real palette and type scale from the product itself (its logo, its domain, a reference the owner names), and
 avoid every item below. If the owner explicitly asks for one of them, do it for that item only and say so.
 

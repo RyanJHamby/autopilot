@@ -6,46 +6,30 @@
 
 ## Goal (first prompt of the session)
 
+/Users/ryanhamby/Downloads/Lean\ Ship\ Stack\ 100+\ Workflow\ \&\ Small-Company\ Setup\ Tips.md  implement these, and first check my repos to see what is done so far and what is actually worth it. i want a lot to be set up out of the box for any new repos (it should never get missed), and systems that ensure at certain gates (like starting to charge customers) other things trigger. i can retrofit to past repos later, but for now at least think about how to prioritize the new ones and have at least a decent plan to retrofit
+i dont think you thought deeply enough about where the gaps are and what exactly are the best ways to phase thorugh it. do that and go deep on this
+go into plan mode first. i dont think you thought this through
+next
+next
+next
+go
+go
+recommended
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
 
+<system-reminder>
+<tools-used-before-summary>Agent, AskUserQuestion, Bash, Edit, EnterPlanMode, ExitPlanMode, Read, ToolSearch, WebFetch, Write</tools-used-before-summary>
+</system-reminder>
+Summary:
+1. Primary Request and Intent:
+   - Original: "implement these [Lean Ship Stack 100+ tips, file ~/Downloads/Lean Ship Stack 100+ Workflow & Small-Company Setup Tips.md], and first check my repos to see what is done so far and what is actually worth it. i want a lot to be set up out of the box for any new repos (it should never get missed), and systems that ensure at certain gates (like starting to charge customers) other things trigger. i can retrofit to past repos later, but for now at least think about how to prioritize the new ones and have at least a decent plan to retrofit."
+   - User pushed back twice for depth ("go deep", "go into plan mode first. i dont think you thought this through"); subsequent short approvals: "next", "go", "recommended".
+   - Side question mid-turn: "and should we migrate to vps? my 2019 mac has sensistive info and pics on it. maybe we want a sandboxed vps altogether ?" → led to the approved host-move plan (move apx executor off the shared 2019 Mac to an isolated Linux VPS).
+   - Current approved plan (file /Users/ryanhamby/.claude/plans/enchanted-stargazing-glade.md, "Move the apx executor off the shared Mac to an isolated Linux host"): P0 facts/Mac interim (owner-run), P1 portable Python (DONE), P2 Linux kit (IN PROGRESS), P3 provision+shadow (owner buys VPS), P4 cutover/retire Mac role, P5 later (per-job sandbox, capped API key, alert, hosted runners). Decisions: small paid x86 VPS; accounts + per-user nftables allowlist with DNS control; key-only SSH locked to owner IP; Mac interim = run four checks, pause if any fail. Docker/throwaway containers approved for local real-Linux verification.
 
-<pasted_content id="4dba">
-We're mothballing Zonevex (pausing, not killing). Goal: full revivability.
-Deadline: everything committed before Nov 16 (I start at Hume).
-Follow my proof-of-work conventions: small signed commits, a `pow log`
-entry for the decision, accurate README AI disclosure. NOTHING destructive:
-don't delete services, buckets, data or DNS, and don't cancel anything.
-I'll do that separately after the backups are verified.
-
-1. Decision record
-   - Write docs/DECISION-2026-11-sunset.md covering: what Zonevex did, what I
-     found (well-funded competitors/incumbents; HyperQ covering both the
-     developer and RTO sides), the pivots I considered and why I passed
-     (unclear distribution, unclear ROI), and revisit triggers (a buyer need
-     incumbents won't serve, inbound with a budget or pilot, an interconnection
-     rule change that opens a wedge, a distribution channel I can reach).
-     Ask me for anything you can't infer from the repo.
-   - Add a matching `pow log` entry.
-
-2. Backups (store OUTSIDE the repo at ~/Archive/zonevex/<date>/; never commit
-   dumps or secrets)
-   - Railway: use the railway CLI to `pg_dump -Fc` every Postgres DB. Also
-     back up any other datastores you find (Redis, volumes).
-   - Verify each dump: restore it into a throwaway local Postgres (docker) and
-     compare table row counts against prod. Report the results.
-   - R2: rclone sync every bucket; verify object counts and total bytes match.
-   - Env vars: list the variable NAMES per service/environment in
-     docs/REVIVAL.md. Don't print or write the values; I'll copy them into my
-     password manager myself.
-   - Encrypt the archive folder (age or gpg; ask me which key) and checksum it.
-
-3. Revival memo: docs/REVIVAL.md
-   - Architecture overview; every external service (Railway, R2, Loops,
-     domain/DNS, Google Workspace, G2/Capterra, anything else in the code or
-     config) and what each one is used for
-   - Exact steps to redeploy from scratch, plus where the backups live
-   - A dated snapshot of the competitor landscape (link the decision doc)
-
-4. Static "paused" site
+2. Key Technical Concepts:
+   - Autopilot repo (~/dev/autopilot, public, Python/uv, ruff line 130): `ap` CLI, project standard (`src/autopilot/standard/`: checks.yaml, engine.py, packs.yaml, capabilities.py), `since: YYYY-MM-DD` rule floor (grandfather older repos to warn; no-commit/non-repo = new; shallow clone = old unless `born_on`; `force_new` for revive), day-0 scaffold (`ap new`: .githooks/pre-commit linked into .git/hooks, Makefile setup/quick/check/audit/standard/standard-report, dependabot cooldown 7 days), capability packs (payments/llm/deploy; code/record/codeowners items; records self-attested, Verified date stale after 180 days), converge (audits GitHub default branch via shallow clone), burn-down history, `ap enable` revive gate, gates (`ap gate show/seed`, src/autopilot/gates/{__init__,core,command}.py + gates.yaml), pawl control repo (steps/artifacts JSON, `--root`, `--no-push`, explicit ids), apx executor (daemon, cilane, claude_runner, three accounts apx/apx-ci/apx-agent, sudo launcher, GitHub App key + Claude token, updater, fabric firewall package).
+   - apx hostenv portability: `hostenv.is_darwin()` single switch (tests patch only this, never global sys.platform), `home_of` via pw
 
 ## Diff summary (`git diff --stat`, base to wip, HANDOFF.md excluded)
 
@@ -79,23 +63,49 @@ I'll do that separately after the backups are verified.
 
 ### Claude
 
-I'll check both APIs' current docs before writing anything. I'm reading Zoho's Mail Admin API for domains and Cloudflare's DNS API.
+The signed commits, the push and the PR are running in the background. I'll report the PR link and the merge command when they finish.
 
 ### Claude
 
-I have the OAuth flow now. Next I'm reading the three domain pages Zoho linked, for the exact requests: add domain, verify domain, and enable hosting.
+Admin PR #33 is open, and I opened it in your browser: https://github.com/RyanJHamby/admin/pull/33. The remote head `bc16a0f` matches mine. It's off current main with no conflicts, and BLOCKED is the usual `ci` check.
+
+Merge #33:
+```
+! S=/private/tmp/claude-501/-Users-ryanhamby-dev-autopilot/e8b0deb5-052b-4248-a62c-0c747fff83da/scratchpad GO=1 REPO=RyanJHamby/admin PRS="33" bash /private/tmp/claude-501/-Users-ryanhamby-dev-autopilot/e8b0deb5-052b-4248-a62c-0c747fff83da/scratchpad/merge-pr.sh
+```
+
+**What it does (OQ-m-25).** Converge now asks the same freeze checker the git hooks use. Inside the window, or if the checker is unusable, it skips the fetch, pull and apply, records a skip that names the freeze, and does nothing else. The doctor, which only reads, still runs. No flag or variable 
 
 ### Claude
 
-That diff is my own edit. One line near the top of the README is now wrong, because it says the folder never changes DNS and the Cloudflare script does. I'm fixing it.
+#33 is merged. I'll pull `~/dev/admin` with the overlap check, then confirm what the live copy now renders for the daily job, read-only.
 
 ### Claude
 
-The README edit applied. Now I'll log it, commit signed, push and open the PR.
+`~/dev/admin` is now at `ac3e388`, with your uncommitted `home_dir_gate.py` change untouched. The repo now renders the daily job at 19:07, but the job installed on your machine is still the old 09:07 one. `--check` exits 1, which confirms it.
+
+**Reinstall it so the new time takes effect.** It's persistence on your machine, so it's yours to run:
+```
+! ~/dev/admin/scripts/install-doctor-job.sh --install
+```
+Then run `--check` on the same script and it should exit 0.
+
+If you skip this, nothing breaks. The old 09:07 job still runs, but the converge it calls now skips inside the window, so on weekdays it would only pull at login outside the window. The reinstall is what makes the daily pull happen.
+
+**Everything I own is merged and live.** The only things still waiting are on you:
+1. **Before M
 
 ### Claude
 
-API Error: Your computer went to sleep mid-response. The response above may be incomplete.
+The reinstall ran. I'll verify the installed job and see what the run it triggered at load did, read-only.
+
+### Claude
+
+The daily job is reinstalled and current: `--check` exits 0, the time is 19:07, and both jobs are loaded and healthy. The run it made at load shows two things you should know about.
+
+**1. Converge can't pull while your live checkout has an uncommitted change.** It skipped with "tracked files have uncommitted changes". That's your edit to `guardrails/hooks/home_dir_gate.py` in `~/dev/admin`. It changes the home-directory hook from blocking a prompt to a one-time reminder. Because `~/dev/admin`'s working tree is the installed hooks, your edit is already live.
+- Until that change is committed or discarded, the daily converge will skip every run and never auto-pull.
+- The repo's own flow is a scratch clone and a PR, so I can deliver the exact diff that way and you merge it, which also makes th
 
 ### User
 
@@ -103,69 +113,61 @@ go
 
 ### Claude
 
-PR #751 is open: https://github.com/RyanJHamby/gis-analysis-checker/pull/751. It has the two scripts, the env example and the corrected README. Merge it with `gh pr merge 751 --merge -R RyanJHamby/gis-analysis-checker` (type the repo name without a trailing period).
-
-**What's in it**
-- **`zoho_api.py`:** `token`, `add-domain`, `verify txt|cname|html`, `enable-hosting` and `show`. The endpoints and modes come from Zoho's API pages, which I read today.
-- **`cloudflare_dns.py`:** `list`, `verify-cname` and `cutover`.
-- **Cutover behaviour:**
-  - It saves every record to a JSON backup first.
-  - It adds the three Zoho MX records before removing the five Google ones, so the domain is never left without MX.
-  - It replaces only the SPF record, and leaves the `google-site-verification` and Vercel
-
-### User
-
-merge it
+I'm taking "go" as a yes to delivering your `home_dir_gate.py` change as a PR. I'll copy your exact diff into a scratch clone and leave your live copy alone. Before committing, I'll check whether any existing tests depend on the old blocking behavior.
 
 ### Claude
 
-The merge is still blocked for me by the permission settings. It was denied on #745 and #747, so I'm not trying again. Please run it yourself, and keep the repo name free of any trailing period:
-
-```
-gh pr merge 751 --merge -R RyanJHamby/gis-analysis-checker
-```
-
-Tell me when it's done and I'll confirm with git that `main` has it. If you'd rather I do the merges from now on, you can allow `gh pr merge` in your Claude Code settings.
+Now I know exactly what the hook does: it fails open on malformed input, stays silent outside `$HOME`, and reminds once per session. I'll write the tests first.
 
 ### Claude
 
-PR #751 is merged. `origin/main` is at `48174d7`, which includes the Zoho and Cloudflare scripts in `scripts/email-move/` (commit `0a0cd46`, signed).
-
-**Where you are on the email move.** The scripts are in `main`, but nothing has run against Zoho or Cloudflare yet. Your next steps are all in a browser:
-1. In Zoho, note your **data center** (the address-bar suffix) and your **organization ID** from the Admin Console.
-2. At https://api-console.zoho.com/, create a **Self Client** and generate a one-time grant code with the scope `ZohoMail.organization.domains.ALL`.
-3. In Cloudflare, create an API token with DNS write on the `zonevex.com` zone.
-4. Put each secret in its own mode-600 file, and copy `zoho-api.env.example` to `~/Archive/zonevex/zoho-api.env`.
-
-Then follow the sequence in `script
-
-### User
-
-lets park this for now. write the blog post
+The old-version check and the seven mutations are running in the background. Meanwhile I'll register the test and write the journal entry.
 
 ### Claude
 
-I'm parking the email work. Writing the post needs one thing settled first. Your writing rules say the `[HUMAN]` sections come only from your `seed.md`, and that file is still empty. Your own recorded notes hold plenty to work from, though, so I'll build the draft from those and label each source. I'm also reading the two primary sources for the HyperQ claims now, so I can cite them properly.
+All eight checks fail the way they should: the old blocking version and seven deliberate breaks. Now the full suite on the final tree.
 
 ### Claude
 
-The Tapestry page read cleanly, and it has a newer Nov 10 entry that my notes didn't. The PJM release came back as raw PDF data, but a local copy was saved, so I'll read it directly.
+The full suite is running on the final tree. I'll commit, push and open the PR when it's green.
 
 ### Claude
 
-That change is my own edit. Now I'm writing the source map: every statement in the draft that came from your recorded notes, with where it came from, so you can confirm or rewrite each one.
+The full suite passes: 735 ok, 0 FAIL, exit 0. Now the signed commits, the push and the PR.
 
 ### Claude
 
-The draft is written, but you can't publish it yet. It's about 920 words in your dead-end template, and it's committed locally and signed. It's on `draft/zonevex-retrospective` in `~/dev/RyanJHamby.github.io`, and I haven't pushed it because that repo is public.
+The signed commits, the push and the PR are running in the background. I'll report the PR link and the merge steps when they finish.
 
-**What it says.** The title is "Why I paused the site-control checker I built for PJM's interconnection queue".
-- The top gives the TL;DR, why it matters, and an "as of" date.
-- Then comes what you believed, what you built, and what happened, with the PJM and HyperQ facts.
-- Then your own explanation for why it stalled, offered as opinion, and your revisit conditions.
-- It ends on an open question: would a developer pay for a second opinion on site control from someone who isn't the RTO's reviewer?
+### Claude
 
-**Sources I actually read today
+Admin PR #34 is open, and I opened it in your browser: https://github.com/RyanJHamby/admin/pull/34. The remote head `ce1573d` matches mine. It's off current main with no conflicts, and BLOCKED is the usual `ci` check.
+
+**What it is.** It's your own uncommitted edit to `guardrails/hooks/home_dir_gate.py`, copied byte for byte. It changes the hook from blocking a prompt in your home directory to a once-per-session reminder. I didn't decide whether that change is what you want. Say if you'd rather keep the blocking version.
+
+**Why it matters now.** That edit was already live, because `~/dev/admin`'s working tree is the installed hooks. It was also making every daily converge run skip, so the daily pull never happened. Merging this and pulling makes that checkout clean again.
+
+**What I added.*
+
+### Claude
+
+#34 is merged. As I said, your live checkout still has that same edit uncommitted, and pulling a commit that contains it can conflict. Before I touch anything, I'll check whether your working copy is byte-for-byte what just landed on `main`.
+
+### Claude
+
+Your `~/dev/admin` is clean and current at `1148f0f`, on `main`, tracking `origin/main`, with no stashes and no uncommitted files.
+
+**What I did, exactly**
+1. Compared your working copy of `home_dir_gate.py` to the version that just landed: byte-for-byte identical, and the only uncommitted file.
+2. Stashed it (recoverable) and fast-forwarded.
+3. Checked that the live hook equals the landed version and that the stash equals it too, then dropped the stash.
+
+Nothing was lost: what I removed was a redundant copy of the change that's now on `main`.
+
+**Live state after the pull**
+- The identity gate and freeze gate both pass in a real repo.
+- Both launch jobs, the daily doctor job and the freeze job, are current (`--check` exits 0).
+- The daily converge can pull again, because the checkout is cl
 
 ### User
 
@@ -173,27 +175,17 @@ go
 
 ### Claude
 
-"Go" doesn't say which of the open items you mean, and the draft can't move without your input on most of them. One item needs no input from you and is non-destructive: the figure your rules require for every post. I'm building it from captured data, so it's checkable.
+I'll do a last health check on the two jobs, since that's the only thing left that I can verify.
 
 ### Claude
 
-Now the throwaway virtual environment with `matplotlib`. I'll record whatever version it resolves to and pin it in the script.
+Both jobs are healthy. It's Friday 4:08 pm ET: the freeze job's log is empty (quiet), the resolver says "no freeze yet", and `~/dev/admin` is clean on `main`. The converge's last run, at 3:51 pm, is the skip from before the checkout was clean. Tonight's 19:07 run will be the first real pull, and I can check it tomorrow.
 
-### Claude
+I have nothing more I can do on this thread without you. Everything I own is built, merged and live. What's left is yours:
 
-The script ran and the values match the captured run. I'm checking the image by eye, because the lint can't judge a chart.
-
-### Claude
-
-I built the post's one shareable figure, and in doing so I found and fixed an error in my own draft. The draft isn't publishable yet, and it's committed locally only (`eddc992`, signed).
-
-**The error.** I'd written that you built Zonevex "from February to October". A `pow run` of the repo's commit history says otherwise:
-
-| Month (2026) | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct |
-|---|---|---|---|---|---|---|---|---|---|
-| Commits | 148 | 199 | 44 | 338 | 100 | 0 | 0 | 0 | 7 |
-
-The build ran February to June. Then came a silent summer and a small October burst. I rewrote the TL;DR and "What I did" to match, and I added a claim in `claims.yaml` whose total checks out at 836. The post is more honest this way, and the summer gap is the question it now has to answer.
-
-**The figure.
+1. **Before Monday 08:30 ET:** enable the agent-kit plugin with `/plugin`. It's the only freeze piece not in place.
+2. **Monday ~08:35 ET:** ask me to check the freeze log. That's the first real test.
+3. **Tomorrow or later:** ask me to run `ots upgrade` on both timestamps, and to check tonight's converge pull.
+4. **Your own steps:**
+   - Run the secr
 

@@ -32,7 +32,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import ship
+from . import claude_floor, ship
 from .ship import Stop, _json, _out, sh
 
 INIT_BRANCH = "autopilot/init"
@@ -135,6 +135,10 @@ def _poll(env: LaunchEnv, pred: Callable[[], bool], what: str) -> None:
 
 
 def preflight(env: LaunchEnv, ns: argparse.Namespace) -> Ctx:
+    rc, out = env.run(["claude", "--version"])
+    floor_ok, floor_detail = claude_floor.check_result(rc, out)
+    if not floor_ok:
+        raise Stop(f"Claude Code is not usable here: {floor_detail} (the floor is in policy/claude.yaml)")
     if not NAME_RE.match(ns.repo.split("/")[-1]) or ns.repo.count("/") > 1:
         raise Stop(f"not a repo name: {ns.repo!r}")
     pf = env.portfolio()

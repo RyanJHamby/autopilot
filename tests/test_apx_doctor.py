@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from autopilot import claude_floor
 from autopilot.apx import daemon as dm
 from autopilot.apx import doctor as dr
 from autopilot.apx.github import GitHubError
@@ -101,6 +102,7 @@ def run(s, **kw):
     kw.setdefault("approved", lambda repo: ["a" * 40])
     kw.setdefault("api_factory", factory())
     kw.setdefault("launcher", Stub())
+    kw.setdefault("claude_probe", lambda binary: "2.1.323 (Claude Code)\n")
     return {c.name: c for c in dr.run_doctor(s, **kw)}
 
 
@@ -235,7 +237,8 @@ def test_other_sandbox_misconfigurations_each_fail_their_own_check(tmp_path):
 class AgentStub:
     """Stands in for the model's account: usable, standard user, denied the write key and the orchestrator home, owns a valid token."""
 
-    def __init__(self, leak=(), admin=False, bad_token=False, no_cli=False, no_workdir=False, dead=False):
+    def __init__(self, leak=(), admin=False, bad_token=False, no_cli=False, no_workdir=False, dead=False, version="2.1.312 (Claude Code)\n"):
+        self.version = version
         self.leak, self.admin, self.bad_token, self.no_cli, self.no_workdir, self.dead = (
             leak,
             admin,
@@ -268,7 +271,7 @@ class AgentStub:
         if argv[1:2] == ["-c"]:
             return R(0, "BAD too short (3 chars)\n" if self.bad_token else "OK\n")
         if argv[1:2] == ["--version"]:
-            return R(1 if self.no_cli else 0, "2.1.312 (Claude Code)\n")
+            return R(1 if self.no_cli else 0, self.version)
         return R(0)
 
 
@@ -276,6 +279,7 @@ def run_agent_doctor(s, agent=None, **kw):
     kw.setdefault("which", lambda t: f"/usr/bin/{t}")
     kw.setdefault("approved", lambda repo: ["a" * 40])
     kw.setdefault("api_factory", factory())
+    kw.setdefault("claude_probe", lambda binary: "2.1.323 (Claude Code)\n")
     return {c.name: c for c in dr.run_doctor(s, launcher=Stub(), agent_launcher=agent or AgentStub(), **kw)}
 
 
@@ -334,3 +338,45 @@ def test_other_agent_misconfigurations_each_fail_their_own_check(tmp_path):
     assert not run_agent_doctor(s, AgentStub(no_workdir=True))["agent work directory exists and is writable"].ok
     dead = run_agent_doctor(s, AgentStub(dead=True))  # sudo broken must fail checks, never crash the doctor
     assert not dead["agent account is usable via sudo"].ok
+
+
+# --- the Claude Code version floor (W0-19) ---
+def test_the_operators_claude_must_meet_the_floor(tmp_path):
+    s = settings(tmp_path, ci_user="apx-ci")
+    name = "claude meets the version floor"
+    assert run(s)[name].ok
+    assert run(s, claude_probe=lambda b: "2.1.302 (Claude Code)\n")[name].ok
+    low = run(s, claude_probe=lambda b: "2.1.301 (Claude Code)\n")[name]
+    assert not low.ok and "2.1.301" in low.detail and "2.1.302" in low.detail
+
+
+def test_an_unprobeable_or_unparsable_claude_fails_the_floor_check_and_never_crashes_the_doctor(tmp_path):
+    s = settings(tmp_path, ci_user="apx-ci")
+    name = "claude meets the version floor"
+
+    def missing(b):
+        raise claude_floor.FloorError("claude is not installed")
+
+    def crash(b):
+        raise RuntimeError("surprise")
+
+    assert not run(s, claude_probe=missing)[name].ok
+    assert not run(s, claude_probe=crash)[name].ok
+    assert not run(s, claude_probe=lambda b: "garbage")[name].ok
+
+
+def test_the_agent_accounts_claude_must_meet_the_floor_too(tmp_path):
+    s = settings(tmp_path, ci_user="apx-ci", agent_user="apx-agent")
+    name = "agent account claude meets the version floor"
+    assert run_agent_doctor(s)[name].ok
+    low = run_agent_doctor(s, AgentStub(version="2.1.301 (Claude Code)\n"))[name]
+    assert not low.ok and "2.1.301" in low.detail
+    assert not run_agent_doctor(s, AgentStub(version="garbage"))[name].ok
+    assert not run_agent_doctor(s, AgentStub(no_cli=True))[name].ok
+
+
+def test_a_failing_floor_check_makes_the_doctor_fail(tmp_path):
+    s = settings(tmp_path, ci_user="apx-ci")
+    out = run(s, claude_probe=lambda b: "2.1.1 (Claude Code)\n")
+    text, ok = dr.render(list(out.values()))
+    assert ok is False and "version floor" in text

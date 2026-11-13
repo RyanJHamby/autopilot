@@ -1,0 +1,5 @@
+# The lowest Claude Code version any machine or runner may use. Read by `ap doctor`, `apx doctor` and `ap launch-repo`
+# through src/autopilot/claude_floor.py; this file is the only place the number lives, and nothing can lower it at run time.
+# 2.1.302 is the stricter of the two values in the hardening plan (A1-02 says 2.1.302; P5-13 and P13-01 say 2.1.163, the
+# fix for CVE-2026-54316), so it covers both. The owner confirms or changes it by editing this one line in a reviewed PR.
+min_version: "2.1.302"

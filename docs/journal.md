@@ -612,3 +612,7 @@ Second owner checklist (30 items, niki.aroca reel) merged into ui-no-vibe-tells:
 ## 2026-11-11 21:20 EST (at 42428d9)
 
 Audit of all 59 screenshot items vs ui-no-vibe-tells found gaps; added neon, purple, rainbow/harsh multi-hue gradients, terminal traffic-light dots, badge above h1, 3 pricing tiers (Starter/Pro/Enterprise), checkmark icons, unproven claims, spinner-without-skeleton, CSS big shadow/radius/hover transform, unlabeled inputs, iframe title, http embeds, more buzzwords and fake persona names; checkout/pricing now triggers policy-page requirement. Found and fixed a real bug: LINE_COMMENT used \s* and swallowed blank lines so reported line numbers drifted (mutant killed by new test). Still manual: layout feel, real demos, claim truth, spacing consistency beyond px literals. Heuristic risks: purple/neon/label rules may over-fire; warn for old repos, waivers for exceptions.
+
+## 2026-11-12 20:37 EST (at 7be0870)
+
+W0-10 part 1: freeze resolver (src/autopilot/freeze.py) built test-first, 49 tests, DST days and fail-closed paths covered. Dead end: policy/time.yaml cannot be written by the agent session (policy/ is protected), so it is staged in the scratchpad for the owner to place; 7 tests fail until then. First fixed-offset mutation survived (aware datetimes compare by instant), so I mutated the window edges instead, which the tests catch. Open: apx window.py is the inverse policy and is left alone; admin and agent-kit need a copy of time.yaml (generator).

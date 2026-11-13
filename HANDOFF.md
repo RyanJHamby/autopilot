@@ -6,30 +6,46 @@
 
 ## Goal (first prompt of the session)
 
-/Users/ryanhamby/Downloads/Lean\ Ship\ Stack\ 100+\ Workflow\ \&\ Small-Company\ Setup\ Tips.md  implement these, and first check my repos to see what is done so far and what is actually worth it. i want a lot to be set up out of the box for any new repos (it should never get missed), and systems that ensure at certain gates (like starting to charge customers) other things trigger. i can retrofit to past repos later, but for now at least think about how to prioritize the new ones and have at least a decent plan to retrofit
-i dont think you thought deeply enough about where the gaps are and what exactly are the best ways to phase thorugh it. do that and go deep on this
-go into plan mode first. i dont think you thought this through
-next
-next
-next
-go
-go
-recommended
-This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
 
-<system-reminder>
-<tools-used-before-summary>Agent, AskUserQuestion, Bash, Edit, EnterPlanMode, ExitPlanMode, Read, ToolSearch, WebFetch, Write</tools-used-before-summary>
-</system-reminder>
-Summary:
-1. Primary Request and Intent:
-   - Original: "implement these [Lean Ship Stack 100+ tips, file ~/Downloads/Lean Ship Stack 100+ Workflow & Small-Company Setup Tips.md], and first check my repos to see what is done so far and what is actually worth it. i want a lot to be set up out of the box for any new repos (it should never get missed), and systems that ensure at certain gates (like starting to charge customers) other things trigger. i can retrofit to past repos later, but for now at least think about how to prioritize the new ones and have at least a decent plan to retrofit."
-   - User pushed back twice for depth ("go deep", "go into plan mode first. i dont think you thought this through"); subsequent short approvals: "next", "go", "recommended".
-   - Side question mid-turn: "and should we migrate to vps? my 2019 mac has sensistive info and pics on it. maybe we want a sandboxed vps altogether ?" → led to the approved host-move plan (move apx executor off the shared 2019 Mac to an isolated Linux VPS).
-   - Current approved plan (file /Users/ryanhamby/.claude/plans/enchanted-stargazing-glade.md, "Move the apx executor off the shared Mac to an isolated Linux host"): P0 facts/Mac interim (owner-run), P1 portable Python (DONE), P2 Linux kit (IN PROGRESS), P3 provision+shadow (owner buys VPS), P4 cutover/retire Mac role, P5 later (per-job sandbox, capped API key, alert, hosted runners). Decisions: small paid x86 VPS; accounts + per-user nftables allowlist with DNS control; key-only SSH locked to owner IP; Mac interim = run four checks, pause if any fail. Docker/throwaway containers approved for local real-Linux verification.
 
-2. Key Technical Concepts:
-   - Autopilot repo (~/dev/autopilot, public, Python/uv, ruff line 130): `ap` CLI, project standard (`src/autopilot/standard/`: checks.yaml, engine.py, packs.yaml, capabilities.py), `since: YYYY-MM-DD` rule floor (grandfather older repos to warn; no-commit/non-repo = new; shallow clone = old unless `born_on`; `force_new` for revive), day-0 scaffold (`ap new`: .githooks/pre-commit linked into .git/hooks, Makefile setup/quick/check/audit/standard/standard-report, dependabot cooldown 7 days), capability packs (payments/llm/deploy; code/record/codeowners items; records self-attested, Verified date stale after 180 days), converge (audits GitHub default branch via shallow clone), burn-down history, `ap enable` revive gate, gates (`ap gate show/seed`, src/autopilot/gates/{__init__,core,command}.py + gates.yaml), pawl control repo (steps/artifacts JSON, `--root`, `--no-push`, explicit ids), apx executor (daemon, cilane, claude_runner, three accounts apx/apx-ci/apx-agent, sudo launcher, GitHub App key + Claude token, updater, fabric firewall package).
-   - apx hostenv portability: `hostenv.is_darwin()` single switch (tests patch only this, never global sys.platform), `home_of` via pw
+<pasted_content id="4dba">
+We're mothballing Zonevex (pausing, not killing). Goal: full revivability.
+Deadline: everything committed before Nov 16 (I start at Hume).
+Follow my proof-of-work conventions: small signed commits, a `pow log`
+entry for the decision, accurate README AI disclosure. NOTHING destructive:
+don't delete services, buckets, data or DNS, and don't cancel anything.
+I'll do that separately after the backups are verified.
+
+1. Decision record
+   - Write docs/DECISION-2026-11-sunset.md covering: what Zonevex did, what I
+     found (well-funded competitors/incumbents; HyperQ covering both the
+     developer and RTO sides), the pivots I considered and why I passed
+     (unclear distribution, unclear ROI), and revisit triggers (a buyer need
+     incumbents won't serve, inbound with a budget or pilot, an interconnection
+     rule change that opens a wedge, a distribution channel I can reach).
+     Ask me for anything you can't infer from the repo.
+   - Add a matching `pow log` entry.
+
+2. Backups (store OUTSIDE the repo at ~/Archive/zonevex/<date>/; never commit
+   dumps or secrets)
+   - Railway: use the railway CLI to `pg_dump -Fc` every Postgres DB. Also
+     back up any other datastores you find (Redis, volumes).
+   - Verify each dump: restore it into a throwaway local Postgres (docker) and
+     compare table row counts against prod. Report the results.
+   - R2: rclone sync every bucket; verify object counts and total bytes match.
+   - Env vars: list the variable NAMES per service/environment in
+     docs/REVIVAL.md. Don't print or write the values; I'll copy them into my
+     password manager myself.
+   - Encrypt the archive folder (age or gpg; ask me which key) and checksum it.
+
+3. Revival memo: docs/REVIVAL.md
+   - Architecture overview; every external service (Railway, R2, Loops,
+     domain/DNS, Google Workspace, G2/Capterra, anything else in the code or
+     config) and what each one is used for
+   - Exact steps to redeploy from scratch, plus where the backups live
+   - A dated snapshot of the competitor landscape (link the decision doc)
+
+4. Static "paused" site
 
 ## Diff summary (`git diff --stat`, base to wip, HANDOFF.md excluded)
 
@@ -63,129 +79,121 @@ Summary:
 
 ### Claude
 
-The signed commits, the push and the PR are running in the background. I'll report the PR link and the merge command when they finish.
+I'll check where things stand before saying anything: whether the Railway repo is disconnected and whether #753 is merged.
 
 ### Claude
 
-Admin PR #33 is open, and I opened it in your browser: https://github.com/RyanJHamby/admin/pull/33. The remote head `bc16a0f` matches mine. It's off current main with no conflicts, and BLOCKED is the usual `ci` check.
+Neither step is done yet, so "go" hasn't changed anything I can see.
 
-Merge #33:
-```
-! S=/private/tmp/claude-501/-Users-ryanhamby-dev-autopilot/e8b0deb5-052b-4248-a62c-0c747fff83da/scratchpad GO=1 REPO=RyanJHamby/admin PRS="33" bash /private/tmp/claude-501/-Users-ryanhamby-dev-autopilot/e8b0deb5-052b-4248-a62c-0c747fff83da/scratchpad/merge-pr.sh
-```
+- **Railway:** both services, `api` and `harvest-ferc-worker`, are still connected to `RyanJHamby/gis-analysis-checker`. The worker is linked too, so it may build on pushes as well.
+- **PR #753:** not merged. `main` is still at `69251fd`.
 
-**What it does (OQ-m-25).** Converge now asks the same freeze checker the git hooks use. Inside the window, or if the checker is unusable, it skips the fetch, pull and apply, records a skip that names the freeze, and does nothing else. The doctor, which only reads, still runs. No flag or variable 
+**Do these in order:**
+1. In Railway, open project `striking-generosity`. For **each** of the two services, go to Settings, then Source, and disconnect the repo. You can reconnect later, and it deletes nothing.
+2. Tell me when it's done. I'll check that both services show no source before you merge anything else.
+3. Then merge #753 with `gh pr merge 753 --merge -R RyanJHamby/gis-analysis-checker`. Without the disconnect, it would send you a ninth failed-build email.
 
-### Claude
-
-#33 is merged. I'll pull `~/dev/admin` with the overlap check, then confirm what the live copy now renders for the daily job, read-only.
-
-### Claude
-
-`~/dev/admin` is now at `ac3e388`, with your uncommitted `home_dir_gate.py` change untouched. The repo now renders the daily job at 19:07, but the job installed on your machine is still the old 09:07 one. `--check` exits 1, which confirms it.
-
-**Reinstall it so the new time takes effect.** It's persistence on your machine, so it's yours to run:
-```
-! ~/dev/admin/scripts/install-doctor-job.sh --install
-```
-Then run `--check` on the same script and it should exit 0.
-
-If you skip this, nothing breaks. The old 09:07 job still runs, but the converge it calls now skips inside the window, so on weekdays it would only pull at login outside the window. The reinstall is what makes the daily pull happen.
-
-**Everything I own is merged and live.** The only things still waiting are on you:
-1. **Before M
-
-### Claude
-
-The reinstall ran. I'll verify the installed job and see what the run it triggered at load did, read-only.
-
-### Claude
-
-The daily job is reinstalled and current: `--check` exits 0, the time is 19:07, and both jobs are loaded and healthy. The run it made at load shows two things you should know about.
-
-**1. Converge can't pull while your live checkout has an uncommitted change.** It skipped with "tracked files have uncommitted changes". That's your edit to `guardrails/hooks/home_dir_gate.py` in `~/dev/admin`. It changes the home-directory hook from blocking a prompt to a one-time reminder. Because `~/dev/admin`'s working tree is the installed hooks, your edit is already live.
-- Until that change is committed or discarded, the daily converge will skip every run and never auto-pull.
-- The repo's own flow is a scratch clone and a PR, so I can deliver the exact diff that way and you merge it, which also makes th
+I'm leaving the Ra
 
 ### User
 
-go
+just run scripts
 
 ### Claude
 
-I'm taking "go" as a yes to delivering your `home_dir_gate.py` change as a PR. I'll copy your exact diff into a scratch clone and leave your live copy alone. Before committing, I'll check whether any existing tests depend on the old blocking behavior.
-
-### Claude
-
-Now I know exactly what the hook does: it fails open on malformed input, stays silent outside `$HOME`, and reminds once per session. I'll write the tests first.
-
-### Claude
-
-The old-version check and the seven mutations are running in the background. Meanwhile I'll register the test and write the journal entry.
-
-### Claude
-
-All eight checks fail the way they should: the old blocking version and seven deliberate breaks. Now the full suite on the final tree.
-
-### Claude
-
-The full suite is running on the final tree. I'll commit, push and open the PR when it's green.
-
-### Claude
-
-The full suite passes: 735 ok, 0 FAIL, exit 0. Now the signed commits, the push and the PR.
-
-### Claude
-
-The signed commits, the push and the PR are running in the background. I'll report the PR link and the merge steps when they finish.
-
-### Claude
-
-Admin PR #34 is open, and I opened it in your browser: https://github.com/RyanJHamby/admin/pull/34. The remote head `ce1573d` matches mine. It's off current main with no conflicts, and BLOCKED is the usual `ci` check.
-
-**What it is.** It's your own uncommitted edit to `guardrails/hooks/home_dir_gate.py`, copied byte for byte. It changes the hook from blocking a prompt in your home directory to a once-per-session reminder. I didn't decide whether that change is what you want. Say if you'd rather keep the blocking version.
-
-**Why it matters now.** That edit was already live, because `~/dev/admin`'s working tree is the installed hooks. It was also making every daily converge run skip, so the daily pull never happened. Merging this and pulling makes that checkout clean again.
-
-**What I added.*
-
-### Claude
-
-#34 is merged. As I said, your live checkout still has that same edit uncommitted, and pulling a commit that contains it can conflict. Before I touch anything, I'll check whether your working copy is byte-for-byte what just landed on `main`.
-
-### Claude
-
-Your `~/dev/admin` is clean and current at `1148f0f`, on `main`, tracking `origin/main`, with no stashes and no uncommitted files.
-
-**What I did, exactly**
-1. Compared your working copy of `home_dir_gate.py` to the version that just landed: byte-for-byte identical, and the only uncommitted file.
-2. Stashed it (recoverable) and fast-forwarded.
-3. Checked that the live hook equals the landed version and that the stash equals it too, then dropped the stash.
-
-Nothing was lost: what I removed was a redundant copy of the change that's now on `main`.
-
-**Live state after the pull**
-- The identity gate and freeze gate both pass in a real repo.
-- Both launch jobs, the daily doctor job and the freeze job, are current (`--check` exits 0).
-- The daily converge can pull again, because the checkout is cl
+"Run scripts" could mean several things, and the ones I've written need credentials I haven't seen. I'll check whether you've set up the config they read, without opening any file's contents.
 
 ### User
 
-go
+[Request interrupted by user]
+
+### User
+
+actually done with disconnects
 
 ### Claude
 
-I'll do a last health check on the two jobs, since that's the only thing left that I can verify.
+Thanks. I'm verifying the disconnects on Railway's side first.
 
 ### Claude
 
-Both jobs are healthy. It's Friday 4:08 pm ET: the freeze job's log is empty (quiet), the resolver says "no freeze yet", and `~/dev/admin` is clean on `main`. The converge's last run, at 3:51 pm, is the skip from before the checkout was clean. Tonight's 19:07 run will be the first real pull, and I can check it tomorrow.
+Railway still reports both services as connected to `RyanJHamby/gis-analysis-checker`, so I can't confirm the disconnect. Either it didn't take, or the CLI's view lags behind.
 
-I have nothing more I can do on this thread without you. Everything I own is built, merged and live. What's left is yours:
+Please check in the Railway dashboard. For each of `api` and `harvest-ferc-worker`, open Settings, then Source. A disconnected service shows a **Connect Repo** button and no repo name. If it still shows the repo, the disconnect didn't save: click Disconnect, confirm any prompt, and reload the page to check.
 
-1. **Before Monday 08:30 ET:** enable the agent-kit plugin with `/plugin`. It's the only freeze piece not in place.
-2. **Monday ~08:35 ET:** ask me to check the freeze log. That's the first real test.
-3. **Tomorrow or later:** ask me to run `ots upgrade` on both timestamps, and to check tonight's converge pull.
-4. **Your own steps:**
-   - Run the secr
+Tell me when both show "Connect Repo", and I'll re-run the check. If it then reports no source, merge #753 safely. If the CLI still disagrees with a dashboard that clearly shows disconnected, I'll trust the dashboard and say so.
+
+About "just run scripts": nothing I wrote can run yet, because the Zoho and Cloudfl
+
+### User
+
+[Image #6] done
+
+### User
+
+[Image: source: /var/folders/n7/6rffgrz57nz8jmz85gl_0rwh0000gn/T/TemporaryItems/NSIRD_screencaptureui_ns8n6z/Screenshot 2026-11-13 at 5.21.28 PM.png]
+
+### Claude
+
+This explains it, and it's not quite done yet. The screenshot shows Railway's **staged changes** bar: "Apply 4 changes" with a **Deploy** button, and both services marked "Edited" with "2 Changes". The disconnect is staged, not applied. That's why the CLI still shows the repo.
+
+**What to do:**
+1. Click **Details** first. It lists the 4 changes. Check that they're only the repo disconnects (two per service), and nothing like a redeploy or a variable change.
+2. If they are, apply them. The **Deploy** button applies the changes and may also redeploy the services. With no repo connected there should be nothing to build, but I'm not certain what Railway does with the existing June deployment. Look in the **⋮** menu next to Deploy for an option to apply without deploying. I haven't verified that
+
+### User
+
+deployed
+
+### Claude
+
+The disconnect is applied. Both services now show **no repo source**, and applying the changes didn't trigger a new build. The latest deployments are still the earlier failed ones, so nothing new started. The worker was also failing on every push (the same failed builds, at the same times), so you were likely getting a second email per merge.
+
+You can merge #753 now without another failure email:
+
+```
+gh pr merge 753 --merge -R RyanJHamby/gis-analysis-checker
+```
+
+Tell me when it's done and I'll confirm with git.
+
+**Still open, all yours:**
+1. **Railway running cost.** The June deployment may still be running with a public address and no database. Look at the `api` service's deployments, and stop or remove the active one if you want it off. I haven't touched it.
+2. **Blog post.** The draft
+
+### Claude
+
+PR #753 is merged. `origin/main` is at `6530598`, which includes the signed commit `ae83e7a`. `REVIVAL.md` now records the failed Railway builds, and the decision record carries your 2,454 figure.
+
+**The Railway fix worked.** The newest `api` deployment is still the earlier failed one from 22:03, so this merge started no new build. You shouldn't get another "Build failed" email.
+
+**What's left, all yours:**
+1. **Railway running cost.** The June deployment of `api` may still be running with a public address and no database. Check the service's deployments, and stop or remove it if you want it off.
+2. **Blog post.** The draft is local only (`315bbc9`), because the site repo is public. Before publishing:
+   - check the 2,454 count and the one reply against your email tool
+   - check the Cal.c
+
+### User
+
+i dont want charges for railway anymore. make the blog post, put it on my dev website first
+
+### Claude
+
+Two things, and the Railway one costs money, so I'm doing it first. First I'm identifying exactly what's running, since removing it stops the service.
+
+### Claude
+
+`sed -i` needs a different form on macOS, so that step didn't run. I'm redoing it in Python.
+
+### Claude
+
+Now the draft: a sanitized NOTES block (nothing about private notes or internal decisions), front matter with a description, the footer pointing at the new runs, and a changelog.
+
+### Claude
+
+My greps probably missed because the HTML is minified, with unquoted attributes. I'm looking at the real output.
+
+### Claude
+
+The rendered page is 1 byte, so it's empty. That could be a problem with my page or with the site build itself. I'm comparing it to the existing FlowState page and checking the theme.
 

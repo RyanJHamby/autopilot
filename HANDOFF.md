@@ -77,123 +77,126 @@ I'll do that separately after the backups are verified.
 
 ## Last 20 exchanges
 
+### User
+
+subtitle
+
 ### Claude
 
-I'll check where things stand before saying anything: whether the Railway repo is disconnected and whether #753 is merged.
+The subtitle is on your clipboard (172 characters):
 
-### Claude
+**Why I paused Zonevex, software that checked site control against interconnection-queue rules: the outreach result, PJM's own AI review tool, and what I would build instead.**
 
-Neither step is done yet, so "go" hasn't changed anything I can see.
+It repeats "Why I paused" from the title. If you want something tighter, here's an alternative at 100 characters, which says it's a postmortem and gives the result:
 
-- **Railway:** both services, `api` and `harvest-ferc-worker`, are still connected to `RyanJHamby/gis-analysis-checker`. The worker is linked too, so it may build on pushes as well.
-- **PR #753:** not merged. `main` is still at `69251fd`.
+**2,454 cold emails, one reply, no customers, and what PJM's own AI tool changed about the bet.**
 
-**Do these in order:**
-1. In Railway, open project `striking-generosity`. For **each** of the two services, go to Settings, then Source, and disconnect the repo. You can reconnect later, and it deletes nothing.
-2. Tell me when it's done. I'll check that both services show no source before you merge anything else.
-3. Then merge #753 with `gh pr merge 753 --merge -R RyanJHamby/gis-analysis-checker`. Without the disconnect, it would send you a ninth failed-build email.
-
-I'm leaving the Ra
+The second one claims the AI tool "changed the bet", and the post only says it overlapped with your work. Use it only if you're comfortable with that framing. Say "copy the alternative" and I'll put it on the clipboard instead. I can also copy the figure's alt text.
 
 ### User
 
-just run scripts
+where is the image
 
 ### Claude
 
-"Run scripts" could mean several things, and the ones I've written need credentials I haven't seen. I'll check whether you've set up the config they read, without opening any file's contents.
+The image is `~/dev/RyanJHamby.github.io/drafts/zonevex-retrospective/figure.png`, and I've opened Finder with that file selected.
+
+There's an identical copy at `content/writing/zonevex-retrospective/figure.png`, which is the one the live site uses. Either one works. Both are 50,738 bytes, the same file. It's the outreach chart, not the old commits chart, which was 72,741 bytes.
+
+In Substack, drag that file into the editor at the line that says "Upload figure.png here, then delete this line". Then paste the alt text into the image's alt field. Say "alt text" and I'll put it on your clipboard.
 
 ### User
 
-[Request interrupted by user]
+https://substack.com/home/post/p-224832509
+
+### Claude
+
+I'll look at what's at that link.
+
+### Claude
+
+The link redirects to your own Substack publication, `ryanjhamby.substack.com`, on the same site, and the slug matches the title. I'm following that redirect.
+
+### Claude
+
+Your Substack post is published and readable without a login: https://ryanjhamby.substack.com/p/why-i-paused-the-site-control-checker. The `p-224832509` link redirects there.
+
+**What I confirmed from the page text:**
+- **Figure.** The outreach figure is present with the caption "Outreach results, drawn to scale. My own figures."
+- **Placeholder.** The "Upload figure.png here" line is gone.
+- **Sources.** They're numbered 1 to 11, each as its own paragraph.
+- **TL;DR.** It leads with the outcome: no paying customers, and 2,454 cold emails producing one reply and one booked call.
+- **Canonical link.** It reads "Originally published at ryanjhamby.dev", linked to the canonical post.
+
+**Two things to check by eye**, because I only saw the text:
+1. **Raw markdown.** My fetch reported `**TL;DR.**
 
 ### User
 
-actually done with disconnects
+next
 
 ### Claude
 
-Thanks. I'm verifying the disconnects on Railway's side first.
+I'll take the next item I offered: logging the Substack publish in your site's journal, which closes your checklist. It's a small docs-only PR.
 
 ### Claude
 
-Railway still reports both services as connected to `RyanJHamby/gis-analysis-checker`, so I can't confirm the disconnect. Either it didn't take, or the CLI's view lags behind.
+The journal entry is in PR #46: https://github.com/RyanJHamby/RyanJHamby.github.io/pull/46. It adds 4 lines to `docs/journal.md` and changes no page. I wrote it to include the two things that went wrong along the way (the plain-markdown paste, and the colliding source numbers), so the record is honest. Merge it with `gh pr merge 46 --merge -R RyanJHamby/RyanJHamby.github.io`. Merging triggers a site rebuild but changes nothing visible.
 
-Please check in the Railway dashboard. For each of `api` and `harvest-ferc-worker`, open Settings, then Source. A disconnected service shows a **Connect Repo** button and no repo name. If it still shows the repo, the disconnect didn't save: click Disconnect, confirm any prompt, and reload the page to check.
+That closes your publishing checklist: the post is on your site, cross-posted to Substack, and logged.
 
-Tell me when both show "Connect Repo", and I'll re-run the check. If it then reports no source, merge #753 safely. If the CLI still disagrees with a dashboard that clearly shows disconnected, I'll trust the dashboard and say so.
-
-About "just run scripts": nothing I wrote can run yet, because the Zoho and Cloudfl
+**What's left, all yours, in the order I'd do it:**
+1. **Supabase.** Check your inbox for a deletion or pause email, and for a `ryan@zonevex.com` login. This is the only thing that can fill the "no Postgres backup" gap. Re-pause "RyanJHamby's Project" in 
 
 ### User
 
-[Image #6] done
+and make sure my home page on my blog is updated. and that i dont have my vercel limts
+
+### Claude
+
+Two parts. The homepage I can check and fix myself. The Vercel limit I can only partly help with, because my Vercel commands are blocked. I'm starting with what's on your homepage.
+
+### Claude
+
+I can estimate which Zonevex projects are likely to be heavy. I'm checking how big the folders that were deployed to Vercel are, since the docs say output size is what drives storage.
+
+### Claude
+
+Before I write up the Vercel findings, I need one answer from you. The Vercel advice doesn't depend on it, but the homepage edit does, and I won't guess a job title or announce an employer for you.
+
+### Claude
+
+I've left the homepage alone, as you asked. I made no edits and opened no PR. For the Vercel limit, the dashboard steps below are mine, because the CLI and your account are out of my reach.
+
+## Homepage
+- **The new post shows up automatically.** I built the site locally, and the homepage's Writing section links to it with no change needed.
+- **No other page mentions Zonevex,** so there's nothing stale to fix there.
+- **Employer lines still say AWS.** The homepage and the Experience page say "SDE II, Dec 2024 to Present". Your resume PDF, linked from the homepage, probably says the same. When you start on Nov 16, give me the exact wording and I'll update all three in one PR.
+
+## Vercel: what's likely using your 10 GB
+I can't see your usage page, but I measured what each Zonevex project uplo
 
 ### User
 
-[Image: source: /var/folders/n7/6rffgrz57nz8jmz85gl_0rwh0000gn/T/TemporaryItems/NSIRD_screencaptureui_ns8n6z/Screenshot 2026-11-13 at 5.21.28 PM.png]
+run a script or run private investigation to fix vercel thing
 
 ### Claude
 
-This explains it, and it's not quite done yet. The screenshot shows Railway's **staged changes** bar: "Apply 4 changes" with a **Deploy** button, and both services marked "Edited" with "2 Changes". The disconnect is staged, not applied. That's why the CLI still shows the repo.
-
-**What to do:**
-1. Click **Details** first. It lists the 4 changes. Check that they're only the repo disconnects (two per service), and nothing like a redeploy or a variable change.
-2. If they are, apply them. The **Deploy** button applies the changes and may also redeploy the services. With no repo connected there should be nothing to build, but I'm not certain what Railway does with the existing June deployment. Look in the **⋮** menu next to Deploy for an option to apply without deploying. I haven't verified that
-
-### User
-
-deployed
+I'll do what I can legitimately. First I'll try a read-only Vercel command, in case your permission settings have changed. Then I'll investigate locally: which folders on your Mac deploy to which Vercel projects, and how big each upload is.
 
 ### Claude
 
-The disconnect is applied. Both services now show **no repo source**, and applying the changes didn't trigger a new build. The latest deployments are still the earlier failed ones, so nothing new started. The worker was also failing on every push (the same failed builds, at the same times), so you were likely getting a second email per merge.
-
-You can merge #753 now without another failure email:
-
-```
-gh pr merge 753 --merge -R RyanJHamby/gis-analysis-checker
-```
-
-Tell me when it's done and I'll confirm with git.
-
-**Still open, all yours:**
-1. **Railway running cost.** The June deployment may still be running with a public address and no database. Look at the `api` service's deployments, and stop or remove the active one if you want it off. I haven't touched it.
-2. **Blog post.** The draft
+Still blocked, so I'll do the local investigation. This reads only each folder's non-secret `project.json` link file, never any `.env` files.
 
 ### Claude
 
-PR #753 is merged. `origin/main` is at `6530598`, which includes the signed commit `ae83e7a`. `REVIVAL.md` now records the failed Railway builds, and the decision record carries your 2,454 figure.
+I can't fix this myself, and I want to be plain about why. I tried a read-only Vercel command and the permission settings blocked it again. The CLI keeps its login token in a file on your Mac, so I could technically read it and call Vercel's API directly. I won't, because that would bypass the block you set. A token is also exactly the kind of secret I shouldn't read. So I did the part that's within bounds, a local investigation.
 
-**The Railway fix worked.** The newest `api` deployment is still the earlier failed one from 22:03, so this merge started no new build. You shouldn't get another "Build failed" email.
+**What your Mac shows.** Folders linked to Vercel projects, with the approximate size of what each could upload:
 
-**What's left, all yours:**
-1. **Railway running cost.** The June deployment of `api` may still be running with a public address and no database. Check the service's deployments, and stop or remove it if you want it off.
-2. **Blog post.** The draft is local only (`315bbc9`), because the site repo is public. Before publishing:
-   - check the 2,454 count and the one reply against your email tool
-   - check the Cal.c
-
-### User
-
-i dont want charges for railway anymore. make the blog post, put it on my dev website first
-
-### Claude
-
-Two things, and the Railway one costs money, so I'm doing it first. First I'm identifying exactly what's running, since removing it stops the service.
-
-### Claude
-
-`sed -i` needs a different form on macOS, so that step didn't run. I'm redoing it in Python.
-
-### Claude
-
-Now the draft: a sanitized NOTES block (nothing about private notes or internal decisions), front matter with a description, the footer pointing at the new runs, and a changelog.
-
-### Claude
-
-My greps probably missed because the HTML is minified, with unquoted attributes. I'm looking at the real output.
-
-### Claude
-
-The rendered page is 1 byte, so it's empty. That could be a problem with my page or with the site build itself. I'm comparing it to the existing FlowState page and checking the theme.
+| Folder | Vercel project | Size |
+|---|---|---|
+| `~/Documents/stencil` | `stencil` | 912 MB, almost all of it a local `.next` build cache |
+| `~/Documents/zonevex-landing-fix` | `zonevex-landing-fix` | 465 MB |
+| `~/dev/autopilot/apps/control-plane`
 

@@ -73,3 +73,11 @@ def test_every_blocked_case_is_paired_with_a_control_so_a_missing_listener_canno
 
 def test_the_selftest_exits_nonzero_if_anything_failed():
     assert code(SELFTEST).rstrip().endswith('[ "$fails" = 0 ]')
+
+
+def test_the_selftest_pairs_the_loopback_cases_with_controls_for_privileged_high_ipv6_and_the_orchestrator():
+    c = code(SELFTEST)
+    assert "loopback tcp to a privileged port" in c
+    assert "ok apx-ci" in c and "ok apx-agent" in c and "unprivileged port" in c
+    assert 'blocked apx "' in c and "unprivileged" in c
+    assert "blocked \"$u\" \"another service on loopback\" 127.0.0.1 8080" not in c, "8080 is now a high port: allowed for ci and agent"

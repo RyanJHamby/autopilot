@@ -202,6 +202,10 @@ def agent_checks(s, launcher) -> list[Check]:
     return out
 
 
+def repo_tool_checks(s, launcher, *, path_for=None) -> list[Check]:
+    return []
+
+
 def run_doctor(
     s,
     *,

@@ -50,6 +50,23 @@ cond="$(system_profiler SPPowerDataType 2>/dev/null | awk -F': ' '/Cycle Count|C
 fv="$(fdesetup status 2>/dev/null | head -1)"
 info "disk encryption: ${fv:-unknown} (On protects the keys if the laptop is stolen, but then a reboot waits for a password before apx starts)"
 
+# Private repos apx runs CI for (APX_PRIVATE_CI, comma-separated, same value as in the apx environment): every tool their CI needs must be
+# on the PATH apx-ci will have, or their required checks would fail on the host instead of on the code.
+if [ -n "${APX_PRIVATE_CI:-}" ]; then
+  root="$(cd "$(dirname "$0")/.." && pwd)"
+  ci_path="/opt/homebrew/bin:/usr/local/bin:${APX_CI_HOME:-/Users/apx-ci}/.local/bin:/usr/bin:/bin"
+  if command -v python3 >/dev/null 2>&1; then
+    out="$(PYTHONPATH="$root/src" python3 -m autopilot.apx.repo_ci check-tools "$APX_PRIVATE_CI" --path "$ci_path" 2>&1)" || true
+    while IFS= read -r line; do
+      case "$line" in PASS*) pass "${line#PASS  }" ;; FAIL*) fail "${line#FAIL  }" ;; *) [ -z "$line" ] || info "$line" ;; esac
+    done <<EOF_TOOLS
+$out
+EOF_TOOLS
+  else fail "python3 missing, so the tools for APX_PRIVATE_CI repos cannot be checked"; fi
+else
+  info "APX_PRIVATE_CI is not set: no private-repo CI is configured for this host (set it to check admin, control, pawl, agent-kit tools)"
+fi
+
 for u in apx apx-ci apx-agent; do
   id "$u" >/dev/null 2>&1 && info "account $u already exists" || info "account $u not created yet (docs/apx-runbook.md, section 0)"
 done

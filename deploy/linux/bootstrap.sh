@@ -182,6 +182,16 @@ if [ "$SKIP_SYSTEMD" != 1 ]; then
   for unit in apx-nft.service apx-dns.service apx.service apx.timer apx-updater.service apx-updater.timer; do
     put root:root 644 "/etc/systemd/system/$unit" <"$here/systemd/$unit"
   done
+  # The unit's MemoryMax is a fallback. Cap the whole apx cgroup (sandboxed children included) at about 75% of RAM, never below 4 GB,
+  # so the kernel and sshd keep headroom on a small box (a 12 GB machine gets 9 GB).
+  mem_kb="$(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+  mem_mb=$((mem_kb * 3 / 4 / 1024))
+  [ "$mem_mb" -ge 4096 ] || mem_mb=4096
+  run mkdir -p /etc/systemd/system/apx.service.d
+  put root:root 644 /etc/systemd/system/apx.service.d/10-memory.conf <<EOF
+[Service]
+MemoryMax=${mem_mb}M
+EOF
   run systemctl daemon-reload
   run systemctl enable --now apx-nft.service
   run systemctl enable apx-dns.service

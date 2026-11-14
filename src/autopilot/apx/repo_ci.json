@@ -1,0 +1,46 @@
+{
+  "RyanJHamby/admin": {
+    "tools": ["git", "python3", "bash", "gitleaks"],
+    "checks": [
+      {
+        "context": "ci",
+        "steps": ["gitleaks detect --source . --no-banner --redact", "scripts/ci-test.sh"]
+      }
+    ]
+  },
+  "RyanJHamby/control": {
+    "tools": ["git", "python3>=3.11", "pawl"],
+    "checks": [
+      {
+        "context": "check",
+        "steps": ["pawl check --base origin/main"]
+      },
+      {
+        "context": "plan-coverage",
+        "steps": [
+          "python3 scripts/test_plan_coverage.py",
+          "python3 scripts/test_issue_plan.py",
+          "python3 scripts/plan_coverage.py"
+        ]
+      }
+    ]
+  },
+  "RyanJHamby/pawl": {
+    "tools": ["git", "python3>=3.11", "make"],
+    "checks": [
+      {
+        "context": "test",
+        "steps": ["make check"]
+      }
+    ]
+  },
+  "RyanJHamby/agent-kit": {
+    "tools": ["git", "bash", "make", "shellcheck"],
+    "checks": [
+      {
+        "context": "ci",
+        "steps": ["make check"]
+      }
+    ]
+  }
+}

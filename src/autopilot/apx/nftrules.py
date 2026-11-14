@@ -1,8 +1,12 @@
 """Egress allowlist for the three apx accounts on a Linux host: nftables rules plus the dnsmasq config that feeds them.
 
 Each account's outbound traffic is matched by numeric uid (`meta skuid`) and sent to its own lane. A lane may open TCP 443 only to
-addresses its own resolver answers recorded for the names that lane allows, never to a private, link-local or metadata range, and the
-resolver itself is the only loopback service it can reach. Everything else, including all IPv6, is refused. DNS from the three accounts is
+addresses its own resolver answers recorded for the names that lane allows, never to a private, link-local or metadata range.
+Loopback: the orchestrator lane reaches only the resolver. The ci and exec lanes also reach any TCP port from 1024 up on 127.0.0.1,
+because the test suites they run start local servers and connect to them. That is a deliberate trade-off: code in those lanes can talk to
+every service the host has listening on 127.0.0.1 at an unprivileged port (check with `ss -ltnp`; docs/apx-linux-host.md, "What the
+allowlist does not close"). Privileged loopback ports (sshd on 22 and the like), UDP on loopback other than the resolver, and all other
+loopback addresses stay refused. Everything else, including all IPv6 (so ::1), is refused. DNS from the three accounts is
 redirected to a local allowlist resolver, so a name outside the list simply does not resolve (this also closes DNS tunnelling).
 
 Everyone else on the host (the admin, apt, the resolver itself) is untouched: the output hook's policy is accept.
@@ -22,6 +26,8 @@ from autopilot.fabric import firewall
 
 # which lane each account is in; one account, one lane
 LANE_OF = {"apx": "orch", "apx-ci": "ci", "apx-agent": "exec"}
+# lanes that run repo test suites, which connect to servers they start on 127.0.0.1; they may reach unprivileged IPv4 loopback TCP
+LOOPBACK_HIGH_LANES = ("ci", "exec")
 DEFAULT_DNS_PORT = 5354
 SET_TIMEOUT = "1h"
 _LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
@@ -90,11 +96,13 @@ def render_nft(uids: dict[str, int], dns_port: int = DEFAULT_DNS_PORT) -> str:
         out.append(f"    meta skuid {uids[name]} jump lane_{LANE_OF[name]}")
     out += ["  }", ""]
     for lane in lane_names:
+        high = ["    ip daddr 127.0.0.1 tcp dport 1024-65535 accept"] if lane in LOOPBACK_HIGH_LANES else []
         out += [
             f"  chain lane_{lane} {{",
             "    ct state established,related accept",
             f"    ip daddr 127.0.0.1 udp dport {port} accept",
             f"    ip daddr 127.0.0.1 tcp dport {port} accept",
+            *high,
             f"    ip daddr @{lane}_v4 ip daddr != {{ {blocked} }} tcp dport 443 accept",
             "    reject",
             "  }",

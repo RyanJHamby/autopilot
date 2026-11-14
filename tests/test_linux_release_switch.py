@@ -59,7 +59,13 @@ class Host:
         return sha
 
     def run(self, sha: str, **extra) -> subprocess.CompletedProcess:
-        env = {**os.environ, "SHARED": str(self.shared), "APX_SHA": sha, "APX_USER": getpass.getuser(), "GIT_CONFIG_GLOBAL": os.devnull}
+        env = {
+            **os.environ,
+            "SHARED": str(self.shared),
+            "APX_SHA": sha,
+            "APX_USER": getpass.getuser(),
+            "GIT_CONFIG_GLOBAL": os.devnull,
+        }
         env |= extra
         return subprocess.run(["bash", str(RELEASE)], env=env, capture_output=True, text=True)
 
@@ -150,7 +156,9 @@ def test_a_sha_that_does_not_exist_is_refused(host):
 def test_a_release_dir_whose_head_is_not_its_name_is_refused_and_current_is_untouched(host):
     new = host.push_main("b")
     stale = host.shared / "releases" / new
-    git("clone", "-q", "--no-hardlinks", str(host.shared / "autopilot"), str(stale))  # sits at the first commit, named as the new one
+    git(
+        "clone", "-q", "--no-hardlinks", str(host.shared / "autopilot"), str(stale)
+    )  # sits at the first commit, named as the new one
     r = host.run(new)
     assert r.returncode != 0 and "HEAD" in r.stdout + r.stderr
     assert host.current() == f"releases/{host.first}"
@@ -213,7 +221,13 @@ def test_dry_run_prints_the_steps_and_changes_nothing(host):
 
 def test_the_release_is_made_readable_by_the_sandbox_even_under_a_tight_umask(host):
     new = host.push_main("b")
-    env = {**os.environ, "SHARED": str(host.shared), "APX_SHA": new, "APX_USER": getpass.getuser(), "GIT_CONFIG_GLOBAL": os.devnull}
+    env = {
+        **os.environ,
+        "SHARED": str(host.shared),
+        "APX_SHA": new,
+        "APX_USER": getpass.getuser(),
+        "GIT_CONFIG_GLOBAL": os.devnull,
+    }
     r = subprocess.run(["bash", "-c", f"umask 077; exec bash {RELEASE}"], env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
     mode = (host.shared / "releases" / new / "b").stat().st_mode
@@ -231,7 +245,7 @@ def test_bootstrap_hands_an_apx_sha_to_the_release_script_before_it_renders_the_
     c = code(BOOTSTRAP)
     assert 'bash "$here/release.sh"' in c
     assert c.index('bash "$here/release.sh"') < c.index("autopilot.apx.nftrules nft")
-    assert "checkout -q --detach \"$WANT_SHA\"" not in c, "the unfetched checkout that failed on the first host is gone"
+    assert 'checkout -q --detach "$WANT_SHA"' not in c, "the unfetched checkout that failed on the first host is gone"
 
 
 def test_the_switch_is_atomic_and_checked_before_it_happens():

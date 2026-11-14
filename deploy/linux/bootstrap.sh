@@ -145,7 +145,7 @@ fi
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { say "bad commit id $SHA"; exit 1; }
 say "release: $SHA"
 
-[ "$DRY_RUN" != 1 ] && [ -x "$SHARED/venv/bin/python" ] || as apx python3 -m venv "$SHARED/venv"
+if [ "$DRY_RUN" = 1 ] || [ ! -x "$SHARED/venv/bin/python" ]; then as apx python3 -m venv "$SHARED/venv"; fi
 # shellcheck disable=SC2086  # PIP_PACKAGES is a space-separated list on purpose
 as apx "$SHARED/venv/bin/python" -m pip install --quiet --disable-pip-version-check $PIP_PACKAGES
 # pip installs under apx's umask (077); the no-secrets test account must be able to read the packages.

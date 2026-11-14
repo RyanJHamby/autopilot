@@ -55,8 +55,11 @@ for _ in $(seq 1 50); do [ -s "$work/ports" ] && break; sleep 0.1; done
 read -r lo_priv lo_high lo_v6 <"$work/ports" || true
 [ -n "${lo_priv:-}" ] || { echo "could not start the throwaway loopback listeners"; exit 2; }
 
+# shellcheck disable=SC2317  # shellcheck 0.9 (Ubuntu 24.04) wrongly calls helpers defined after an early exit unreachable; 0.10+ does not
 as() { local who="$1"; shift; setpriv --reuid="$(id -u "$who")" --regid="$(id -g "$who")" --init-groups "$@"; }
+# shellcheck disable=SC2317  # shellcheck 0.9 (Ubuntu 24.04) wrongly calls helpers defined after an early exit unreachable; 0.10+ does not
 tcp() { as "$WHO" nc -z -w 4 "$@" >/dev/null 2>&1; }
+# shellcheck disable=SC2317  # shellcheck 0.9 (Ubuntu 24.04) wrongly calls helpers defined after an early exit unreachable; 0.10+ does not
 tcp6() { as "$WHO" nc -6 -z -w 4 "$@" >/dev/null 2>&1; }
 must_fail() { local name="$1"; shift; if "$@"; then echo "LEAK    $WHO: $name"; problems=$((problems + 1)); else echo "ok      $WHO: $name"; fi; }
 must_pass() { local name="$1"; shift; if "$@"; then echo "ok      $WHO: $name"; else echo "BROKEN  $WHO: $name (the allowed path is down, so the probe proves nothing)"; problems=$((problems + 1)); fi; }
@@ -66,6 +69,7 @@ control_ok() {
   echo "BROKEN  $WHO: control as root could not connect to $1:$2, so the loopback case proves nothing"; problems=$((problems + 1)); return 1
 }
 # resolve NAME via SERVER over UDP/53 as $WHO, printing the first A record or nothing
+# shellcheck disable=SC2317  # shellcheck 0.9 (Ubuntu 24.04) wrongly calls helpers defined after an early exit unreachable; 0.10+ does not
 ask() {
   as "$WHO" python3 -c '
 import socket, struct, sys
@@ -80,6 +84,7 @@ if struct.unpack("!H", r[6:8])[0]:
     print(socket.inet_ntoa(r[-4:]))
 ' "$1" "$2"
 }
+# shellcheck disable=SC2317  # shellcheck 0.9 (Ubuntu 24.04) wrongly calls helpers defined after an early exit unreachable; 0.10+ does not
 dns_works() { [ -n "$(ask "$1" "$2")" ]; }
 
 gw="$(ip -4 route show default 2>/dev/null | awk '{print $3; exit}')"

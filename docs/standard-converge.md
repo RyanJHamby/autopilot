@@ -40,7 +40,13 @@ git clone https://github.com/RyanJHamby/autopilot.git ~/.autopilot/converge-chec
 sed "s|REPO_DIR|$HOME/.autopilot/converge-checkout|" ~/.autopilot/converge-checkout/deploy/launchd/com.autopilot.standard.converge.plist > ~/Library/LaunchAgents/com.autopilot.standard.converge.plist
 launchctl load ~/Library/LaunchAgents/com.autopilot.standard.converge.plist
 ```
-It runs Mondays at 09:00 (on wake if the Mac was asleep). Installing it files nothing; the first run is the next Monday.
+It runs Mondays at 19:00 local time (on wake if the Mac was asleep). Installing it files nothing; the first run is the next Monday.
+
+**Work-hours freeze.** `--apply` edits issues on personal repos, so it never runs Mon-Fri 08:30-18:30 ET (`policy/time.yaml`, read
+through `autopilot.freeze`). The 19:00 schedule is outside that window, and `tests/test_converge_freeze.py` checks the plist against the
+policy so the two cannot drift. A Mac that was asleep wakes into a missed run, possibly inside the window: `--apply` then refuses
+before reading anything (fail closed on any resolver or clock error, no override), exits 0, and writes `last.json` with a `skipped`
+reason, so the work waits for the next Monday. A dry run (no `--apply`) only reads and is not held.
 
 The job runs whatever code `REPO_DIR` has checked out, so it guards itself: it runs only if that checkout is on `main` with no
 uncommitted changes to tracked files (untracked files are ignored), and it pulls `main` first. Otherwise it prints why to the log

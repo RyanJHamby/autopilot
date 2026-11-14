@@ -15,7 +15,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import gitops, release, window
+from . import freeze_gate, gitops, release, window
 from .app_auth import TokenCache
 from .daemon import Settings, routed_api, single_instance
 from .github import make_api
@@ -81,8 +81,9 @@ def main(argv: list[str] | None = None) -> int:
     out = os.environ.get("APX_UPDATE_STATUS", DEFAULT_UPDATE_STATUS)
     live = args.live and os.environ.get("APX_UPDATE_LIVE") == "1"
     now = dt.datetime.now(dt.timezone.utc)
-    if s.active_window and not s.active_window.is_open(now):
-        line = window.idle_line(s.active_window)  # outside the owner's hours: no API call, no test run, no swap
+    blocked = freeze_gate.pass_blocked(s.active_window, now)
+    if blocked:
+        line = blocked  # the work-hours freeze or outside the owner's hours: no API call, no test run, no swap
     else:
         try:
             cache = TokenCache(s.app_id, s.key_path, s.installations, api_factory=make_api)

@@ -21,14 +21,28 @@ defaults:
     hard: 45
     triage: 5
     reviewer: 10
+  # Dollar cap per agent run (apx passes it as `claude --max-budget-usd`, next to max_turns above; same role keys). The CLI checks it
+  # between turns, so a run can end a little over; max_turns stays the hard stop. A missing or invalid value means the run does not start.
+  # PLACEHOLDERS, NOT CONFIRMED: conservative numbers chosen so the cap exists from day one. OWNER TO CONFIRM OR CHANGE EACH; there is
+  # no measured cost data behind them yet (the apx ledger now records total_cost_usd per run, so confirm them from that).
+  max_budget_usd:
+    standard: 3.00
+    yolo: 5.00
+    hard: 8.00
+    triage: 0.50
+    reviewer: 1.00
   runs_per_day:     # per repo, rolling 24h; sum over wave 1 stays under the global cap
     A: 2
     B: 1
     C: 0
   hard_runs_per_day: 1      # opus, tier A only
-  global_runs_per_day: 20
+  global_runs_per_day: 12
   max_open_agent_prs: 3
   breaker_failures: 2       # consecutive failed runs before the repo auto-disables
+  # apx and the work-hours freeze (policy/time.yaml is the one source of the window). Agent runs, merges and branch updates are always
+  # held inside it. true = the check runs apx posts on PRs (guard / build / test) are held too; false lets only those proceed.
+  # OPEN QUESTION FOR THE OWNER: do check runs count as "changes to personal repos during work hours"? true is the safe default.
+  apx_freeze_gates_check_runs: true
 
 repos:
   # --- wave 1 (only drillpad-workspace and stencil are active; the rest are on hold by the owner, 2026-10-16) ---

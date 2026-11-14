@@ -101,7 +101,10 @@ def test_routed_api_picks_token_by_repo_and_rejects_other_paths():
 
 
 def test_parse_detail():
-    assert dm.parse_detail("model=opus effort=high turns=60") == {"model": "opus", "effort": "high", "turns": 60}
+    from autopilot.apx import caps
+
+    assert dm.parse_detail("model=opus effort=high turns=60 budget=4.50") == {"model": "opus", "effort": "high", "turns": 60, "budget": 4.5}
+    assert dm.parse_detail("model=opus effort=high turns=60")["budget"] == caps.budget_for("standard")  # never uncapped
     assert dm.parse_detail("")["model"] == "sonnet"
 
 

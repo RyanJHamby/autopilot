@@ -1,0 +1,35 @@
+# Sourced by every hook in this directory:   . "$(dirname "$0")/_chain-global"; chain_global <hook-name> "$@"
+#
+# core.hooksPath is ONE directory, so setting it to .githooks in this repo switches off the global hooks (the freeze gate, the
+# identity gate and the pre-push secret scan from the admin repo). This runs the global hook of the same name first, then returns
+# so the caller can run this repo's own checks.
+#
+#   skipped:       the global core.hooksPath is unset, or resolves to this directory (running it would only loop), or its
+#                  directory has no hook of this name (same as git: nothing to run)
+#   fails closed:  the global hook exists but is not executable, or exits non-zero. The caller never reaches its own checks.
+#
+# stdin and arguments go to the global hook unchanged (pre-push needs git's ref lines). There is no environment variable or flag
+# that skips the global hook; the only ways around it are the ones git itself offers, which are deliberate and visible.
+
+chain_global() {
+    _cg_name=$1
+    shift
+    _cg_dir=$(git config --global --type=path --get core.hooksPath 2>/dev/null) || _cg_dir=""
+    [ -n "$_cg_dir" ] || return 0
+    _cg_here=$(cd "$(dirname "$0")" && pwd -P) || return 0
+    _cg_there=$(cd "$_cg_dir" 2>/dev/null && pwd -P) || return 0 # no such directory: git would run nothing from it either
+    [ "$_cg_there" != "$_cg_here" ] || return 0
+    _cg_hook="$_cg_there/$_cg_name"
+    [ -e "$_cg_hook" ] || return 0
+    if [ ! -f "$_cg_hook" ] || [ ! -x "$_cg_hook" ]; then
+        echo "$_cg_name: global hook $_cg_hook exists but is not executable; refusing (fail closed). chmod +x it or remove it." >&2
+        exit 1
+    fi
+    "$_cg_hook" "$@"
+    _cg_rc=$?
+    if [ "$_cg_rc" -ne 0 ]; then
+        echo "$_cg_name: global hook $_cg_hook failed (exit $_cg_rc); refusing." >&2
+        exit "$_cg_rc"
+    fi
+    return 0
+}

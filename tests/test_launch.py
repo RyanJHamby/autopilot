@@ -42,11 +42,14 @@ class GH:
         self.merged: list[str] = []
         self.scaffolds = 0
         self.portfolio_prs = 0
+        self.claude: str | None = "2.1.323 (Claude Code)\n"  # what `claude --version` prints; None = not installed
 
     # --- fake gh ---
     def run(self, cmd):
         self.calls.append(list(cmd))
         line = " ".join(cmd)
+        if cmd == ["claude", "--version"]:
+            return (0, self.claude) if self.claude is not None else (127, "")
         if cmd[:2] == ["gh", "api"] and len(cmd) == 3 and cmd[2] == f"repos/{SLUG}":
             return 0, json.dumps({**self.repo})
         if line == f"gh api repos/{SLUG}/actions/permissions/workflow":
@@ -230,6 +233,10 @@ RESTRICTED = {"owner": OWNER, "repos": {NAME: {"data_class": "restricted"}}, "ex
         (lambda g: g.repo.pop("id"), {}, "cannot read"),
         (lambda g: None, {"mode": None, "tier": None}, "is new"),
         (lambda g: None, {"repo": "bad name; x"}, "not a repo name"),
+        (lambda g: setattr(g, "claude", "2.1.301 (Claude Code)\n"), {}, "2.1.302"),
+        (lambda g: setattr(g, "claude", "2.1.163 (Claude Code)\n"), {}, "2.1.302"),
+        (lambda g: setattr(g, "claude", None), {}, "claude"),
+        (lambda g: setattr(g, "claude", "garbage"), {}, "version"),
     ],
 )
 def test_refusals_stop_before_anything_is_written(setup, kw, reason):
@@ -391,3 +398,18 @@ def test_main_exits_nonzero_with_the_reason_on_a_stop(monkeypatch, capsys):
     monkeypatch.setattr(launch, "_load_portfolio", lambda: {"owner": OWNER, "repos": {}, "excluded": []})
     assert launch.main([NAME, "--tier", "B", "--mode", "standard", "--yes"]) == 1
     assert "STOPPED" in capsys.readouterr().out
+
+
+def test_launch_runs_at_exactly_the_floor():
+    gh = GH()
+    gh.claude = "2.1.302 (Claude Code)\n"
+    report, _ = go(gh)
+    assert report.green
+
+
+def test_the_version_floor_is_checked_before_any_gh_call():
+    gh = GH()
+    gh.claude = "2.1.301 (Claude Code)\n"
+    result, _ = go(gh)
+    assert isinstance(result, ship.Stop)
+    assert [c for c in gh.calls if c[0] == "gh"] == []

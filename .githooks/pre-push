@@ -1,7 +1,10 @@
 #!/bin/sh
+# chains-global-hooks
 # Runs what CI runs, before anything leaves this machine. Enable once per clone:  git config core.hooksPath .githooks
 # (or: scripts/install-hooks). Skipping it is a deliberate, visible choice, never the default.
 set -e
+. "$(dirname "$0")/_chain-global"
+chain_global pre-push "$@" # the global gates (freeze, identity, secret scan) first; they get git's stdin
 cd "$(git rev-parse --show-toplevel)"
 if command -v uv >/dev/null 2>&1; then RUN="uv run"; else RUN=""; fi
 echo "pre-push: ruff check ."

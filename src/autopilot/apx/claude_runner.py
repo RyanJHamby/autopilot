@@ -8,14 +8,63 @@ The issue text is fetched and filtered by trusted code and handed over as fenced
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+
+from .caps import fmt, valid_budget, valid_turns
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 from runner import RunResult, Task, Usage  # noqa: E402
+
+MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@\[\]-]{0,99}$")
+
+
+@dataclass
+class RunUsage(Usage):
+    """What the CLI's JSON says about a run. None means the CLI did not say (never 0 by default)."""
+
+    cost_usd: float | None = None  # `total_cost_usd`, the CLI's own estimate in API-equivalent dollars
+    model_id: str | None = None  # the resolved model id (the one in `modelUsage` that cost most), not the alias that was requested
+
+
+class RunnerError(RuntimeError):
+    """The CLI ran and reported an error (or exited non-zero). Carries what it spent, so a capped or failed run is still accounted for."""
+
+    def __init__(self, message: str, usage: RunUsage | None = None, subtype: str | None = None):
+        super().__init__(message)
+        self.usage = usage or RunUsage()
+        self.subtype = subtype
+
+
+def clean_cost(value) -> float | None:
+    """A plain non-negative finite number, else None. Used on the CLI's output and on anything the agent account hands back."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        return None
+    return float(value)
+
+
+def clean_model_id(value) -> str | None:
+    return value if isinstance(value, str) and MODEL_ID.match(value) else None
+
+
+def usage_from(out: dict) -> RunUsage:
+    model_id, best = None, -1.0
+    usage = out.get("modelUsage")
+    if isinstance(usage, dict):
+        for key in sorted(k for k in usage if isinstance(k, str)):
+            entry = usage[key]
+            if not isinstance(entry, dict) or clean_model_id(key) is None:
+                continue
+            cost = clean_cost(entry.get("costUSD")) or 0.0
+            if cost > best:
+                model_id, best = key, cost
+    return RunUsage(turns=out.get("num_turns"), cost_usd=clean_cost(out.get("total_cost_usd")), model_id=model_id)
+
 
 SAFE_CMD = re.compile(r"^[A-Za-z0-9._:/@=+ -]+$")  # same rule as kit config.py: no quotes, commas or shell metacharacters
 
@@ -92,7 +141,10 @@ def build_fix_prompt(repo: str, issue: int, title: str, body: str, comments: lis
     )
 
 
-def build_argv(binary: str, prompt: str, *, model: str, effort: str, max_turns: int, tools: list[str]) -> list[str]:
+def build_argv(
+    binary: str, prompt: str, *, model: str, effort: str, max_turns: int, max_budget_usd: float, tools: list[str]
+) -> list[str]:
+    """Both caps are required and validated: there is no way to build a command line without a turn cap and a dollar cap."""
     return [
         binary,
         "-p",
@@ -104,7 +156,9 @@ def build_argv(binary: str, prompt: str, *, model: str, effort: str, max_turns: 
         "--effort",
         effort,
         "--max-turns",
-        str(int(max_turns)),
+        str(valid_turns(max_turns)),
+        "--max-budget-usd",
+        fmt(max_budget_usd),
         "--allowedTools",
         ",".join(tools),
         "--disallowedTools",
@@ -129,12 +183,14 @@ class ClaudeRunner:
         home: Path,
         commands: list[str],
         prompt: str,
+        max_budget_usd: float,
         effort: str = "medium",
         binary: str = "claude",
         timeout: int = 1800,
     ):
         self.token, self.home, self.commands, self.prompt = token, home, commands, prompt
         self.effort, self.binary, self.timeout = effort, binary, timeout
+        self.max_budget_usd = valid_budget(max_budget_usd)
 
     def run(self, task: Task, worktree: Path) -> RunResult:
         argv = build_argv(
@@ -143,18 +199,22 @@ class ClaudeRunner:
             model=task.model,
             effort=self.effort,
             max_turns=task.max_turns,
+            max_budget_usd=self.max_budget_usd,
             tools=allowed_tools(self.commands),
         )
         p = subprocess.run(
             argv, cwd=worktree, env=build_env(self.token, self.home), capture_output=True, text=True, timeout=self.timeout
         )
-        if p.returncode != 0:
-            # never echo stdout/stderr wholesale: keep the tail only and rely on the caller not logging env
-            raise RuntimeError(f"claude exited {p.returncode}: {(p.stderr or p.stdout)[-300:]}")
         try:
             out = json.loads(p.stdout)
         except json.JSONDecodeError:
-            return RunResult(summary=p.stdout[-2000:], usage=Usage())
+            out = None
+        usage = usage_from(out) if isinstance(out, dict) else RunUsage()
+        if p.returncode != 0:
+            # never echo stdout/stderr wholesale: keep the tail only and rely on the caller not logging env
+            raise RunnerError(f"claude exited {p.returncode}: {(p.stderr or p.stdout)[-300:]}", usage)
+        if not isinstance(out, dict):
+            return RunResult(summary=p.stdout[-2000:], usage=RunUsage())
         if out.get("is_error"):
-            raise RuntimeError(f"claude reported an error: {str(out.get('result'))[-300:]}")
-        return RunResult(summary=str(out.get("result", ""))[-4000:], usage=Usage(turns=out.get("num_turns")))
+            raise RunnerError(f"claude reported an error: {str(out.get('result'))[-300:]}", usage, str(out.get("subtype") or "") or None)
+        return RunResult(summary=str(out.get("result", ""))[-4000:], usage=usage)

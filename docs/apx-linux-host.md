@@ -166,6 +166,23 @@ If the new server misbehaves: `sudo DO=1 bash deploy/linux/retire.sh` stops its 
 - Stop immediately: `sudo systemctl disable --now apx.timer apx-updater.timer` (or `retire.sh`). Status: `systemctl list-timers 'apx*'`, `journalctl -u apx.service`.
 - Fail closed: `apx.service` and `apx-updater.service` `Require=` the rules and the resolver, so if the rules fail to load, apx does not run.
 - Egress rules changed? Re-run `bootstrap.sh`; it re-renders, checks with `nft -c`, and reloads. The resolver config is only read on start, so the script restarts it.
+- Moving to a newer release by hand (while the updater is still in dry-run). Bootstrap renders the rules from `/srv/apx/current`, builds releases from its own
+  clone `/srv/apx/autopilot`, and checks the same sha out in `/srv/apx/updater`, which is cloned from that clone. None of the three is fetched for you,
+  and `current` is never moved if it exists. What worked on the first real host (2026-11-14), with `SHA` set to the full commit id:
+
+  ```
+  sudo -u apx git -C /srv/apx/autopilot fetch -q origin
+  sudo -u apx git -C /srv/apx/autopilot branch -f main origin/main
+  sudo -u apx git -C /srv/apx/updater fetch -q origin
+  sudo APX_SHA=$SHA ADMIN_USER=$ADMIN_USER bash deploy/linux/bootstrap.sh
+  sudo -u apx git -C /srv/apx/releases/$SHA rev-parse HEAD
+  sudo -u apx ln -sfn releases/$SHA /srv/apx/current
+  sudo ADMIN_USER=$ADMIN_USER bash deploy/linux/bootstrap.sh
+  sudo bash deploy/linux/egress-probe.sh
+  ```
+
+  Check that `rev-parse` prints `$SHA` before moving `current`, and that the probe ends `sealed`. Without the fetches, bootstrap stops with
+  `reference is not a tree` before it reloads the rules.
 - Compromise: follow [apx-compromise.md](apx-compromise.md). Where it says `launchctl bootout`, use `systemctl disable --now apx.timer apx-updater.timer`; where it names `/Users/apx/...`,
   the paths here are `/home/apx/...`, `/home/apx-agent/...` and `/srv/apx`. It has not been rewritten for Linux yet, and its steps have never been drilled.
 

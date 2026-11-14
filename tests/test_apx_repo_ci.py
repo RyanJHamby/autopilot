@@ -11,10 +11,9 @@ from pathlib import Path
 import pytest
 from test_apx_daemon import REPO, env
 
-from autopilot.apx import cilane
+from autopilot.apx import cilane, planner, repo_ci, sandbox_job
 from autopilot.apx import daemon as dm
 from autopilot.apx import executor as ex
-from autopilot.apx import planner, repo_ci, sandbox_job
 from autopilot.apx.ledger import Ledger
 from autopilot.apx.planner import Action
 
@@ -95,9 +94,9 @@ def test_planner_input_for_a_private_repo_is_checks_only(tmp_path):
     for r in (ADMIN, CONTROL):
         assert meta[r]["loop"] is False and meta[r]["merge"] is False and meta[r]["agents"] is False
         assert meta[r]["main_check"] is False and meta[r]["spec_ci"] is True
-    assert meta[REPO]["contexts"] == ["guard / guard", "test"] and "spec_ci" not in meta[REPO]
+    assert meta[REPO]["contexts"] == ["guard / guard", "build"] and "spec_ci" not in meta[REPO]
     ctx = dm.check_contexts(s)
-    assert ctx[ADMIN]["checks"][0]["context"] == "ci" and ctx[REPO] == {"guard": "guard / guard", "ci": "test"}
+    assert ctx[ADMIN]["checks"][0]["context"] == "ci" and ctx[REPO] == {"guard": "guard / guard", "ci": "build"}
 
 
 def test_private_repo_is_in_planner_scope_only_when_it_has_a_spec():
@@ -113,7 +112,7 @@ class Api:
         if "/actions/variables/" in path:
             name = path.rsplit("/", 1)[1]
             if name not in self.variables:
-                raise planner.GitHubError(404, "nope")
+                raise planner.GitHubError(404, "nope", "nope")
             return {"value": self.variables[name]}
         return {}
 

@@ -325,7 +325,7 @@ def test_a_gated_executor_starts_nothing_and_opens_no_ledger_row(tmp_path):
     log = ex.execute(api, led, deps_that_record(calls), ALL, contexts=ctx, head_refs={}, dry_run=False, gate=lambda kind: "frozen: test")
     assert calls == [] and api_calls == []
     assert len(log) == len(ALL) and all(line.startswith("held ") and "frozen: test" in line for line in log)
-    assert led.conn.execute("select count(*) from runs").fetchone()[0] == 0 if hasattr(led, "conn") else True
+    assert led.db.execute("select count(*) from runs").fetchone()[0] == 0
 
 
 def test_the_gate_is_asked_before_each_action_so_a_pass_that_crosses_08_30_stops_midway(tmp_path):
@@ -389,6 +389,9 @@ def live_factory(posts):
                         "body": "## Acceptance\n- [ ] `uv run pytest tests/test_x.py`\n",
                     }
                 ]
+            if re.search(r"/pulls/\d+$", path):
+                return {"number": 4, "state": "open", "mergeable_state": "clean", "draft": False, "labels": [],
+                        "user": {"login": "RyanJHamby"}, "head": {"sha": "d" * 40, "ref": "agent/3-x", "repo": {"full_name": REPO}}}
             if "/pulls?state=open" in path:
                 return [
                     {
@@ -430,16 +433,16 @@ def test_the_same_pass_at_7pm_does_start_work_so_the_test_above_can_fail(tmp_pat
     monkeypatch.setattr(dm, "build_deps", lambda *a, **k: deps_that_record(calls))
     posts = []
     out = dm.run_once(live_settings(tmp_path), live=True, api_factory=live_factory(posts))
-    assert "check-pr" in " ".join(out) or "check-pr" in str(posts) or calls
-    assert "work" in calls or any(x.startswith("run-agent") for x in out)
+    assert any(x.startswith("check-pr ") for x in out) and any(x.startswith("run-agent ") for x in out), out
+    assert "checkout" in calls and "work" in calls
 
 
 def test_run_once_midpass_freeze_holds_what_is_left(tmp_path, monkeypatch, clock):
-    """The pass is allowed to begin at 18:29 ET... but not to keep starting work after 08:30 the next morning."""
+    """A pass that begins at 08:29 ET is allowed to plan, but every action is gated again, so nothing starts once 08:30 arrives."""
     clock(et(2026, 11, 16, 8, 29))
     monkeypatch.setenv("APX_LIVE", "1")
     calls = []
-    ticks = iter([et(2026, 11, 16, 8, 29), et(2026, 11, 16, 8, 29)] + [et(2026, 11, 16, 8, 31)] * 200)
+    ticks = iter([et(2026, 11, 16, 8, 29)] + [et(2026, 11, 16, 8, 31)] * 200)  # the first read is the start-of-pass check
     monkeypatch.setattr(fg, "_clock", lambda: next(ticks))
     monkeypatch.setattr(dm, "build_deps", lambda *a, **k: deps_that_record(calls))
     out = dm.run_once(live_settings(tmp_path), live=True, api_factory=live_factory([]))

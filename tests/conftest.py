@@ -57,3 +57,14 @@ def fake_sudo(tmp_path):
     )
     f.chmod(0o755)
     return str(f), log
+
+
+@pytest.fixture(autouse=True)
+def _apx_freeze_clock_is_outside_the_window(monkeypatch):
+    """apx refuses to start work inside the work-hours freeze (policy/time.yaml, from 2026-11-16). Tests that run a live pass must not
+    depend on the day the suite runs, so the gate's clock is pinned to a Saturday. test_apx_freeze_gate.py sets its own instants."""
+    import datetime as dt
+
+    from autopilot.apx import freeze_gate
+
+    monkeypatch.setattr(freeze_gate, "_clock", lambda: dt.datetime(2026, 11, 14, 12, 0, tzinfo=dt.timezone.utc))

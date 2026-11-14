@@ -1,4 +1,7 @@
-"""The hours apx may work (APX_ACTIVE_WINDOW, e.g. "18:00-08:30" in America/New_York, weekends all day).
+"""The OPTIONAL extra hours apx may work (APX_ACTIVE_WINDOW, e.g. "18:00-08:30" in America/New_York, weekends all day).
+
+policy/time.yaml is the single source of the work-hours freeze (see freeze_gate.py); this window is ANDed with it, so it can only
+narrow what time.yaml allows and can never widen it.
 
 Outside the window a pass does nothing at all: no polling, no CI, no agent run, no swap. Unset means always on.
 A malformed value is a config error (the daemon refuses to start), never "always on".

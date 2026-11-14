@@ -187,15 +187,26 @@ def execute(
     head_refs: dict[tuple[str, str], str],
     dry_run: bool = True,
     private_repos: frozenset | None = None,
+    gate: Callable[[str], str | None] | None = None,
 ) -> list[str]:
     """contexts: {repo: {"guard": "guard / guard", "ci": "build"}}; head_refs: {(repo, sha): head branch name}.
     private_repos: repos known to be private. Everything else is treated as PUBLIC (fail closed), and a public repo's check
-    summary gets step names and durations only, never the raw tail of a failing command."""
+    summary gets step names and durations only, never the raw tail of a failing command.
+    gate(kind) is asked before EACH live action and returns a reason to hold it (the work-hours freeze) or None. A gate that raises
+    holds the action. Held actions touch nothing and open no ledger row; the planner offers them again on the next pass."""
     log = []
     for a in actions:
         if dry_run:
             log.append(f"DRY-RUN {a.kind} {a.repo} {a.ref} {a.detail}")
             continue
+        if gate is not None:
+            try:
+                held = gate(a.kind)
+            except Exception as e:  # noqa: BLE001 - a gate that cannot answer holds the action
+                held = f"gate failed ({type(e).__name__})"
+            if held:
+                log.append(f"held {a.kind} {a.repo} {a.ref[:12]}: {held}")
+                continue
         if a.kind == "check-pr":
             ctx = contexts[a.repo]
             try:

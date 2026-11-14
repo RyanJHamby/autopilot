@@ -16,7 +16,8 @@ Environment=PATH=/home/apx/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/bin/sh -c 'set -a; . /home/apx/.apx/apx.env; set +a; export APX_LIVE=1 PYTHONPATH=/srv/apx/current/src; exec /srv/apx/venv/bin/python -m autopilot.apx.daemon --once --live'
 TimeoutStartSec=3h
 # These limits cover the sandboxed children too: sudo keeps them in this unit's control group.
-MemoryMax=12G
+# Fallback only. bootstrap.sh writes apx.service.d/10-memory.conf with ~75% of this machine's RAM, so the box keeps headroom.
+MemoryMax=8G
 TasksMax=4096
 CPUQuota=300%
 PrivateTmp=yes

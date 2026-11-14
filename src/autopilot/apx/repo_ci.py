@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,7 +25,7 @@ from pathlib import Path
 from . import cilane
 
 SPEC_FILE = Path(__file__).with_name("repo_ci.json")
-TOOL = re.compile(r"^[A-Za-z0-9._+-]+$")
+TOOL = re.compile(r"^([A-Za-z0-9._+-]+)(?:>=([0-9]+(?:\.[0-9]+)*))?$")  # `name` or `name>=MAJOR[.MINOR]`
 CONTEXT = re.compile(r"^[A-Za-z0-9._()/ -]+$")
 
 
@@ -47,10 +48,52 @@ class RepoCi:
         return [{"context": c.context, "steps": [list(s) for s in c.steps]} for c in self.checks]
 
 
+def parse_tool(entry: str) -> tuple[str, str | None]:
+    """'python3>=3.11' -> ('python3', '3.11'); 'gitleaks' -> ('gitleaks', None). A per-repo minimum version, because one host runs
+    repos that need different tool versions."""
+    m = TOOL.match(entry) if isinstance(entry, str) else None
+    if not m:
+        raise ValueError(f"bad tool entry {entry!r}: use a plain name or name>=VERSION")
+    return m.group(1), m.group(2)
+
+
+def _ver(text: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in text.split("."))
+
+
+def installed_version(found: str, env_path: str) -> str | None:
+    try:
+        p = subprocess.run([found, "--version"], capture_output=True, text=True, timeout=10, env={"PATH": env_path})
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.search(r"\d+(?:\.\d+)+", p.stdout + p.stderr)
+    return m.group(0) if m else None
+
+
+def check_tools_spec(raw: dict, repo: str, search_path: str, which=shutil.which) -> tuple[list[str], bool]:
+    lines, ok = [], True
+    for entry in raw.get("tools") or ():
+        tool, minimum = parse_tool(entry)
+        found = which(tool, path=search_path)
+        if not found:
+            lines.append(f"FAIL  {tool} missing for {repo} CI (searched {search_path})")
+            ok = False
+        elif minimum is None:
+            lines.append(f"PASS  {tool} found for {repo} CI")
+        else:
+            have = installed_version(found, search_path)
+            if have is not None and _ver(have) >= _ver(minimum):
+                lines.append(f"PASS  {tool} {have} found for {repo} CI (needs {minimum} or newer)")
+            else:
+                lines.append(f"FAIL  {tool} {have or 'of unknown version'} for {repo} CI: needs {minimum} or newer")
+                ok = False
+    return lines, ok
+
+
 def parse_spec(repo: str, raw: dict) -> RepoCi:
     tools = tuple(raw.get("tools") or ())
-    if any(not isinstance(t, str) or not TOOL.match(t) for t in tools):
-        raise ValueError(f"{repo}: tool names must be plain executable names")
+    for t in tools:
+        parse_tool(t)  # raises ValueError
     checks = []
     for c in raw.get("checks") or ():
         ctx = c.get("context", "")
@@ -90,13 +133,9 @@ def check_tools(repos: list[str], search_path: str, which=shutil.which) -> tuple
             lines.append(f"FAIL  {repo} is in APX_PRIVATE_CI but has no CI spec (known: {', '.join(sorted(specs))})")
             ok = False
             continue
-        for tool in spec.tools:
-            found = which(tool, path=search_path)
-            if found:
-                lines.append(f"PASS  {tool} found for {repo} CI")
-            else:
-                lines.append(f"FAIL  {tool} missing for {repo} CI (searched {search_path})")
-                ok = False
+        got, good = check_tools_spec({"tools": spec.tools}, repo, search_path, which)
+        lines += got
+        ok = ok and good
     return lines, ok
 
 

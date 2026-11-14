@@ -29,9 +29,11 @@ Repository permissions (everything else stays **No access**):
 Never grant: Administration, Workflows, Secrets, Environments, Actions write, Members, Organization anything.
 Without `Workflows`, GitHub itself refuses any push that changes `.github/workflows/**`, a second wall behind the guard.
 
-## 2. Install it on exactly three repos
+## 2. Install it on only the allowed repos
 
-Install > Only select repositories > `autopilot`, `drillpad-workspace`, `stencil`. Nothing else, ever.
+Install > Only select repositories > `autopilot`, `drillpad-workspace`, `stencil`, plus the private repos that have a CI spec in
+`src/autopilot/apx/repo_ci.json` (`admin`, `control`, `pawl`, `agent-kit`) once you opt them in with `APX_PRIVATE_CI`. The doctor reads
+the allowed set from the same code (`planner.ALLOWED_REPOS`), so it fails on any other installation. Nothing else, ever.
 
 ## 3. Private key
 

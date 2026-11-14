@@ -9,7 +9,7 @@
     ]
   },
   "RyanJHamby/control": {
-    "tools": ["git", "python3", "pawl"],
+    "tools": ["git", "python3>=3.11", "pawl"],
     "checks": [
       {
         "context": "check",
@@ -26,7 +26,7 @@
     ]
   },
   "RyanJHamby/pawl": {
-    "tools": ["git", "python3", "make"],
+    "tools": ["git", "python3>=3.11", "make"],
     "checks": [
       {
         "context": "test",

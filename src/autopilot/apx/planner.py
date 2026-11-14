@@ -25,21 +25,14 @@ from . import batch as batches_mod  # noqa: E402
 from . import (
     caps,  # noqa: E402
     intake,  # noqa: E402
+    repo_ci,  # noqa: E402
 )
 from .github import Api, GitHubError  # noqa: E402
 from .ledger import Ledger  # noqa: E402
 
 # Hard scope. Anything else raises, whatever the config says.
-ALLOWED_REPOS = {
-    "RyanJHamby/autopilot",
-    "RyanJHamby/drillpad-workspace",
-    "RyanJHamby/stencil",
-    # private repos whose CI apx runs while Actions is off (repo_ci.json); checks only, never agent runs or merges
-    "RyanJHamby/admin",
-    "RyanJHamby/control",
-    "RyanJHamby/pawl",
-    "RyanJHamby/agent-kit",
-}
+# Hard scope: the three autopilot repos plus every private repo that has a CI spec (repo_ci.json: checks only, never agent runs or merges).
+ALLOWED_REPOS = {"RyanJHamby/autopilot", "RyanJHamby/drillpad-workspace", "RyanJHamby/stencil"} | set(repo_ci.load_specs())
 TRUSTED_PREFIXES = ("agent/", "dependabot/", "autopilot/kit-")
 
 

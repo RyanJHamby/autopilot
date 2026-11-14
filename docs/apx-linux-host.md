@@ -100,7 +100,7 @@ apx and updater timers. Run it again any time: a second run changes nothing.
 ### 5. Toolchains (your decision; the script installs none of them)
 
 The sandbox accounts can only reach GitHub, the package registries and (agent only) the model API, so install tools as your admin account and copy them in.
-`uv` is needed in `/home/apx-ci/.local/bin` (Rust only if `drillpad-workspace` builds native code); the `claude` CLI is needed at `/home/apx-agent/.local/bin/claude`. Pin exact
+`uv` is needed in `/home/apx-ci/.local/bin` (`clang++` and `rustc` for `drillpad-workspace`: see host tools below); the `claude` CLI is needed at `/home/apx-agent/.local/bin/claude`. Pin exact
 versions and verify checksums yourself; I have not run these installs on a server, so treat the preflight and doctor as the test.
 
 **Node is per repo.** Stencil's CI needs Node 20 and autopilot's needs Node 22, so there is no single `node` on the sandbox PATH. Which repo uses which is data in
@@ -141,13 +141,30 @@ curl -fsSLO "https://nodejs.org/dist/v$V/SHASUMS256.txt.sig"
 To change a version later, unpack the new one next to the old (`node-<new>`), change the entry in `repo_toolchains.json` in a PR, and remove the old directory once nothing declares it.
 The sandbox still sees no secrets from this: the directories sit outside every account's home, hold no credentials, and the job's environment is still the same short allowlist.
 
+**Host tools per repo.** Beyond Node, each repo's CI needs tools from the host itself. Which ones is data: the `"tools"` list of a private repo's entry in
+`src/autopilot/apx/repo_ci.json` (repos in `APX_PRIVATE_CI`), and `"repos"` in `src/autopilot/apx/host_tools.json` for the autopilot-managed repos, whose own
+`.autopilot/repo.yaml` lists commands but not tools (`drillpad-workspace` needs `clang++` and `rustc`, `stencil` needs `node`, `npm` and `npx` from its toolchain).
+Where being on the PATH is not enough, `"probes"` in the same file holds a command that must succeed, per tool, for every repo that declares it: `gitleaks git --help` must show
+the `git` subcommand (Ubuntu's apt gitleaks 8.18 runs but has none), `clang++` must compile, link and run a one-line C++20 program with `-fsanitize=undefined`, and `rustc` must
+accept `--edition 2021`. The doctor (step 6) runs these as `apx-ci`, on the same PATH that repo's sandbox job gets, and prints one FAIL per repo and tool with the install hint.
+To add a tool or a probe, change the data in a PR; no code names a repo.
+
+- `clang++`: `sudo apt-get install clang libclang-rt-dev`. On Ubuntu 24.04, `clang` alone does not bring the UBSan runtime, so the probe fails to link until
+  `libclang-rt-dev` is there. Install from apt, into `/usr/bin`: drillpad-workspace runs its compilers with `PATH=/usr/bin:/bin:$HOME/.cargo/bin`, so a copy only in `/usr/local/bin`
+  would pass the doctor and still fail its tests (`src/drillpad/runner/_proc.py` in that repo).
+- `rustc`: `sudo apt-get install rustc` (also `/usr/bin`, for the same reason).
+- `gitleaks`: not from apt. As your admin account, download the release tarball for your architecture and its checksums file from the gitleaks project's GitHub releases page,
+  check the tarball with `sha256sum -c` against that file (`grep` the tarball's line into it, as for Node above), then
+  `sudo install -m 755 -o root -g root gitleaks /usr/local/bin/gitleaks`. Write the version and checksum you verified in your private notes, not here.
+  `gitleaks git --help` as `apx-ci` must show `gitleaks git` in its usage.
+
 ### 6. Doctor, then shadow
 
 ```
 sudo -u apx -H sh -c 'set -a; . /home/apx/.apx/apx.env; set +a; PYTHONPATH=/srv/apx/current/src /srv/apx/venv/bin/python -m autopilot.apx.daemon --doctor'
 sudo bash deploy/linux/egress-probe.sh
 ```
-Both must be clean before anything is enabled. (In the container test, the doctor's sandbox checks passed on real Linux, and its only failure was the missing `claude` CLI, which step 5 is for.) The probe tries to break out as each sandbox account (private and metadata addresses, an arbitrary public host, IPv6, SSH to GitHub, DoT, another
+Both must be clean before anything is enabled. The doctor's `<repo>: host tool <tool>` lines are the per-repo host tools above. (In the container test, the doctor's sandbox checks passed on real Linux, and its only failure was the missing `claude` CLI, which step 5 is for.) The probe tries to break out as each sandbox account (private and metadata addresses, an arbitrary public host, IPv6, SSH to GitHub, DoT, another
 resolver, and loopback: a privileged port and `::1` must be refused, an unprivileged IPv4 port must work for `apx-ci` and `apx-agent` and stay refused for `apx`, using throwaway listeners the probe
 starts and stops itself) and also requires the allowed path to work, so a refusal cannot mean "no connectivity". Then:
 ```

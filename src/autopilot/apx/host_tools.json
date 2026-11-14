@@ -1,0 +1,34 @@
+{
+  "repos": {
+    "RyanJHamby/autopilot": ["git", "uv", "node", "npm"],
+    "RyanJHamby/drillpad-workspace": ["git", "uv", "clang++", "rustc"],
+    "RyanJHamby/stencil": ["git", "node", "npm", "npx"]
+  },
+  "probes": {
+    "gitleaks": {
+      "argv": ["gitleaks", "git", "--help"],
+      "expect": "gitleaks git",
+      "needs": "the `gitleaks git` subcommand (Ubuntu's apt gitleaks 8.18 does not have it)"
+    },
+    "clang++": {
+      "argv": ["/bin/sh", "-c", "d=$(/usr/bin/mktemp -d) || exit 1; clang++ -std=c++20 -fsanitize=undefined -x c++ -o \"$d/p\" - && \"$d/p\"; r=$?; /bin/rm -rf \"$d\"; exit $r"],
+      "stdin": "consteval int zero() { return 0; }\nint main() { return zero(); }\n",
+      "needs": "C++20 with -fsanitize=undefined (compile, link the UBSan runtime, run)"
+    },
+    "rustc": {
+      "argv": ["/bin/sh", "-c", "d=$(/usr/bin/mktemp -d) || exit 1; rustc --edition 2021 --crate-type lib --emit metadata -o \"$d/p\" -; r=$?; /bin/rm -rf \"$d\"; exit $r"],
+      "stdin": "pub fn zero() -> i32 { 0 }\n",
+      "needs": "Rust edition 2021"
+    }
+  },
+  "hints": {
+    "clang++": "sudo apt-get install clang libclang-rt-dev (clang alone does not bring the UBSan runtime)",
+    "rustc": "sudo apt-get install rustc (puts rustc in /usr/bin)",
+    "gitleaks": "install the gitleaks release binary into /usr/local/bin, checksum-verified against the release's checksums file (docs/apx-linux-host.md, step 5)",
+    "uv": "install uv into /home/apx-ci/.local/bin (docs/apx-linux-host.md, step 5)",
+    "node": "install the repo's Node toolchain under the shared toolchains directory (docs/apx-linux-host.md, step 5)",
+    "npm": "comes with the repo's Node toolchain (docs/apx-linux-host.md, step 5)",
+    "npx": "comes with the repo's Node toolchain (docs/apx-linux-host.md, step 5)",
+    "git": "sudo apt-get install git"
+  }
+}

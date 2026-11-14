@@ -50,6 +50,8 @@ class IssueResult:
     pr_number: int | None = None
     turns: int | None = None
     model: str | None = None
+    model_id: str | None = None  # resolved model id from the CLI's JSON
+    cost_usd: float | None = None  # the CLI's total_cost_usd for the run (None = not reported)
 
 
 def run_check_pr(
@@ -117,10 +119,10 @@ def run_agent(api: Api, ledger: Ledger, deps: Deps, action: Action, *, hard: boo
     repo, issue = action.repo, int(action.ref)
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     run_id = ledger.start(repo, issue, hard=hard)
-    conclusion, model, turns = "failure", None, None
+    conclusion, model, turns, model_id, cost_usd = "failure", None, None, None, None
     try:
         r = deps.work_on_issue(repo, issue, run_id)
-        model, turns = r.model, r.turns
+        model, turns, model_id, cost_usd = r.model, r.turns, r.model_id, r.cost_usd
         if r.ok and r.pr_number:
             conclusion = "success"
         else:
@@ -129,7 +131,7 @@ def run_agent(api: Api, ledger: Ledger, deps: Deps, action: Action, *, hard: boo
         _flag_needs_human(api, repo, issue)
         raise
     finally:
-        ledger.finish(run_id, conclusion, model=model, turns=turns)
+        ledger.finish(run_id, conclusion, model=model, turns=turns, model_id=model_id, cost_usd=cost_usd)
         if deps.report is not None:
             try:
                 deps.report(repo, issue, model, turns, conclusion, started)
@@ -153,11 +155,11 @@ def run_fix(api: Api, ledger: Ledger, deps: Deps, action: Action) -> str:
     issue = int(m.group(1))
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     run_id = ledger.start(repo, issue, kind="fix", ref=sha)
-    conclusion, model, turns = "failure", None, None
+    conclusion, model, turns, model_id, cost_usd = "failure", None, None, None, None
     why = ""
     try:
         r = deps.fix_ci(repo, issue, run_id, int(pr_number), sha, action.detail)
-        model, turns = r.model, r.turns
+        model, turns, model_id, cost_usd = r.model, r.turns, r.model_id, r.cost_usd
         if r.ok:
             conclusion = "success"
         else:
@@ -168,7 +170,7 @@ def run_fix(api: Api, ledger: Ledger, deps: Deps, action: Action) -> str:
         _flag_needs_human(api, repo, int(pr_number))
         raise
     finally:
-        ledger.finish(run_id, conclusion, model=model, turns=turns)
+        ledger.finish(run_id, conclusion, model=model, turns=turns, model_id=model_id, cost_usd=cost_usd)
         if deps.report is not None:
             try:
                 deps.report(repo, issue, model, turns, conclusion, started)

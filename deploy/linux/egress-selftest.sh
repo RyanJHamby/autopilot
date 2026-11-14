@@ -86,9 +86,21 @@ threading.Thread(target=dns, daemon=True).start()
 for h in ("203.0.113.10", "203.0.113.20", "203.0.113.30", "198.51.100.7", "10.99.0.5"):
     for p in (443, 80):
         threading.Thread(target=listen, args=(h, p), daemon=True).start()
-threading.Thread(target=listen, args=("127.0.0.1", 8080), daemon=True).start()
+threading.Thread(target=listen, args=("127.0.0.1", 8080), daemon=True).start()  # an unprivileged loopback port (a test suite's local server)
+threading.Thread(target=listen, args=("127.0.0.1", 22), daemon=True).start()
+threading.Thread(target=listen, args=("127.0.0.53", 80), daemon=True).start()  # another loopback address, standing in for a stub resolver  # a privileged loopback port, standing in for sshd
+
+def udp_echo(host, port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind((host, port))
+    while True:
+        data, addr = s.recvfrom(512)
+        s.sendto(b"pong", addr)
+
+threading.Thread(target=udp_echo, args=("127.0.0.1", 9999), daemon=True).start()
 if len(sys.argv) > 1 and sys.argv[1] == "ipv6":
     threading.Thread(target=listen, args=("::1", 443, socket.AF_INET6), daemon=True).start()
+    threading.Thread(target=listen, args=("::1", 8080, socket.AF_INET6), daemon=True).start()
 print("ready", flush=True)
 threading.Event().wait()
 PYEOF
@@ -130,6 +142,16 @@ try:
 except OSError:
     sys.exit(1)
 ' "$2" "$3" ${4:+v6}
+}
+udp() { # udp USER HOST PORT : sends one datagram and succeeds only if the fake answers
+  as "$1" "$PY" -c '
+import socket, sys
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(2)
+try:
+    s.sendto(b"ping", (sys.argv[1], int(sys.argv[2]))); s.recv(16)
+except OSError:
+    sys.exit(1)
+' "$2" "$3"
 }
 resolve() { # resolve USER NAME -> prints the address or nothing
   as "$1" "$PY" -c '
@@ -205,9 +227,21 @@ for u in apx-ci apx-agent apx; do
   blocked "$u" "an address no allowed name resolved to" $STRAY 443
   blocked "$u" "an allowed address on the wrong port" $GH 80
   blocked "$u" "an allowed name that resolved into a private range (rebinding)" $PRIVATE 443
-  blocked "$u" "another service on loopback" 127.0.0.1 8080
-  if [ "$HAVE6" = 1 ]; then blocked "$u" "IPv6" ::1 443 v6; else say "SKIP  $u: IPv6 (no ::1 in this container)"; fi
+  blocked "$u" "loopback tcp to a privileged port (22, where sshd would be)" 127.0.0.1 22
+  if [ "$HAVE6" = 1 ]; then
+    blocked "$u" "IPv6" ::1 443 v6
+    blocked "$u" "IPv6 loopback on an unprivileged port (the loopback rule is IPv4 only)" ::1 8080 v6
+  else say "SKIP  $u: IPv6 (no ::1 in this container)"; fi
+  if ! udp "$CONTROL" 127.0.0.1 9999; then fail "$u: loopback udp (control got no answer, so this proves nothing)"
+  elif udp "$u" 127.0.0.1 9999; then fail "$u: loopback udp to a port other than the resolver's (ANSWERED, should be refused)"
+  else pass "$u: loopback udp to a port other than the resolver's"; fi
 done
+
+say "--- loopback: ci and agent may reach unprivileged IPv4 TCP ports (test suites need it); the orchestrator account may not"
+ok apx-ci "loopback tcp to an unprivileged port (8080)" 127.0.0.1 8080
+ok apx-agent "loopback tcp to an unprivileged port (8080)" 127.0.0.1 8080
+blocked apx "loopback tcp to an unprivileged port (the orchestrator lane has no such rule)" 127.0.0.1 8080
+blocked apx-ci "another loopback address (127.0.0.53, where a stub resolver would be)" 127.0.0.53 80
 
 say "--- a table that never matches these uids changes nothing for anyone else"
 if tcp "$CONTROL" $STRAY 443 && tcp root $STRAY 443; then pass "unrestricted accounts still reach any address"; else fail "rules leaked onto other accounts"; fi

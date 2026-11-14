@@ -28,6 +28,8 @@ def fake_node(root: Path, name: str, version: str, body: str = "") -> Path:
     """<root>/<name>/bin/node that prints a version like the real one does."""
     b = root / name / "bin"
     b.mkdir(parents=True)
+    # explicit: under a umask of 002 (Ubuntu's default for a normal user) mkdir gives 775, which the check rightly refuses
+    b.chmod(0o755)
     f = b / "node"
     f.write_text(f"#!/bin/sh\n{body}\necho v{version}\n")
     f.chmod(0o755)

@@ -9,7 +9,8 @@
 #   - creates the four accounts: apx (holds the secrets), apx-ci (runs PR code), apx-agent (runs the model), apx-dns (the resolver)
 #     none of them is an admin, none can log in, each home is mode 700
 #   - one sudoers rule each: apx may act as apx-ci and as apx-agent, nothing else (checked with visudo before it is installed)
-#   - lays out /srv/apx: a Python venv, releases/<sha>, a `current` link, and the updater's own copy
+#   - lays out /srv/apx: a Python venv, releases/<sha>, a `current` link, and the updater's own copy. With APX_SHA=<full sha of main>
+#     it fetches that commit, verifies the release and switches `current` atomically (deploy/linux/release.sh)
 #   - renders and installs the egress allowlist (nftables rules + a dnsmasq config) for the three sandbox lanes, checked before it is loaded
 #   - installs the systemd units and starts ONLY the egress rules and the resolver. The apx and updater timers are installed but NOT
 #     enabled: you enable them after the doctor passes. Shadow mode stays on until APX_SHADOW=0 is set in apx.env.
@@ -135,9 +136,11 @@ else
 fi
 if [ -n "$WANT_SHA" ]; then
   [[ "$WANT_SHA" =~ ^[0-9a-f]{40}$ ]] || { say "APX_SHA must be a full 40-character commit id"; exit 1; }
-  as apx git -C "$SHARED/autopilot" checkout -q --detach "$WANT_SHA"
-fi
-if [ "$DRY_RUN" = 1 ]; then
+  # Fetch that commit of main into both clones, build and verify its release, and only then switch `current` (see release.sh).
+  # It stops this script before the rules are rendered if anything does not check out, and leaves `current` as it was.
+  SHARED="$SHARED" APX_SHA="$WANT_SHA" APX_USER=apx DRY_RUN="$DRY_RUN" bash "$here/release.sh"
+  SHA="$WANT_SHA"
+elif [ "$DRY_RUN" = 1 ]; then
   SHA=0000000000000000000000000000000000000000
 else
   SHA="$(as apx git -C "$SHARED/autopilot" rev-parse HEAD)"  # as apx: git refuses a repo another account owns
@@ -150,13 +153,15 @@ if [ "$DRY_RUN" = 1 ] || [ ! -x "$SHARED/venv/bin/python" ]; then as apx python3
 as apx "$SHARED/venv/bin/python" -m pip install --quiet --disable-pip-version-check $PIP_PACKAGES
 # pip installs under apx's umask (077); the no-secrets test account must be able to read the packages.
 run chmod -R go+rX "$SHARED/venv"
-if [ "$DRY_RUN" = 1 ] || [ ! -d "$SHARED/releases/$SHA" ]; then
-  as apx git clone -q --no-hardlinks "$SHARED/autopilot" "$SHARED/releases/$SHA"
-  as apx git -C "$SHARED/releases/$SHA" checkout -q --detach "$SHA"
+if [ -z "$WANT_SHA" ]; then  # without APX_SHA: the clone's own HEAD, and an existing `current` is never moved
+  if [ "$DRY_RUN" = 1 ] || [ ! -d "$SHARED/releases/$SHA" ]; then
+    as apx git clone -q --no-hardlinks "$SHARED/autopilot" "$SHARED/releases/$SHA"
+    as apx git -C "$SHARED/releases/$SHA" checkout -q --detach "$SHA"
+  fi
+  if [ "$DRY_RUN" = 1 ] || [ ! -e "$SHARED/current" ]; then as apx ln -s "releases/$SHA" "$SHARED/current"; fi
+  if [ "$DRY_RUN" = 1 ] || [ ! -d "$SHARED/updater" ]; then as apx git clone -q --no-hardlinks "$SHARED/autopilot" "$SHARED/updater"; fi
+  as apx git -C "$SHARED/updater" checkout -q --detach "$SHA"
 fi
-if [ "$DRY_RUN" = 1 ] || [ ! -e "$SHARED/current" ]; then as apx ln -s "releases/$SHA" "$SHARED/current"; fi
-if [ "$DRY_RUN" = 1 ] || [ ! -d "$SHARED/updater" ]; then as apx git clone -q --no-hardlinks "$SHARED/autopilot" "$SHARED/updater"; fi
-as apx git -C "$SHARED/updater" checkout -q --detach "$SHA"
 run chmod -R go+rX "$SHARED/releases" "$SHARED/updater" "$SHARED/autopilot"
 
 # --- the egress allowlist ----------------------------------------------------------------------------------------------------------

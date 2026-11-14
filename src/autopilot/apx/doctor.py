@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import automerge as kit_automerge  # noqa: E402
 
 from .. import claude_floor  # noqa: E402
-from . import hostenv  # noqa: E402
+from . import host_tools, hostenv, repo_ci, sandbox, toolchains  # noqa: E402
 from .app_auth import TokenCache, make_jwt  # noqa: E402
 from .github import make_api  # noqa: E402
 from .planner import ALLOWED_REPOS  # noqa: E402
@@ -202,8 +202,55 @@ def agent_checks(s, launcher) -> list[Check]:
     return out
 
 
-def repo_tool_checks(s, launcher, *, path_for=None) -> list[Check]:
-    return []
+def _tool_check(repo: str, entry: str, run, data) -> Check:
+    tool, minimum = repo_ci.parse_tool(entry)
+    name, hint = f"{repo}: host tool {tool}", data.hint(tool)
+    r = run(["/bin/sh", "-c", 'command -v -- "$1"', "sh", tool])
+    lines = r.stdout.strip().splitlines() if r.returncode == 0 else []
+    found = lines[-1].strip() if lines and lines[-1].strip().startswith("/") else ""
+    if not found:
+        return Check(name, False, f"missing on the sandbox PATH; install: {hint}")
+    if minimum is not None:
+        v = run([found, "--version"])
+        m = re.search(r"\d+(?:\.\d+)+", (v.stdout or "") + (v.stderr or "")) if v.returncode == 0 else None
+        if not m or repo_ci._ver(m.group(0)) < repo_ci._ver(minimum):
+            have = m.group(0) if m else "of unknown version"
+            return Check(name, False, f"{found} is {have}, needs {minimum} or newer; install: {hint}")
+    probe = data.probes.get(tool)
+    if probe is None:
+        return Check(name, True, found)
+    argv = [found if i == 0 and a == tool else a for i, a in enumerate(probe.argv)]
+    p = run(argv, probe.stdin)
+    text = (p.stdout or "") + (p.stderr or "")
+    ok = p.returncode == 0 and (probe.expect is None or re.search(probe.expect, text) is not None)
+    if ok:
+        return Check(name, True, f"{found} ({probe.needs})")
+    why = text.strip().splitlines()[-1][:100] if text.strip() else f"exit {p.returncode}"
+    return Check(name, False, f"{found} lacks {probe.needs} ({why}); install: {hint}")
+
+
+def repo_tool_checks(s, launcher, *, path_for: Callable[[str], str] | None = None) -> list[Check]:
+    """Every host tool each enrolled repo (APX_INSTALLATIONS plus APX_PRIVATE_CI) declares must resolve, AS the sandbox account, on the
+    PATH that repo's sandbox job gets, and pass its capability probe if host_tools.json has one. One check per repo and tool."""
+    data, specs = host_tools.load(), repo_ci.load_specs()
+    toolchain_root = Path(s.shared_dir) / "toolchains"
+    path_for = path_for or (lambda repo: sandbox.job_path(s.ci_home(), toolchains.bin_dirs(repo, toolchain_root)))
+    out: list[Check] = []
+    for repo in sorted(set(s.installations) | set(s.private_ci)):
+        entries = host_tools.declared(repo, s.private_ci, data, specs)
+        if not entries:
+            out.append(Check(f"{repo}: host tools", True, "none declared (src/autopilot/apx/host_tools.json)"))
+            continue
+        env = {"PATH": path_for(repo), "HOME": s.ci_home()}
+
+        def run(argv, stdin=None, env=env):
+            try:
+                return launcher.run(argv, cwd="/", env=env, capture_output=True, text=True, timeout=120, input=stdin)
+            except Exception as e:  # noqa: BLE001 - a broken sudo fails the check, never the doctor
+                return type("R", (), {"returncode": 255, "stdout": "", "stderr": type(e).__name__})()
+
+        out.extend(_tool_check(repo, e, run, data) for e in entries)
+    return out
 
 
 def run_doctor(
@@ -243,7 +290,9 @@ def run_doctor(
     if s.ci_user:
         from .runas import Launcher
 
-        out.extend(sandbox_checks(s, launcher or Launcher(s.ci_user)))
+        ci_launcher = launcher or Launcher(s.ci_user)
+        out.extend(sandbox_checks(s, ci_launcher))
+        out.extend(repo_tool_checks(s, ci_launcher))
     else:
         out.append(
             Check("sandbox account configured (APX_CI_USER)", False, "PR code still runs as the account that holds the secrets")

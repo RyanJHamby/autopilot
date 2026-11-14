@@ -22,7 +22,7 @@
     }
   },
   "hints": {
-    "clang++": "sudo apt-get install clang (puts clang++ and the UBSan runtime in /usr/bin)",
+    "clang++": "sudo apt-get install clang libclang-rt-dev (clang alone does not bring the UBSan runtime)",
     "rustc": "sudo apt-get install rustc (puts rustc in /usr/bin)",
     "gitleaks": "install the gitleaks release binary into /usr/local/bin, checksum-verified against the release's checksums file (docs/apx-linux-host.md, step 5)",
     "uv": "install uv into /home/apx-ci/.local/bin (docs/apx-linux-host.md, step 5)",

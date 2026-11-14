@@ -36,7 +36,7 @@ def fake(bindir: Path, name: str, body: str = "exit 0") -> None:
 
 
 # a clang++ that writes a runnable program to its -o target, as a real one would
-CLANG_OK = 'for a; do [ "$prev" = -o ] && out=$a; prev=$a; done; cat >/dev/null; printf "#!/bin/sh\\nexit 0\\n" >"$out"; chmod +x "$out"'
+CLANG_OK = 'for a; do [ "$prev" = -o ] && out=$a; prev=$a; done; cat >/dev/null; printf "#!/bin/sh\\nexit 0\\n" >"$out"; /bin/chmod +x "$out"'
 CLANG_NO_UBSAN = 'cat >/dev/null; echo "clang: error: unsupported option -fsanitize=undefined" >&2; exit 1'
 RUSTC_OK = "cat >/dev/null; exit 0"
 RUSTC_OLD = 'cat >/dev/null; echo "error: argument for --edition must be one of: 2015|2018" >&2; exit 1'
@@ -44,8 +44,8 @@ GITLEAKS_OLD = 'echo "Usage:\n  gitleaks [command]\n\nAvailable Commands:\n  det
 GITLEAKS_NEW = 'echo "Usage:\n  gitleaks git [flags] [repo]"'
 
 
-def checks(s, bindir: Path, launcher=None):
-    out = dr.repo_tool_checks(s, launcher or Launcher(), path_for=lambda repo: str(bindir))
+def checks(s, bindir: Path, launcher=None, extra=""):
+    out = dr.repo_tool_checks(s, launcher or Launcher(), path_for=lambda repo: str(bindir) + extra)
     return {c.name: c for c in out}
 
 
@@ -203,6 +203,11 @@ def test_the_real_probe_passes_with_a_real_compiler_when_one_is_here(tmp_path, t
     found = shutil.which(tool)
     if not found:
         pytest.skip(f"no {tool} in this environment")
+    if tool == "rustc":  # a rustup proxy needs the caller's HOME; link the real compiler instead
+        p = subprocess.run([found, "--print", "sysroot"], capture_output=True, text=True)
+        if p.returncode != 0:
+            pytest.skip(f"this environment's rustc does not run: {p.stderr.strip()[:80]}")
+        found = str(Path(p.stdout.strip()) / "bin" / "rustc")
     s = make_settings(tmp_path, [DRILL])
     b = tmp_path / "bin"
     for t in ("git", "uv"):
@@ -210,7 +215,7 @@ def test_the_real_probe_passes_with_a_real_compiler_when_one_is_here(tmp_path, t
     others = {"clang++": ("rustc", RUSTC_OK), "rustc": ("clang++", CLANG_OK)}
     fake(b, *others[tool])
     (b / tool).symlink_to(found)
-    c = checks(s, b)[f"{DRILL}: host tool {tool}"]
+    c = checks(s, b, extra=":/usr/bin:/bin")[f"{DRILL}: host tool {tool}"]  # the compiler driver finds its linker there
     if not c.ok and tool == "clang++" and "fsanitize" in c.detail:
         pytest.skip(f"this environment's clang++ cannot link UBSan: {c.detail}")
     assert c.ok, c.detail

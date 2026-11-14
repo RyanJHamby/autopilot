@@ -90,6 +90,8 @@ class Stub:
         if cmd in ("/bin/cat", "/bin/ls"):
             name = "orchestrator home" if cmd == "/bin/ls" else ("Claude token" if "oauth" in rest[0] else "App key")
             return R(0 if name in self.leak else 1)
+        if cmd == "/bin/sh" and "command -v" in rest[1]:  # the per-repo host tool lookup: every tool is there
+            return R(0, f"/usr/bin/{rest[-1]}\n")
         if cmd == "/bin/sh":
             return R(1 if self.no_workdir else 0)
         if rest[:1] == ["-c"]:

@@ -18,6 +18,12 @@ from .runas import Launcher
 SAFE_PATH_DIR = re.compile(r"^/[A-Za-z0-9._/+-]+$")
 
 
+def job_path(home: str, prepend: list[str] | tuple[str, ...] = ()) -> str:
+    """The PATH a sandbox job runs with: the repo's toolchain directories first, then the fixed default. The doctor checks host tools on
+    exactly this PATH, so a tool it passes is one the job finds."""
+    return ":".join([*prepend, f"/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:/usr/bin:/bin"])
+
+
 def run_in_sandbox(
     launcher: Launcher,
     req: dict,
@@ -38,7 +44,7 @@ def run_in_sandbox(
     env = {
         "PYTHONPATH": f"{code_dir}/src",
         "HOME": home,
-        "PATH": ":".join([*path_prepend, f"/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:/usr/bin:/bin"]),
+        "PATH": job_path(home, path_prepend),
         "CI": "true",
         "LANG": "en_US.UTF-8",
         "GIT_TERMINAL_PROMPT": "0",
@@ -108,7 +114,13 @@ class SandboxLanes:
         if missing:
             return {"error": f"toolchain {', '.join(missing)} is missing on the host; the host preflight reports it"}
         return run_in_sandbox(
-            self.launcher, req, self.token_for(repo), python=self.python, code_dir=self.code_dir, home=self.home, path_prepend=dirs
+            self.launcher,
+            req,
+            self.token_for(repo),
+            python=self.python,
+            code_dir=self.code_dir,
+            home=self.home,
+            path_prepend=dirs,
         )
 
     def guard(self, co: Path, head_ref: str) -> tuple[bool, str]:

@@ -66,14 +66,14 @@ def test_unconfigured_repo_gets_nothing():
 
 def test_settings_opt_in_validation(tmp_path):
     inst = f"{REPO}=11,{ADMIN}=12,{PAWL}=13"
-    s = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=inst))
+    s = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=REPO + "=11"))
     assert s.private_ci == frozenset()  # nothing runs for them until the owner opts in
     s = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=inst, APX_PRIVATE_CI=f"{ADMIN},{PAWL}"))
     assert s.private_ci == {ADMIN, PAWL}
     assert [c.context for c in s.private_checks(ADMIN)] == ["ci"]
     assert s.private_checks(REPO) == ()
     assert not s.full_loop(ADMIN) and not s.agents_allowed(ADMIN)  # checks only, even once shadow mode is off
-    off = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=inst, APX_PRIVATE_CI=ADMIN, APX_SHADOW="0"))
+    off = dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=inst, APX_PRIVATE_CI=f"{ADMIN},{PAWL}", APX_SHADOW="0"))
     assert not off.full_loop(ADMIN) and off.full_loop(REPO)
     for bad in (
         {"APX_PRIVATE_CI": CONTROL},  # not installed
@@ -82,6 +82,8 @@ def test_settings_opt_in_validation(tmp_path):
     ):
         with pytest.raises(dm.ConfigError):
             dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=inst, **bad))
+    with pytest.raises(dm.ConfigError):  # installed in the App but not opted in: it would have no check names to post
+        dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=inst))
     with pytest.raises(dm.ConfigError):  # an installed private repo that is not in scope at all
         dm.Settings.from_env(env(tmp_path, APX_INSTALLATIONS=f"{REPO}=11,RyanJHamby/resume=9"))
 
@@ -297,3 +299,68 @@ def test_both_preflights_call_the_tool_check_for_configured_repos(script):
     text = (ROOT / script).read_text()
     assert "APX_PRIVATE_CI" in text and "autopilot.apx.repo_ci" in text and "check-tools" in text
     assert subprocess.run(["bash", "-n", str(ROOT / script)]).returncode == 0
+
+
+# --- follow-ups from the VPS cutover checklist ---------------------------------------------------------------------------------
+
+
+def test_the_allowed_set_is_read_from_the_ci_spec_not_a_second_list():
+    base = {"RyanJHamby/autopilot", "RyanJHamby/drillpad-workspace", "RyanJHamby/stencil"}
+    assert planner.ALLOWED_REPOS == base | set(repo_ci.load_specs())
+    from autopilot.apx import doctor
+
+    assert doctor.ALLOWED_REPOS is planner.ALLOWED_REPOS  # the doctor's scope checks use that one set
+    assert "RyanJHamby/resume" not in planner.ALLOWED_REPOS
+
+
+def test_apx_app_doc_lists_exactly_the_allowed_repos():
+    text = (ROOT / "docs" / "apx-app.md").read_text()
+    section = text.split("## 2.")[1].split("## 3.")[0]
+    assert "exactly three" not in section
+    for repo in planner.ALLOWED_REPOS:
+        assert f"`{repo.split('/')[1]}`" in section, repo
+
+
+def fake_tool(dirpath, name, version_line):
+    f = dirpath / name
+    f.write_text(f"#!/bin/sh\necho '{version_line}'\n")
+    f.chmod(f.stat().st_mode | stat.S_IXUSR)
+
+
+def test_a_tool_can_require_a_minimum_version(tmp_path):
+    assert repo_ci.parse_tool("python3>=3.11") == ("python3", "3.11")
+    assert repo_ci.parse_tool("gitleaks") == ("gitleaks", None)
+    with pytest.raises(ValueError):
+        repo_ci.parse_tool("node>=twenty")
+    p = tmp_path / "s.json"
+    p.write_text(json.dumps({"o/r": {"tools": ["node>=x"], "checks": [{"context": "ci", "steps": ["make check"]}]}}))
+    with pytest.raises(ValueError):
+        repo_ci.load_specs(p)
+    lines, ok = repo_ci.check_tools_spec({"tools": ["python3>=3.11"]}, "o/r", str(tmp_path))
+    assert not ok and "python3" in lines[0]  # missing
+    fake_tool(tmp_path, "python3", "Python 3.9.18")
+    lines, ok = repo_ci.check_tools_spec({"tools": ["python3>=3.11"]}, "o/r", str(tmp_path))
+    assert not ok and lines[0].startswith("FAIL") and "3.9.18" in lines[0] and "3.11" in lines[0]
+    fake_tool(tmp_path, "python3", "Python 3.12.1")
+    lines, ok = repo_ci.check_tools_spec({"tools": ["python3>=3.11"]}, "o/r", str(tmp_path))
+    assert ok and lines[0].startswith("PASS")
+    fake_tool(tmp_path, "python3", "Python 3.100.0")  # numeric, not string, comparison
+    assert repo_ci.check_tools_spec({"tools": ["python3>=3.11"]}, "o/r", str(tmp_path))[1]
+
+
+def test_version_checked_through_the_cli_and_python_needs_3_11_for_control_and_pawl(tmp_path):
+    for r in (CONTROL, PAWL):
+        assert "python3>=3.11" in specs()[r].tools
+    needed = {repo_ci.parse_tool(t)[0] for t in specs()[PAWL].tools}
+    fake_bin(tmp_path, sorted(needed - {"python3"}))
+    fake_tool(tmp_path, "python3", "Python 3.8.0")
+    r = tools_cli(tmp_path, PAWL)
+    assert r.returncode == 1 and "3.8.0" in r.stdout
+
+
+def test_memory_cap_leaves_headroom_on_the_planned_12_gb_box():
+    unit = (ROOT / "deploy/linux/systemd/apx.service").read_text()
+    gb = int(next(ln for ln in unit.splitlines() if ln.startswith("MemoryMax=")).split("=")[1].rstrip("G"))
+    assert gb <= 8  # the static value is only a fallback; 12G was the whole box
+    boot = (ROOT / "deploy/linux/bootstrap.sh").read_text()
+    assert "MemTotal" in boot and "apx.service.d" in boot and "MemoryMax=" in boot

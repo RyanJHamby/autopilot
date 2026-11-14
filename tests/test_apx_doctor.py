@@ -237,7 +237,9 @@ def test_other_sandbox_misconfigurations_each_fail_their_own_check(tmp_path):
 class AgentStub:
     """Stands in for the model's account: usable, standard user, denied the write key and the orchestrator home, owns a valid token."""
 
-    def __init__(self, leak=(), admin=False, bad_token=False, no_cli=False, no_workdir=False, dead=False, version="2.1.312 (Claude Code)\n"):
+    def __init__(
+        self, leak=(), admin=False, bad_token=False, no_cli=False, no_workdir=False, dead=False, version="2.1.312 (Claude Code)\n"
+    ):
         self.version = version
         self.leak, self.admin, self.bad_token, self.no_cli, self.no_workdir, self.dead = (
             leak,
@@ -380,3 +382,34 @@ def test_a_failing_floor_check_makes_the_doctor_fail(tmp_path):
     out = run(s, claude_probe=lambda b: "2.1.1 (Claude Code)\n")
     text, ok = dr.render(list(out.values()))
     assert ok is False and "version floor" in text
+
+
+def test_with_an_agent_account_the_orchestrator_does_not_need_its_own_claude(tmp_path):
+    # The agent account runs claude; the orchestrator never does. A claude missing from the orchestrator's PATH must not fail
+    # the doctor, while the agent account's own claude checks still run and must pass.
+    s = settings(tmp_path, ci_user="apx-ci", agent_user="apx-agent")
+    out = run_agent_doctor(
+        s,
+        which=lambda t: None if t == "claude" else f"/usr/bin/{t}",
+        claude_probe=lambda binary: (_ for _ in ()).throw(FileNotFoundError("claude")),
+    )
+    assert out["tool claude"].ok, out["tool claude"].detail
+    assert out["claude meets the version floor"].ok, out["claude meets the version floor"].detail
+    assert out["agent account can run the claude CLI"].ok
+    assert out["agent account claude meets the version floor"].ok
+
+
+def test_without_an_agent_account_the_orchestrators_claude_is_still_required(tmp_path):
+    s = settings(tmp_path, ci_user="apx-ci")
+    out = {
+        c.name: c
+        for c in dr.run_doctor(
+            s,
+            which=lambda t: None if t == "claude" else f"/usr/bin/{t}",
+            launcher=Stub(),
+            approved=lambda repo: ["a" * 40],
+            api_factory=factory(),
+            claude_probe=lambda binary: "2.1.323 (Claude Code)\n",
+        )
+    }
+    assert not out["tool claude"].ok

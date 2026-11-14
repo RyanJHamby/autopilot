@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from test_apx_daemon import env
+from test_apx_doctor import factory
 
 from autopilot.apx import daemon as dm
 from autopilot.apx import doctor as dr
@@ -36,10 +37,10 @@ def fake(bindir: Path, name: str, body: str = "exit 0") -> None:
 
 
 # a clang++ that writes a runnable program to its -o target, as a real one would
-CLANG_OK = 'for a; do [ "$prev" = -o ] && out=$a; prev=$a; done; cat >/dev/null; printf "#!/bin/sh\\nexit 0\\n" >"$out"; /bin/chmod +x "$out"'
-CLANG_NO_UBSAN = 'cat >/dev/null; echo "clang: error: unsupported option -fsanitize=undefined" >&2; exit 1'
-RUSTC_OK = "cat >/dev/null; exit 0"
-RUSTC_OLD = 'cat >/dev/null; echo "error: argument for --edition must be one of: 2015|2018" >&2; exit 1'
+CLANG_OK = 'for a; do [ "$prev" = -o ] && out=$a; prev=$a; done; /bin/cat >/dev/null; printf "#!/bin/sh\\nexit 0\\n" >"$out"; /bin/chmod +x "$out"'
+CLANG_NO_UBSAN = '/bin/cat >/dev/null; echo "clang: error: unsupported option -fsanitize=undefined" >&2; exit 1'
+RUSTC_OK = "/bin/cat >/dev/null; exit 0"
+RUSTC_OLD = '/bin/cat >/dev/null; echo "error: argument for --edition must be one of: 2015|2018" >&2; exit 1'
 GITLEAKS_OLD = 'echo "Usage:\n  gitleaks [command]\n\nAvailable Commands:\n  detect"'  # cobra falls back to the root help
 GITLEAKS_NEW = 'echo "Usage:\n  gitleaks git [flags] [repo]"'
 
@@ -147,7 +148,17 @@ def test_the_doctor_runs_the_host_tool_checks_through_the_sandbox_launcher(tmp_p
             seen.append(argv)
             return subprocess.CompletedProcess(argv, 1, "", "")
 
-    names = [c.name for c in dr.run_doctor(s, launcher=Rec(), which=lambda t: f"/usr/bin/{t}", approved=lambda r: [])]
+    names = [
+        c.name
+        for c in dr.run_doctor(  # no network and no real claude: the GitHub and floor parts are faked as in test_apx_doctor
+            s,
+            launcher=Rec(),
+            which=lambda t: f"/usr/bin/{t}",
+            approved=lambda r: [],
+            api_factory=factory(),
+            claude_probe=lambda binary: "2.1.323 (Claude Code)\n",
+        )
+    ]
     assert f"{DRILL}: host tool clang++" in names
     assert any(a[:2] == ["/bin/sh", "-c"] and a[-1] == "clang++" for a in seen)
 

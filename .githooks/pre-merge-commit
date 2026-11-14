@@ -1,0 +1,6 @@
+#!/bin/sh
+# chains-global-hooks
+# Passthrough: this repo has no merge-commit checks of its own, but its core.hooksPath hides the global pre-merge-commit hook, so run
+# that one. See _chain-global.
+. "$(dirname "$0")/_chain-global"
+chain_global pre-merge-commit "$@"

@@ -178,6 +178,9 @@ class Settings:
         nospec = set(s.private_ci) - set(specs)
         if nospec:
             raise ConfigError(f"APX_PRIVATE_CI names repos with no spec in repo_ci.json: {sorted(nospec)}")
+        unrouted = set(s.installations) - set(REQUIRED_CONTEXTS) - set(s.private_ci)
+        if unrouted:
+            raise ConfigError(f"installed but neither an autopilot repo nor listed in APX_PRIVATE_CI: {sorted(unrouted)}")
         try:
             guardlane.validate_kit(s.kit_repo, s.kit_ref)
         except guardlane.KitError as ex:

@@ -281,8 +281,9 @@ def test_missing_tool_is_a_preflight_fail(tmp_path):
 
 
 def test_all_tools_present_passes_and_nothing_configured_passes(tmp_path):
-    needed = {t for r in (ADMIN, PAWL) for t in specs()[r].tools}
-    fake_bin(tmp_path, sorted(needed))
+    needed = {repo_ci.parse_tool(t)[0] for r in (ADMIN, PAWL) for t in specs()[r].tools}
+    fake_bin(tmp_path, sorted(needed - {"python3"}))
+    fake_tool(tmp_path, "python3", "Python 3.12.3")
     r = tools_cli(tmp_path, f"{ADMIN},{PAWL}")
     assert r.returncode == 0 and "FAIL" not in r.stdout and "PASS" in r.stdout
     empty = tools_cli(tmp_path / "nothing", "")

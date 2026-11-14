@@ -181,6 +181,22 @@ Order matters (the sandbox runs a shared copy of this repo's code, which must al
 Agent runs stay **off** after a cutover until a separate agent account (`APX_AGENT_USER`, backlog S1b) exists, even if `APX_CUTOVER` is
 set: the planner says "agent runs blocked: no dedicated agent account". Rebases and merges are not affected.
 
+## CI for the private repos without Actions (admin, control, pawl, agent-kit)
+
+Hosted Actions is off, so these repos have no CI. apx runs it instead, as `apx-ci` with no secrets, and posts the check names their
+branch protection already requires. The per-repo spec (context names, commands, host tools) is data in
+`src/autopilot/apx/repo_ci.json`; it is not in `policy/portfolio.yaml` because agents cannot edit that file, so move it there if you like.
+Checks only: no agent runs, rebases or merges for these repos, and no guard kit (they have no `.autopilot/repo.yaml`). The work-hours
+freeze holds these check runs like any other (`apx_freeze_gates_check_runs`).
+
+1. Install the apx App on the repos (GitHub > Settings > Applications > autopilot-apx > Configure > repository access), then add each
+   installation id to `APX_INSTALLATIONS` in `apx.env`.
+2. Opt each repo in: `APX_PRIVATE_CI=RyanJHamby/admin,RyanJHamby/control,RyanJHamby/pawl,RyanJHamby/agent-kit` (any subset).
+   A repo that is installed but not opted in makes apx refuse to start. `AUTOPILOT_PAUSED=true` still pauses a repo.
+3. Run the host preflight with the same variable set; it fails when a tool is missing from the `apx-ci` PATH:
+   `APX_PRIVATE_CI=... bash deploy/linux/preflight.sh` (Mac: `deploy/apx-host-preflight.sh`).
+4. Required checks pinned to the Actions app (admin's classic protection is) will not accept apx's check run. Re-point them first.
+
 ## Pin required checks to the apx App (backlog S3, admin action, run by the owner)
 
 Until this is done the rulesets accept `guard / guard` and `test`/`build` from ANY app, so anything holding a `checks:write` token could post a

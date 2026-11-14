@@ -29,6 +29,7 @@ MAX_RESULT_BYTES = 8 * 1024 * 1024  # a result bigger than this is refused rathe
 
 
 def run_agent(req: dict, git_token: str | None) -> dict:
+    budget = req["max_budget_usd"]  # a request with no dollar cap is refused (KeyError), never run uncapped
     root = Path(req["work_root"])
     root.mkdir(parents=True, exist_ok=True)
     gitops.prune_work(root)
@@ -42,6 +43,7 @@ def run_agent(req: dict, git_token: str | None) -> dict:
         commands=list(req["commands"]),
         prompt=req["prompt"],
         effort=req["effort"],
+        max_budget_usd=budget,
         binary=req.get("binary", "claude"),
         timeout=int(req.get("timeout", 1800)),
     )
@@ -50,6 +52,8 @@ def run_agent(req: dict, git_token: str | None) -> dict:
     )
     who = getpass.getuser()
     base = {"summary": out.summary[-4000:], "violations": out.violations, "turns": out.usage.turns, "user": who}
+    base["cost_usd"] = getattr(out.usage, "cost_usd", None)
+    base["model_id"] = getattr(out.usage, "model_id", None)
     if not out.ok:
         return {"ok": False, **base, "changes": []}
     changes = []
@@ -69,6 +73,8 @@ def main() -> int:
         out = run_agent(json.load(sys.stdin), token)
     except Exception as e:  # noqa: BLE001 - one JSON line the orchestrator can post; never a traceback that could echo env
         out = {"error": f"{type(e).__name__}: {str(e)[:200]}"}
+        if isinstance(e, claude_runner.RunnerError):  # a capped or failed run still reports what it spent
+            out.update(turns=e.usage.turns, cost_usd=e.usage.cost_usd, model_id=e.usage.model_id)
     print(json.dumps(out))
     return 0
 

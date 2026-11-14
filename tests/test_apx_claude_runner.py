@@ -32,7 +32,7 @@ def fake_claude(tmp_path, body):
 def runner(tmp_path, binary, **kw):
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
-    return cr.ClaudeRunner("tok-123", home=home, commands=["pytest -q"], prompt="P", binary=binary, **kw), home
+    return cr.ClaudeRunner("tok-123", home=home, commands=["pytest -q"], prompt="P", binary=binary, max_budget_usd=2.0, **kw), home
 
 
 def seen(home):

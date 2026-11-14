@@ -21,6 +21,16 @@ defaults:
     hard: 45
     triage: 5
     reviewer: 10
+  # Dollar cap per agent run (apx passes it as `claude --max-budget-usd`, next to max_turns above; same role keys). The CLI checks it
+  # between turns, so a run can end a little over; max_turns stays the hard stop. A missing or invalid value means the run does not start.
+  # PLACEHOLDERS, NOT CONFIRMED: conservative numbers chosen so the cap exists from day one. OWNER TO CONFIRM OR CHANGE EACH; there is
+  # no measured cost data behind them yet (the apx ledger now records total_cost_usd per run, so confirm them from that).
+  max_budget_usd:
+    standard: 3.00
+    yolo: 5.00
+    hard: 8.00
+    triage: 0.50
+    reviewer: 1.00
   runs_per_day:     # per repo, rolling 24h; sum over wave 1 stays under the global cap
     A: 2
     B: 1

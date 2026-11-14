@@ -66,6 +66,7 @@ def request(tmp_path, remote, base, binary, **over):
         "model": "sonnet",
         "effort": "low",
         "max_turns": 10,
+        "max_budget_usd": 2.0,
         "commands": ["pytest -q"],
         "work_root": str(tmp_path / "agentwork"),
         "binary": binary,

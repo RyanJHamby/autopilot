@@ -412,3 +412,15 @@ def test_finish_without_the_new_fields_still_works_for_old_callers(tmp_path):
     rid = led.start(REPO, 4)
     led.finish(rid, "failure", model="sonnet", turns=1)
     assert row(led, rid)["cost_usd"] is None
+
+
+def test_the_real_envelope_shape_from_claude_2_1_325_is_understood(tmp_path):
+    """Captured 2026-11-13 from `claude -p hi --max-turns 1 --max-budget-usd 0.01 --output-format json` (2.1.325) with no credentials:
+    the flags were accepted, the run failed to authenticate (is_error true while subtype says success), nothing was spent."""
+    envelope = {
+        "total_cost_usd": 0, "modelUsage": {}, "is_error": True, "num_turns": 1, "subtype": "success",
+        "result": "Authentication error · This may be a temporary network issue, please try again", "type": "result",
+    }
+    with pytest.raises(cr.RunnerError) as e:
+        run_with(tmp_path, json.dumps(envelope))
+    assert e.value.usage.cost_usd == 0.0 and e.value.usage.model_id is None and e.value.usage.turns == 1

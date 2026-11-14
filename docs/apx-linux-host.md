@@ -79,8 +79,46 @@ apx and updater timers. Run it again any time: a second run changes nothing.
 ### 5. Toolchains (your decision; the script installs none of them)
 
 The sandbox accounts can only reach GitHub, the package registries and (agent only) the model API, so install tools as your admin account and copy them in.
-`uv` and `node` are needed in `/home/apx-ci/.local/bin` (stencil's CI uses Node 20, autopilot's 22; Rust only if `drillpad-workspace` builds native code); the `claude` CLI is needed at
-`/home/apx-agent/.local/bin/claude`. Pin exact versions and verify checksums yourself; I have not run these installs on a server, so treat the doctor in step 6 as the test.
+`uv` is needed in `/home/apx-ci/.local/bin` (Rust only if `drillpad-workspace` builds native code); the `claude` CLI is needed at `/home/apx-agent/.local/bin/claude`. Pin exact
+versions and verify checksums yourself; I have not run these installs on a server, so treat the preflight and doctor as the test.
+
+**Node is per repo.** Stencil's CI needs Node 20 and autopilot's needs Node 22, so there is no single `node` on the sandbox PATH. Which repo uses which is data in
+`src/autopilot/apx/repo_toolchains.json` (`"RyanJHamby/stencil": ["node@20"]`). For each job, apx puts that repo's directory first on the sandbox PATH, so `node`, `npm` and
+`npx` come from it (npm's own `#!/usr/bin/env node` line resolves through the same PATH). A repo with no entry (today `drillpad-workspace` and the private repos) keeps the default PATH.
+`node@20` means the directory `/srv/apx/toolchains/node-20/bin`; an entry with a full version, `node@20.18.1`, means `node-20.18.1`. If a declared directory is missing the repo's
+checks fail before the sandbox starts, with a message naming it; nothing falls back to another Node. Only the sandboxed lane does this: with no `APX_CI_USER` the checks run as `apx`
+on its own PATH.
+
+Install each one as your admin account (never `apx-ci`), from the official tarball, with the checksum verified. No installer script is piped into a shell, and I have written no
+checksum here because I have not checked one: you take it from the release's own `SHASUMS256.txt`.
+
+```
+V=<the exact Node version you chose for this line, after reading its release notes>
+case "$(uname -m)" in x86_64) A=x64 ;; aarch64) A=arm64 ;; *) echo "unsupported: $(uname -m)"; false ;; esac
+cd "$(mktemp -d)"
+curl -fsSLO "https://nodejs.org/dist/v$V/node-v$V-linux-$A.tar.xz"
+curl -fsSLO "https://nodejs.org/dist/v$V/SHASUMS256.txt"
+curl -fsSLO "https://nodejs.org/dist/v$V/SHASUMS256.txt.sig"
+```
+1. Check the signature on the checksum list: `gpg --verify SHASUMS256.txt.sig SHASUMS256.txt`, against a release signing key you imported from the Node.js project's own
+   published list of release keys (`nodejs/release-keys`). Compare the key fingerprint with that list yourself; a "good signature" from a key you have not matched proves nothing.
+2. Check the tarball against the list: `grep " node-v$V-linux-$A.tar.xz\$" SHASUMS256.txt | sha256sum -c -` must print `OK`. Write the version and the checksum you verified in your
+   private notes, not in this repo.
+3. Unpack it root-owned, so the sandbox accounts can run it but not change it:
+   ```
+   sudo install -d -m 755 -o root -g root /srv/apx/toolchains
+   sudo mkdir /srv/apx/toolchains/node-<MAJOR>          # stops if it exists: never unpack over a toolchain in use
+   sudo tar -xJf "node-v$V-linux-$A.tar.xz" -C /srv/apx/toolchains/node-<MAJOR> --strip-components=1 --no-same-owner
+   sudo chown -R root:root /srv/apx/toolchains/node-<MAJOR> && sudo chmod -R go-w /srv/apx/toolchains/node-<MAJOR>
+   ```
+   Do this twice: `node-20` with a 20.x version (for stencil) and `node-22` with a 22.x version (for autopilot).
+4. Try it as the sandbox account: `sudo -u apx-ci /srv/apx/toolchains/node-20/bin/node --version` (and 22).
+5. Run the preflight again with `apx.env` loaded (`set -a; . /home/apx/.apx/apx.env; set +a; bash deploy/linux/preflight.sh`). For every repo in `APX_INSTALLATIONS` or
+   `APX_PRIVATE_CI` it fails if the directory is missing, the binary is not there, `node --version` is not the declared version, or the directory or binary is group- or
+   world-writable. (Before `apx.env` exists it only says it skipped the check.)
+
+To change a version later, unpack the new one next to the old (`node-<new>`), change the entry in `repo_toolchains.json` in a PR, and remove the old directory once nothing declares it.
+The sandbox still sees no secrets from this: the directories sit outside every account's home, hold no credentials, and the job's environment is still the same short allowlist.
 
 ### 6. Doctor, then shadow
 

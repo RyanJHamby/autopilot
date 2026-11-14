@@ -67,6 +67,23 @@ else
   info "APX_PRIVATE_CI is not set: no private-repo CI is configured for this host (set it to check admin, control, pawl, agent-kit tools)"
 fi
 
+# Per-repo toolchains (src/autopilot/apx/repo_toolchains.json): stencil needs Node 20, autopilot Node 22, so each repo's declared
+# directory under <shared>/toolchains must exist, hold the right version and not be writable by the sandbox account. Checked for every
+# repo apx is set up for (APX_INSTALLATIONS plus APX_PRIVATE_CI), so it only runs once apx.env exists.
+if [ -n "${APX_INSTALLATIONS:-}${APX_PRIVATE_CI:-}" ]; then
+  root="$(cd "$(dirname "$0")/.." && pwd)"
+  if command -v python3 >/dev/null 2>&1; then
+    out="$(PYTHONPATH="$root/src" python3 -m autopilot.apx.toolchains check "${APX_INSTALLATIONS:-},${APX_PRIVATE_CI:-}" --root "${APX_SHARED:-/Users/Shared/apx}/toolchains" 2>&1)" || true
+    while IFS= read -r line; do
+      case "$line" in PASS*) pass "${line#PASS  }" ;; FAIL*) fail "${line#FAIL  }" ;; *) [ -z "$line" ] || info "$line" ;; esac
+    done <<EOF_TCHAINS
+$out
+EOF_TCHAINS
+  else fail "python3 missing, so the toolchains for the configured repos cannot be checked"; fi
+else
+  info "APX_INSTALLATIONS is not set: per-repo toolchains (Node 20 / 22) are not checked; re-run this after apx.env exists"
+fi
+
 for u in apx apx-ci apx-agent; do
   id "$u" >/dev/null 2>&1 && info "account $u already exists" || info "account $u not created yet (docs/apx-runbook.md, section 0)"
 done

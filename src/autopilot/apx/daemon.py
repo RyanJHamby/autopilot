@@ -39,6 +39,7 @@ from . import (  # noqa: E402
     repo_ci,
     report,
     status,
+    toolchains,
     window,
 )
 from .app_auth import TokenCache  # noqa: E402
@@ -539,6 +540,7 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_t
             token_for=read_token_for,
             steps_for=lambda repo: [list(x) for x in cilane.parse_ci_steps(load_cfg(api, repo, s.default_branch))],
             toolchain_links=list(s.ci_toolchain_links),
+            toolchain_dirs_for=lambda repo: toolchains.bin_dirs(repo, Path(s.shared_dir) / "toolchains"),
         )
         sb_checkout, sb_guard, sb_ci, sb_checks = lanes.checkout, lanes.guard, lanes.ci, lanes.ci_checks
     else:

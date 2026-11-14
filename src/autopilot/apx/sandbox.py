@@ -8,10 +8,14 @@ App key or the Claude token. The git token is handed over through the environmen
 from __future__ import annotations
 
 import json
+import os
+import re
 from pathlib import Path
 from typing import Callable
 
 from .runas import Launcher
+
+SAFE_PATH_DIR = re.compile(r"^/[A-Za-z0-9._/+-]+$")
 
 
 def run_in_sandbox(
@@ -24,11 +28,17 @@ def run_in_sandbox(
     home: str,
     timeout: int = 3600,
     module: str = "autopilot.apx.sandbox_job",
+    path_prepend: list[str] | tuple[str, ...] = (),
 ) -> dict:
+    """`path_prepend` are the repo's toolchain bin directories (toolchains.bin_dirs), put first on the job's PATH. Each must be a plain
+    absolute path: no `:` (it would add a second entry), no `..`, no whitespace. Never set for the agent job."""
+    for d in path_prepend:
+        if not SAFE_PATH_DIR.match(d) or ".." in d.split("/"):
+            raise ValueError(f"toolchain directory {d!r} must be a plain absolute path")
     env = {
         "PYTHONPATH": f"{code_dir}/src",
         "HOME": home,
-        "PATH": f"/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:/usr/bin:/bin",
+        "PATH": ":".join([*path_prepend, f"/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:/usr/bin:/bin"]),
         "CI": "true",
         "LANG": "en_US.UTF-8",
         "GIT_TERMINAL_PROMPT": "0",
@@ -77,6 +87,7 @@ class SandboxLanes:
         toolchain_links: list[str],
         url_for: Callable[[str], str | None] = lambda repo: None,
         expected_user: str | None = None,
+        toolchain_dirs_for: Callable[[str], list[str]] = lambda repo: [],
     ):
         self.__dict__.update(locals())
         del self.__dict__["self"]
@@ -88,6 +99,17 @@ class SandboxLanes:
         handle = Path("/sandbox") / repo / sha  # a label, not a real path: the real checkout lives where only the sandbox can see
         self._handles[str(handle)] = (repo, sha)
         return handle
+
+    def _run(self, repo: str, req: dict) -> dict:
+        """One sandbox job with the repo's toolchain directories first on PATH. A declared directory that is not there fails the job
+        before the sandbox starts, so a repo can never silently run with another repo's (or the system's) Node."""
+        dirs = self.toolchain_dirs_for(repo)
+        missing = [d for d in dirs if not os.path.isdir(d)]
+        if missing:
+            return {"error": f"toolchain {', '.join(missing)} is missing on the host; the host preflight reports it"}
+        return run_in_sandbox(
+            self.launcher, req, self.token_for(repo), python=self.python, code_dir=self.code_dir, home=self.home, path_prepend=dirs
+        )
 
     def guard(self, co: Path, head_ref: str) -> tuple[bool, str]:
         repo, sha = self._handles[str(co)]
@@ -104,7 +126,7 @@ class SandboxLanes:
         url = self.url_for(repo)
         if url:
             req["url"] = url
-        res = run_in_sandbox(self.launcher, req, self.token_for(repo), python=self.python, code_dir=self.code_dir, home=self.home)
+        res = self._run(repo, req)
         if "error" not in res and res.get("user") != self.expected_user:
             # the job ran, but not as the sandbox account (a misconfigured sudo, say). Its result cannot be trusted and its
             # PR code ran with the wrong privileges, so refuse it and say so.
@@ -130,7 +152,7 @@ class SandboxLanes:
         url = self.url_for(repo)
         if url:
             req["url"] = url
-        res = run_in_sandbox(self.launcher, req, self.token_for(repo), python=self.python, code_dir=self.code_dir, home=self.home)
+        res = self._run(repo, req)
         if "error" not in res and res.get("user") != self.expected_user:
             res = {"error": f"sandbox ran as {res.get('user')!r}, expected {self.expected_user!r}; result refused"}
         if "error" in res:

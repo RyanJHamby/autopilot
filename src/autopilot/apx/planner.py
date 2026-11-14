@@ -22,7 +22,10 @@ import tier as kit_tier  # noqa: E402
 from guard import _matches  # noqa: E402
 
 from . import batch as batches_mod  # noqa: E402
-from . import intake  # noqa: E402
+from . import (
+    caps,  # noqa: E402
+    intake,  # noqa: E402
+)
 from .github import Api, GitHubError  # noqa: E402
 from .ledger import Ledger  # noqa: E402
 
@@ -208,7 +211,10 @@ def plan_agent_runs(
     d = gate.decide(cfg, ledger.runs(repo), n_agent, role="implementer", now=now)
     if not d.allow:
         return [], d.reason
-    detail = f"model={d.model} effort={d.effort} turns={d.max_turns}"
+    # the dollar cap per run, from policy/portfolio.yaml (placeholders until the owner confirms them); a CapError is a ValueError, which
+    # the planner turns into "planner error (fail closed)": no cap, no run
+    budget = caps.budget_for(cfg.get("mode", "standard"))
+    detail = f"model={d.model} effort={d.effort} turns={d.max_turns} budget={caps.fmt(budget)}"
     # finishing an open PR comes before starting new work, and shares the same daily cap
     fixes = plan_ci_fixes(api, repo, owner, ledger, ci_contexts or [], limit=max(d.remaining, 0))
     fixes = [Action(a.kind, a.repo, a.ref, f"{a.detail} {detail}") for a in fixes]

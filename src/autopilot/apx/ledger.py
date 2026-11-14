@@ -21,6 +21,8 @@ create table if not exists runs (
   conclusion text,
   model text,
   turns integer,
+  model_id text,
+  cost_usd real,
   kind text not null default 'run',
   ref text not null default ''
 )
@@ -28,6 +30,8 @@ create table if not exists runs (
 MIGRATIONS = (
     "alter table runs add column kind text not null default 'run'",
     "alter table runs add column ref text not null default ''",
+    "alter table runs add column model_id text",
+    "alter table runs add column cost_usd real",
 )
 IN_FLIGHT = ("queued", "in_progress")
 
@@ -60,12 +64,21 @@ class Ledger:
         return int(cur.lastrowid)
 
     def finish(
-        self, run_id: int, conclusion: str, *, model: str | None = None, turns: int | None = None, now: dt.datetime | None = None
+        self,
+        run_id: int,
+        conclusion: str,
+        *,
+        model: str | None = None,
+        turns: int | None = None,
+        model_id: str | None = None,
+        cost_usd: float | None = None,
+        now: dt.datetime | None = None,
     ) -> None:
+        """model is the alias that was asked for; model_id is the resolved id and cost_usd the CLI's total_cost_usd (None = not reported)."""
         now = now or dt.datetime.now(dt.timezone.utc)
         self.db.execute(
-            "update runs set status='completed', conclusion=?, model=?, turns=?, finished_at=? where id=?",
-            (conclusion, model, turns, _iso(now), run_id),
+            "update runs set status='completed', conclusion=?, model=?, turns=?, model_id=?, cost_usd=?, finished_at=? where id=?",
+            (conclusion, model, turns, model_id, cost_usd, _iso(now), run_id),
         )
         self.db.commit()
 

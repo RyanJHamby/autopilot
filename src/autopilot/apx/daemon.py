@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import gate  # noqa: E402
 import runner as kit_runner  # noqa: E402
 
-from . import cilane, claude_runner, committer, freeze_gate, gitops, guardlane, hostenv, mergelane, report, status, window  # noqa: E402
+from . import caps, cilane, claude_runner, committer, freeze_gate, gitops, guardlane, hostenv, mergelane, report, status, window  # noqa: E402
 from .app_auth import TokenCache  # noqa: E402
 from .executor import Deps, IssueResult, execute  # noqa: E402
 from .github import Api, GitHubError, make_api  # noqa: E402
@@ -194,7 +194,30 @@ def routed_api(cache: TokenCache) -> Api:
 def parse_detail(detail: str) -> dict:
     """Planner puts `model=sonnet effort=medium turns=40` in Action.detail."""
     kv = dict(p.split("=", 1) for p in detail.split() if "=" in p)
-    return {"model": kv.get("model", "sonnet"), "effort": kv.get("effort", "medium"), "turns": int(kv.get("turns", 25))}
+    # the dollar cap: every budget= token must be valid and the LOWEST wins (a fix action's detail carries two); none at all falls back to
+    # the standard cap from policy/portfolio.yaml, so a run is never uncapped
+    given = [caps.valid_budget(_number(p.split("=", 1)[1])) for p in detail.split() if p.startswith("budget=")]
+    budget = min(given) if given else caps.budget_for("standard")
+    return {
+        "model": kv.get("model", "sonnet"),
+        "effort": kv.get("effort", "medium"),
+        "turns": int(kv.get("turns", 25)),
+        "budget": budget,
+    }
+
+
+def _number(text: str) -> float:
+    return float(text)  # ValueError on '', 'x'; valid_budget then refuses nan, inf, zero, negatives and absurd values
+
+
+def _run_fields(res: dict) -> dict:
+    """Turns, cost and model id from a result the agent ACCOUNT handed back: it is data, so it is validated before it is recorded."""
+    t = res.get("turns")
+    return {
+        "turns": t if isinstance(t, int) and not isinstance(t, bool) else None,
+        "cost_usd": claude_runner.clean_cost(res.get("cost_usd")),
+        "model_id": claude_runner.clean_model_id(res.get("model_id")),
+    }
 
 
 def work_on_issue(
@@ -239,6 +262,7 @@ def work_on_issue(
             "model": d["model"],
             "effort": d["effort"],
             "max_turns": d["turns"],
+            "max_budget_usd": d["budget"],
             "commands": commands,
             "work_root": s.agent_work_root(),
             "binary": s.agent_bin(),
@@ -256,19 +280,33 @@ def work_on_issue(
         res, changes = run(req, read_token_for(repo))
         if not res.get("ok"):
             why = "; ".join(res.get("violations") or []) or res.get("error", "agent run failed")
-            return IssueResult(False, res.get("summary", ""), why, turns=res.get("turns"), model=d["model"])
+            return IssueResult(False, res.get("summary", ""), why, model=d["model"], **_run_fields(res))
         summary, turns = res.get("summary", ""), res.get("turns")
+        spent = {k: v for k, v in _run_fields(res).items() if k != "turns"}
     else:
         wt = s.work_dir / f"{repo.replace('/', '_')}-{issue}-{run_id}"
         gitops.checkout_pr(repo, head, s.default_branch, wt, token_for(repo), url=url, root=s.work_dir)
         home = s.work_dir / f"home-{run_id}"
         home.mkdir(parents=True, exist_ok=True)
         r = claude_runner.ClaudeRunner(
-            read_secret_file(s.oauth_file), home=home, commands=commands, prompt=prompt, effort=d["effort"], binary=binary
+            read_secret_file(s.oauth_file),
+            home=home,
+            commands=commands,
+            prompt=prompt,
+            effort=d["effort"],
+            binary=binary,
+            max_budget_usd=d["budget"],
         )
-        out = kit_runner.process(r, kit_runner.Task(issue=issue, prompt="", model=d["model"], max_turns=d["turns"]), wt)
+        try:
+            out = kit_runner.process(r, kit_runner.Task(issue=issue, prompt="", model=d["model"], max_turns=d["turns"]), wt)
+        except claude_runner.RunnerError as e:  # a run that hit a cap or failed is a failed run that still reports its cost
+            why = f"the model run ended in an error ({e.subtype})" if e.subtype else "the model run ended in an error"
+            return IssueResult(
+                False, "", why, turns=e.usage.turns, model=d["model"], cost_usd=e.usage.cost_usd, model_id=e.usage.model_id
+            )
+        spent = {"cost_usd": getattr(out.usage, "cost_usd", None), "model_id": getattr(out.usage, "model_id", None)}
         if not out.ok:
-            return IssueResult(False, out.summary, "; ".join(out.violations), turns=out.usage.turns, model=d["model"])
+            return IssueResult(False, out.summary, "; ".join(out.violations), turns=out.usage.turns, model=d["model"], **spent)
         changes = committer.changes_from_worktree(wt, head)
         summary, turns = out.summary, out.usage.turns
     branch = f"agent/{issue}-{run_id}"
@@ -288,7 +326,7 @@ def work_on_issue(
         body=body,
         base_branch=s.default_branch,
     )
-    return IssueResult(True, summary, pr_number=pr["pr_number"], turns=turns, model=d["model"])
+    return IssueResult(True, summary, pr_number=pr["pr_number"], turns=turns, model=d["model"], **spent)
 
 
 def failing_ci_text(api: Api, repo: str, sha: str, ci_contexts: list[str], limit: int = 4000) -> str:
@@ -345,6 +383,7 @@ def fix_pr(
         "model": d["model"],
         "effort": d["effort"],
         "max_turns": d["turns"],
+        "max_budget_usd": d["budget"],
         "commands": commands,
         "work_root": s.agent_work_root(),
         "binary": s.agent_bin(),
@@ -362,9 +401,9 @@ def fix_pr(
     res, changes = run(req, read_token_for(repo))
     if not res.get("ok"):
         why = "; ".join(res.get("violations") or []) or res.get("error", "agent run failed")
-        return IssueResult(False, res.get("summary", ""), why, turns=res.get("turns"), model=d["model"])
+        return IssueResult(False, res.get("summary", ""), why, model=d["model"], **_run_fields(res))
     if not changes:
-        return IssueResult(False, res.get("summary", ""), "the model made no change", turns=res.get("turns"), model=d["model"])
+        return IssueResult(False, res.get("summary", ""), "the model made no change", model=d["model"], **_run_fields(res))
     try:
         committer.commit_to_branch(
             api,
@@ -375,8 +414,8 @@ def fix_pr(
             message=f"Fix CI for #{issue} (attempt by apx)\n\nRefs #{issue}\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
         )
     except committer.StaleHeadError as e:
-        return IssueResult(False, res.get("summary", ""), str(e), turns=res.get("turns"), model=d["model"])
-    return IssueResult(True, res.get("summary", ""), pr_number=pr_number, turns=res.get("turns"), model=d["model"])
+        return IssueResult(False, res.get("summary", ""), str(e), model=d["model"], **_run_fields(res))
+    return IssueResult(True, res.get("summary", ""), pr_number=pr_number, model=d["model"], **_run_fields(res))
 
 
 def make_report(s: Settings):

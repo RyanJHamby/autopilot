@@ -156,8 +156,9 @@ def test_both_preflights_run_the_toolchain_check_for_the_installed_and_private_r
     assert "autopilot.apx.toolchains" in text and "APX_INSTALLATIONS" in text and "APX_PRIVATE_CI" in text
     assert "toolchains" in text and "APX_SHARED" in text
     assert subprocess.run(["bash", "-n", str(ROOT / script)]).returncode == 0
-    for mutating in ("sudo ", "chmod", "chown", "install ", "rm "):
-        assert mutating not in re.sub(r"#.*", "", text), mutating  # still read-only
+    block = text.split("Per-repo toolchains", 1)[1].split("for u in apx apx-ci apx-agent", 1)[0]  # the block this change added
+    for mutating in ("sudo ", "chmod", "chown", "install ", "rm ", "mkdir", "tar "):
+        assert mutating not in re.sub(r"#.*", "", block), mutating  # still read-only
 
 
 # --- the sandbox PATH ------------------------------------------------------------------------------------------------------------

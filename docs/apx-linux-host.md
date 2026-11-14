@@ -173,23 +173,28 @@ If the new server misbehaves: `sudo DO=1 bash deploy/linux/retire.sh` stops its 
 - Stop immediately: `sudo systemctl disable --now apx.timer apx-updater.timer` (or `retire.sh`). Status: `systemctl list-timers 'apx*'`, `journalctl -u apx.service`.
 - Fail closed: `apx.service` and `apx-updater.service` `Require=` the rules and the resolver, so if the rules fail to load, apx does not run.
 - Egress rules changed? Re-run `bootstrap.sh`; it re-renders, checks with `nft -c`, and reloads. The resolver config is only read on start, so the script restarts it.
-- Moving to a newer release by hand (while the updater is still in dry-run). Bootstrap renders the rules from `/srv/apx/current`, builds releases from its own
-  clone `/srv/apx/autopilot`, and checks the same sha out in `/srv/apx/updater`, which is cloned from that clone. None of the three is fetched for you,
-  and `current` is never moved if it exists. What worked on the first real host (2026-11-14), with `SHA` set to the full commit id:
+- Moving to a newer release by hand (while the updater is still in dry-run), with `SHA` set to the full commit id of a commit on `main`:
 
   ```
-  sudo -u apx git -C /srv/apx/autopilot fetch -q origin
-  sudo -u apx git -C /srv/apx/autopilot branch -f main origin/main
-  sudo -u apx git -C /srv/apx/updater fetch -q origin
   sudo APX_SHA=$SHA ADMIN_USER=$ADMIN_USER bash deploy/linux/bootstrap.sh
-  sudo -u apx git -C /srv/apx/releases/$SHA rev-parse HEAD
-  sudo -u apx ln -sfn releases/$SHA /srv/apx/current
-  sudo ADMIN_USER=$ADMIN_USER bash deploy/linux/bootstrap.sh
   sudo bash deploy/linux/egress-probe.sh
   ```
 
-  Check that `rev-parse` prints `$SHA` before moving `current`, and that the probe ends `sealed`. Without the fetches, bootstrap stops with
-  `reference is not a tree` before it reloads the rules.
+  With `APX_SHA` set, bootstrap hands the release to `deploy/linux/release.sh` before it renders the rules. That script fetches `main` into
+  `/srv/apx/autopilot` and moves its `main` there, fetches into `/srv/apx/updater` (which is cloned from that clone), and refuses a sha that is
+  not on `origin/main`. It builds `releases/$SHA` aside and renames it in, refuses if the release's `HEAD` is not `$SHA` or its tree is
+  dirty, checks the updater out at `$SHA`, and only then switches `current` (a temp link, then `mv -T`), so `current` never points at a
+  missing directory. The old target is kept as `/srv/apx/previous`, and the rollback is printed: the same bootstrap command with the old sha.
+  Any refusal stops bootstrap before the rules are touched and leaves `current` as it was. `DRY_RUN=1` prints the steps. Check that the
+  probe ends `sealed`. Without `APX_SHA`, bootstrap still never moves an existing `current`. Run bootstrap from a checkout new enough to have `release.sh`.
+
+  Fallback, by hand, if `release.sh` itself is in the way (each `git` and link step as apx, i.e. `sudo -u apx ...`): `git -C /srv/apx/autopilot fetch -q origin`,
+  `git -C /srv/apx/autopilot checkout -q --detach $SHA`, `git -C /srv/apx/autopilot branch -f main origin/main`, `git -C /srv/apx/updater fetch -q origin`,
+  `git clone -q --no-hardlinks /srv/apx/autopilot /srv/apx/releases/$SHA` and check it out at `$SHA`, check that
+  `git -C /srv/apx/releases/$SHA rev-parse HEAD` prints `$SHA`, then `ln -sfn releases/$SHA /srv/apx/.current.new && mv -T /srv/apx/.current.new /srv/apx/current`,
+  bootstrap without `APX_SHA` (it re-renders the rules and checks the updater out at the same commit), and the probe. On the first host
+  (2026-11-14) skipping a fetch stopped bootstrap with `reference is not a tree`, and pointing `current` at a release directory before it
+  existed left the host broken until the link was put back.
 - Compromise: follow [apx-compromise.md](apx-compromise.md). Where it says `launchctl bootout`, use `systemctl disable --now apx.timer apx-updater.timer`; where it names `/Users/apx/...`,
   the paths here are `/home/apx/...`, `/home/apx-agent/...` and `/srv/apx`. It has not been rewritten for Linux yet, and its steps have never been drilled.
 

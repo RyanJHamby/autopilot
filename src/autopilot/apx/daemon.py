@@ -26,7 +26,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import gate  # noqa: E402
 import runner as kit_runner  # noqa: E402
 
-from . import caps, cilane, claude_runner, committer, freeze_gate, gitops, guardlane, hostenv, mergelane, report, status, window  # noqa: E402
+from . import (  # noqa: E402
+    caps,
+    cilane,
+    claude_runner,
+    committer,
+    freeze_gate,
+    gitops,
+    guardlane,
+    hostenv,
+    mergelane,
+    repo_ci,
+    report,
+    status,
+    window,
+)
 from .app_auth import TokenCache  # noqa: E402
 from .executor import Deps, IssueResult, execute  # noqa: E402
 from .github import Api, GitHubError, make_api  # noqa: E402
@@ -76,6 +90,7 @@ class Settings:
     webhook_secret_file: str = ""
     authoritative: frozenset = frozenset()
     cutover: frozenset = frozenset()
+    private_ci: frozenset = frozenset()  # private repos whose CI apx runs from repo_ci.json (APX_PRIVATE_CI); checks only
     ci_toolchain_links: tuple = (".cargo",)
     # Sandbox accounts (backlog S1/S1b). ci_user runs a PR's code with no access to the App key or Claude token; agent_user runs
     # the model with only the Claude token. Unset = today's behaviour for checks, and agent runs stay OFF.
@@ -126,6 +141,7 @@ class Settings:
                 webhook_secret_file=e.get("APX_WEBHOOK_SECRET_FILE", ""),
                 authoritative=frozenset(r for r in e.get("APX_AUTHORITATIVE", "").split(",") if r),
                 cutover=frozenset(r for r in e.get("APX_CUTOVER", "").split(",") if r),
+                private_ci=frozenset(repo_ci.parse_repos(e.get("APX_PRIVATE_CI", ""))),
                 ci_toolchain_links=tuple(n for n in e.get("APX_CI_TOOLCHAIN_LINKS", ".cargo").split(",") if n),
                 ci_user=e.get("APX_CI_USER", ""),
                 ci_work=e.get("APX_CI_WORK") or f"{hostenv.home_of(e.get('APX_CI_USER') or 'apx-ci')}/work",
@@ -155,6 +171,13 @@ class Settings:
         stray = (set(s.authoritative) | set(s.cutover)) - set(s.installations)
         if stray:
             raise ConfigError(f"APX_AUTHORITATIVE / APX_CUTOVER name repos that are not installed: {sorted(stray)}")
+        specs = repo_ci.load_specs()
+        stray = set(s.private_ci) - set(s.installations)
+        if stray:
+            raise ConfigError(f"APX_PRIVATE_CI names repos that are not installed: {sorted(stray)}")
+        nospec = set(s.private_ci) - set(specs)
+        if nospec:
+            raise ConfigError(f"APX_PRIVATE_CI names repos with no spec in repo_ci.json: {sorted(nospec)}")
         try:
             guardlane.validate_kit(s.kit_repo, s.kit_ref)
         except guardlane.KitError as ex:
@@ -163,7 +186,14 @@ class Settings:
 
     def full_loop(self, repo: str) -> bool:
         """True when apx, not Actions, runs this repo end to end: agent runs, rebases and the merge lane as well as checks."""
+        if repo in self.private_ci:
+            return False  # checks only: no agent runs, rebases or merges for the private repos, whatever the shadow setting
         return (not self.shadow) or repo in self.cutover
+
+    def private_checks(self, repo: str) -> tuple:
+        """The checks apx runs for a private repo the owner opted in (APX_PRIVATE_CI); () for every other repo."""
+        spec = repo_ci.spec_for(repo) if repo in self.private_ci else None
+        return spec.checks if spec else ()
 
     def agents_allowed(self, repo: str) -> bool:
         """Agent runs need the full loop AND a dedicated agent account. Without one the model would run as the account that
@@ -177,6 +207,41 @@ class Settings:
             return {"guard": "apx / guard", "ci": "apx / build"}
         guard, ci = REQUIRED_CONTEXTS[repo]
         return {"guard": guard, "ci": ci}
+
+
+def plan_repos(s: Settings) -> dict[str, dict]:
+    """The planner's per-repo input. A private repo with a CI spec gets checks only, under exactly its required context names."""
+    out: dict[str, dict] = {}
+    for r in s.installations:
+        if r in s.private_ci:
+            out[r] = {
+                "default_branch": s.default_branch,
+                "contexts": [c.context for c in s.private_checks(r)],
+                "loop": False,
+                "merge": False,
+                "agents": False,
+                "main_check": False,
+                "spec_ci": True,
+            }
+            continue
+        out[r] = {
+            "default_branch": s.default_branch,
+            "contexts": list(s.contexts(r).values()),
+            "loop": s.full_loop(r),
+            "merge": s.full_loop(r),
+            "agents": s.agents_allowed(r),
+            "ci_contexts": [s.contexts(r)["ci"]],
+            "main_check": s.full_loop(r) or r in s.authoritative,  # repos whose required checks come from apx also watch main
+        }
+    return out
+
+
+def check_contexts(s: Settings) -> dict[str, dict]:
+    """What the executor posts per repo: {guard, ci} names, or {checks: [...]} for a private repo with a CI spec."""
+    return {
+        r: ({"checks": repo_ci.spec_for(r).as_job()} if r in s.private_ci else s.contexts(r))  # type: ignore[union-attr]
+        for r in s.installations
+    }
 
 
 def routed_api(cache: TokenCache) -> Api:
@@ -435,6 +500,17 @@ def ci_lane(s: Settings, co: Path) -> tuple[bool, str]:
     return cilane.summarize(res, cmds)
 
 
+def ci_checks_lane(s: Settings, co: Path, checks: list) -> dict[str, tuple[bool, str]]:
+    """No-sandbox version of the spec lane (the same scrubbed env and scratch HOME as ci_lane); the commands are repo_ci.json's."""
+    out = {}
+    for chk in checks:
+        steps = cilane.parse_ci_steps({"ci": [{"run": c, "dir": d} for c, d in chk["steps"]]})
+        home = Path(tempfile.mkdtemp(dir=s.work_dir))
+        res = cilane.run_commands(co, steps, home=home, toolchain_links=list(s.ci_toolchain_links), real_home=Path.home())
+        out[chk["context"]] = cilane.summarize(res, steps)
+    return out
+
+
 def select_automerge(s: Settings, merge):
     """The merge lane exists only once some repo is cut over (the planner then offers it only for those repos); with
     everything in shadow mode Actions still merges and apx must not."""
@@ -461,9 +537,9 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_t
             steps_for=lambda repo: [list(x) for x in cilane.parse_ci_steps(load_cfg(api, repo, s.default_branch))],
             toolchain_links=list(s.ci_toolchain_links),
         )
-        sb_checkout, sb_guard, sb_ci = lanes.checkout, lanes.guard, lanes.ci
+        sb_checkout, sb_guard, sb_ci, sb_checks = lanes.checkout, lanes.guard, lanes.ci, lanes.ci_checks
     else:
-        sb_checkout = sb_guard = sb_ci = None
+        sb_checkout = sb_guard = sb_ci = sb_checks = None
 
     def checkout(repo: str, sha: str) -> Path:
         return gitops.checkout_pr(
@@ -514,8 +590,18 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_t
     def fix(repo: str, issue: int, run_id: int, pr: int, sha: str, detail: str) -> IssueResult:
         return fix_pr(s, api, repo, issue, pr, sha, detail, [s.contexts(repo)["ci"]], read_token_for=read_token_for)
 
+    def ci_checks(co: Path, checks: list):
+        return ci_checks_lane(s, co, checks)
+
     return Deps(
-        sb_checkout or checkout, sb_guard or guard, sb_ci or ci, work, select_automerge(s, merge), make_report(s), fix_ci=fix
+        sb_checkout or checkout,
+        sb_guard or guard,
+        sb_ci or ci,
+        work,
+        select_automerge(s, merge),
+        make_report(s),
+        fix_ci=fix,
+        ci_checks=sb_checks or ci_checks,
     )
 
 
@@ -613,18 +699,7 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     api = routed_api(cache)
     ledger = Ledger(s.db_path)
     ledger.abandon_stale(dt.timedelta(hours=2))
-    repos = {
-        r: {
-            "default_branch": s.default_branch,
-            "contexts": list(s.contexts(r).values()),
-            "loop": s.full_loop(r),
-            "merge": s.full_loop(r),
-            "agents": s.agents_allowed(r),
-            "ci_contexts": [s.contexts(r)["ci"]],
-            "main_check": s.full_loop(r) or r in s.authoritative,  # repos whose required checks come from apx also watch main
-        }
-        for r in s.installations
-    }
+    repos = plan_repos(s)
     planned = plan(api, ledger, repos, s.owner)
     actions: list[Action] = [a for r in planned.values() for a in r["actions"]]
     log = [f"{repo}: {len(r['actions'])} action(s) - {r['note']}" for repo, r in planned.items()]
@@ -637,7 +712,7 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
         log.append(f"{repo}: skipped this pass (could not list open PRs)")
     actions = readable_only(actions, unreadable)
     deps = build_deps(s, api, cache.token_for, details, read_token_for=cache.read_token_for)
-    ctx = {r: s.contexts(r) for r in s.installations}
+    ctx = check_contexts(s)
     return log + execute(
         api,
         ledger,

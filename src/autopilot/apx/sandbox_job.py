@@ -6,6 +6,8 @@ The git token arrives through the environment (APX_GIT_TOKEN) and exists only fo
 
     python -m autopilot.apx.sandbox_job < request.json > result.json
 
+request:  {mode: "checks", repo, sha, base_branch, work_root, checks: [{context, steps}], toolchain_links, [url]}
+          -> {checks: {context: [ok, markdown]}, user}      (no guard: the repo has no kit; commands are the owner's repo_ci.json)
 request:  {repo, sha, base_branch, head_ref, kit_dir, steps: [[cmd, dir], ...], toolchain_links: [...], work_root, [url]}
 result:   {guard: [ok, text], ci: [ok, markdown] | null}      (ci is null when the guard rejected the PR: its code never ran)
 """
@@ -28,6 +30,8 @@ def run_job(req: dict, token: str | None) -> dict:
     gitops.prune_work(root)
     dest = root / f"pr-{req['repo'].replace('/', '_')}-{req['sha'][:12]}"
     co = gitops.checkout_pr(req["repo"], req["sha"], req["base_branch"], dest, token, url=req.get("url"), root=root)
+    if req.get("mode") == "checks":
+        return run_checks(req, co, root)
     tmp = Path(tempfile.mkdtemp(dir=root))
     g_ok, g_out = guardlane.run_guard(
         co, Path(req["kit_dir"]), base=f"origin/{req['base_branch']}", head="HEAD", head_ref=req["head_ref"], tmp=tmp
@@ -40,6 +44,17 @@ def run_job(req: dict, token: str | None) -> dict:
     res = cilane.run_commands(co, steps, home=home, toolchain_links=list(req.get("toolchain_links", [])), real_home=Path.home())
     ok, md = cilane.summarize(res, steps)
     return {"guard": [True, g_out], "ci": [ok, md], "user": who}
+
+
+def run_checks(req: dict, co: Path, root: Path) -> dict:
+    """One scratch HOME per check, steps re-validated here (the request is data from another account), results keyed by context."""
+    out = {}
+    for chk in req["checks"]:
+        steps = cilane.parse_ci_steps({"ci": [{"run": c, "dir": d} for c, d in chk["steps"]]})
+        home = Path(tempfile.mkdtemp(dir=root))
+        res = cilane.run_commands(co, steps, home=home, toolchain_links=list(req.get("toolchain_links", [])), real_home=Path.home())
+        out[chk["context"]] = list(cilane.summarize(res, steps))
+    return {"checks": out, "user": getpass.getuser()}
 
 
 def main() -> int:

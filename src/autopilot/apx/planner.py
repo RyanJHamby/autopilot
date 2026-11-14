@@ -25,12 +25,14 @@ from . import batch as batches_mod  # noqa: E402
 from . import (
     caps,  # noqa: E402
     intake,  # noqa: E402
+    repo_ci,  # noqa: E402
 )
 from .github import Api, GitHubError  # noqa: E402
 from .ledger import Ledger  # noqa: E402
 
 # Hard scope. Anything else raises, whatever the config says.
-ALLOWED_REPOS = {"RyanJHamby/autopilot", "RyanJHamby/drillpad-workspace", "RyanJHamby/stencil"}
+# Hard scope: the three autopilot repos plus every private repo that has a CI spec (repo_ci.json: checks only, never agent runs or merges).
+ALLOWED_REPOS = {"RyanJHamby/autopilot", "RyanJHamby/drillpad-workspace", "RyanJHamby/stencil"} | set(repo_ci.load_specs())
 TRUSTED_PREFIXES = ("agent/", "dependabot/", "autopilot/kit-")
 
 
@@ -49,8 +51,10 @@ def _var(api: Api, repo: str, name: str) -> str | None:
         return None
 
 
-def enabled(api: Api, repo: str) -> tuple[bool, str]:
-    if _var(api, repo, "AUTOPILOT_ENABLED") != "true":
+def enabled(api: Api, repo: str, opted_in: bool = False) -> tuple[bool, str]:
+    """opted_in: the owner already named this repo in the host's APX_PRIVATE_CI, so the per-repo AUTOPILOT_ENABLED variable is not
+    also required (these repos have no autopilot setup); the AUTOPILOT_PAUSED kill switch still applies."""
+    if not opted_in and _var(api, repo, "AUTOPILOT_ENABLED") != "true":
         return False, "AUTOPILOT_ENABLED is not 'true'"
     if _var(api, repo, "AUTOPILOT_PAUSED") == "true":
         return False, "AUTOPILOT_PAUSED"
@@ -360,7 +364,7 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
         if repo not in ALLOWED_REPOS:
             raise ValueError(f"{repo} is outside apx scope")
         try:
-            ok, why = enabled(api, repo)
+            ok, why = enabled(api, repo, opted_in=bool(meta.get("spec_ci")))
             if not ok:
                 result[repo] = {"actions": [], "note": why}
                 continue

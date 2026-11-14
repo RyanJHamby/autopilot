@@ -115,6 +115,34 @@ class SandboxLanes:
         g_ok, g_out = res["guard"]
         return bool(g_ok), f"{g_out}\n\n_ran as {res['user']}_"
 
+    def ci_checks(self, co: Path, checks: list) -> dict[str, tuple[bool, str]]:
+        """Spec repos (repo_ci.json): one sandbox job, no guard, a result per check context."""
+        repo, sha = self._handles[str(co)]
+        req = {
+            "mode": "checks",
+            "repo": repo,
+            "sha": sha,
+            "base_branch": self.base_branch,
+            "checks": checks,
+            "toolchain_links": self.toolchain_links,
+            "work_root": self.work_root,
+        }
+        url = self.url_for(repo)
+        if url:
+            req["url"] = url
+        res = run_in_sandbox(self.launcher, req, self.token_for(repo), python=self.python, code_dir=self.code_dir, home=self.home)
+        if "error" not in res and res.get("user") != self.expected_user:
+            res = {"error": f"sandbox ran as {res.get('user')!r}, expected {self.expected_user!r}; result refused"}
+        if "error" in res:
+            return {c["context"]: (False, f"sandbox job failed: {res['error']}") for c in checks}
+        got = res.get("checks") or {}
+        return {
+            c["context"]: (bool(got[c["context"]][0]), f"{got[c['context']][1]}\n\n_ran as {res['user']}_")
+            if c["context"] in got
+            else (False, "not run: the sandbox returned no result for this check")
+            for c in checks
+        }
+
     def ci(self, co: Path) -> tuple[bool, str]:
         res = self._results.get(str(co)) or {}
         ci = res.get("ci")

@@ -40,6 +40,8 @@ class Deps:
     report: Callable[..., bool] | None = None
     # fix_ci(repo, issue, run_id, pr_number, head_sha, detail) -> IssueResult; adds a commit to the failing PR's branch
     fix_ci: Callable[[str, int, int, int, str, str], "IssueResult"] | None = None
+    # ci_checks(checkout, [{"context", "steps": [[cmd, dir], ...]}]) -> {context: (ok, markdown)}; for repos with a repo_ci.json spec
+    ci_checks: Callable[[Path, list], dict[str, tuple[bool, str]]] | None = None
 
 
 @dataclass
@@ -86,6 +88,34 @@ def run_check_pr(
     post_check(api, repo, sha, ci_ctx, c_ok, strip_output_blocks(c_out) if public else c_out)
     res[ci_ctx] = c_ok
     return res
+
+
+def run_check_pr_spec(api: Api, deps: Deps, action: Action, *, checks: list[dict], public: bool = True) -> dict[str, bool]:
+    """A private repo with a repo_ci.json spec: no guard kit (these repos have no repo.yaml), one check run per required context.
+    Same fail-closed rule as run_check_pr: every context ends COMPLETED, even when checkout or the lane crashes."""
+    repo, sha = action.repo, action.ref
+    names = [c["context"] for c in checks]
+    for n in names:
+        post_pending(api, repo, sha, n)
+    show = (lambda t: strip_output_blocks(t)) if public else (lambda t: t)
+    try:
+        co = deps.checkout(repo, sha)
+    except Exception as e:  # noqa: BLE001
+        for n in names:
+            post_check(api, repo, sha, n, False, f"checkout failed: {type(e).__name__}")
+        return {n: False for n in names}
+    try:
+        if deps.ci_checks is None:
+            raise RuntimeError("no CI lane for repo specs")
+        results = deps.ci_checks(co, checks)
+    except Exception as e:  # noqa: BLE001
+        results = {n: (False, f"ci lane crashed: {type(e).__name__}") for n in names}
+    out = {}
+    for n in names:
+        ok, text = results.get(n, (False, "not run: the lane returned no result for this check"))
+        post_check(api, repo, sha, n, bool(ok), show(text))
+        out[n] = bool(ok)
+    return out
 
 
 def run_check_main(api: Api, deps: Deps, action: Action, *, ci_ctx: str, head_ref: str, public: bool = True) -> bool | None:
@@ -211,6 +241,13 @@ def execute(
                 continue
         if a.kind == "check-pr":
             ctx = contexts[a.repo]
+            if "checks" in ctx:
+                try:
+                    r = run_check_pr_spec(api, deps, a, checks=ctx["checks"], public=a.repo not in (private_repos or frozenset()))
+                    log.append(f"check-pr {a.repo} {a.ref[:7]} {r}")
+                except Exception as e:  # noqa: BLE001 - the next pass retries this PR
+                    log.append(f"check-pr {a.repo} {a.ref[:7]} failed: {type(e).__name__}")
+                continue
             try:
                 r = run_check_pr(
                     api,

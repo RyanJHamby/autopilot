@@ -35,6 +35,21 @@ Anything in the right-hand column stays "unverified" until you have run it on th
 Small x86 VPS, Debian 12 or Ubuntu 24.04, about 4 vCPU, 16 GB RAM, 40 GB disk (my estimate from the preflight thresholds, not a measurement). Create your own admin
 account with your SSH key, turn on the provider's firewall to allow SSH from your own IP only, and nothing else inbound (apx polls; it has no webhook port).
 
+Many small VPS images ship with **no swap**. Without it, a memory spike kills a process outright (the OOM killer) instead of slowing
+it down, and "heavy swap" can't serve as a resize signal. On a 12 GB box a 4 GB swap file with `vm.swappiness=10` (used only under real
+pressure) is enough. As your admin account:
+
+```
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/90-swappiness.conf
+```
+
+Check with `free -h` (Swap: 4.0Gi) after a reboot. Verified on the first real Linux host on 2026-11-14.
+
 ### 2. Preflight (read-only)
 
 ```

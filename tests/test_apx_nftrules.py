@@ -99,18 +99,63 @@ def test_every_blocked_range_is_excluded_from_the_allowed_destinations(nft, lane
         assert cidr in rule, f"{cidr} must be refused even if DNS hands out an address in it (rebinding)"
 
 
+HIGH_PORT_RULE = "ip daddr 127.0.0.1 tcp dport 1024-65535 accept"
+
+
+def loopback_accepts(nft, lane):
+    return [x for x in rules(nft, f"lane_{lane}") if x.endswith("accept") and x.startswith("ip daddr 127.")]
+
+
 @pytest.mark.parametrize("lane", ["ci", "exec", "orch"])
-def test_loopback_is_open_only_for_the_allowlist_resolver_not_for_all_of_localhost(nft, lane):
-    accepts = [x for x in rules(nft, f"lane_{lane}") if x.endswith("accept") and x.startswith("ip daddr 127.")]
-    assert len(accepts) == 2 and all("5354" in x and "127.0.0.1" in x for x in accepts), accepts
-    assert not any(re.search(r"daddr 127\.0\.0\.0/8\s+accept", x) for x in accepts)
+def test_loopback_always_reaches_the_allowlist_resolver_and_never_all_of_localhost(nft, lane):
+    accepts = loopback_accepts(nft, lane)
+    assert "ip daddr 127.0.0.1 udp dport 5354 accept" in accepts and "ip daddr 127.0.0.1 tcp dport 5354 accept" in accepts
+    assert not any(re.search(r"daddr 127\.0\.0\.0/8", x) for x in accepts)
+    assert not any("udp" in x and "5354" not in x for x in accepts), "UDP on loopback is the resolver only"
+
+
+@pytest.mark.parametrize("lane", ["ci", "exec"])
+def test_the_ci_and_exec_lanes_may_reach_unprivileged_tcp_ports_on_ipv4_loopback_so_the_test_suite_can_run(nft, lane):
+    """Repo tests start a local server and connect to 127.0.0.1. A narrow, documented trade-off: see docs/apx-linux-host.md."""
+    accepts = loopback_accepts(nft, lane)
+    assert HIGH_PORT_RULE in accepts
+    assert len(accepts) == 3, accepts  # resolver udp, resolver tcp, high tcp: nothing else
+
+
+def test_the_orchestrator_lane_gets_no_loopback_ports_beyond_the_resolver(nft):
+    accepts = loopback_accepts(nft, "orch")
+    assert len(accepts) == 2 and all("5354" in x for x in accepts), accepts
+    assert "1024-65535" not in chain(nft, "lane_orch")
+
+
+@pytest.mark.parametrize("lane", ["ci", "exec"])
+def test_the_loopback_range_starts_above_the_privileged_ports_and_stays_tcp_ipv4(nft, lane):
+    (rule,) = [x for x in loopback_accepts(nft, lane) if "1024-65535" in x]
+    assert re.fullmatch(r"ip daddr 127\.0\.0\.1 tcp dport 1024-65535 accept", rule)
+    lo, hi = (int(n) for n in re.search(r"dport (\d+)-(\d+)", rule).groups())
+    assert lo >= 1024 and hi <= 65535, "sshd (22) and every other privileged port stays refused"
+    assert not any("ip6" in x or "::1" in x for x in rules(nft, f"lane_{lane}")), "IPv6 stays refused entirely"
+
+
+@pytest.mark.parametrize("lane", ["ci", "exec", "orch"])
+def test_the_loopback_accept_comes_before_the_final_reject_and_after_nothing_it_could_bypass(nft, lane):
+    r = rules(nft, f"lane_{lane}")
+    assert r[0] == "ct state established,related accept" and r[-1] == "reject"
+    assert all(i < len(r) - 1 for i, x in enumerate(r) if x.startswith("ip daddr 127."))
+
+
+def test_the_dns_redirect_is_the_same_for_every_lane_so_port_53_still_goes_to_the_resolver(nft):
+    r = rules(nft, "dns")
+    assert any("udp dport 53 redirect to :5354" in x for x in r) and any("tcp dport 53 redirect to :5354" in x for x in r)
+    assert not any("1024" in x for x in r)
 
 
 @pytest.mark.parametrize("lane", ["ci", "exec", "orch"])
 def test_ipv6_and_other_ports_are_never_accepted(nft, lane):
     r = rules(nft, f"lane_{lane}")
     assert not any("ip6" in x and x.endswith("accept") for x in r)
-    assert not any(re.search(r"dport (?!443|5354)\d+", x) and x.endswith("accept") for x in r)
+    others = [x for x in r if re.search(r"dport (?!443|5354|1024-65535)\d+", x) and x.endswith("accept")]
+    assert not others
 
 
 @pytest.mark.parametrize("lane", ["ci", "exec", "orch"])

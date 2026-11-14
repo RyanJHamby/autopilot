@@ -24,6 +24,12 @@ Anything in the right-hand column stays "unverified" until you have run it on th
 
 - Names the allowlist permits are reachable on 443 by design. Their addresses are shared with other customers of the same hosts, so an attacker with code execution in a lane can
   still talk to GitHub (for example, to push to a repo they control if a token allowed it). The 1-hour, single-repo, read-only token is the control that matters there, not the firewall.
+- **Loopback, unprivileged ports (a deliberate trade-off).** Repo test suites start local servers and connect to `127.0.0.1`, so the `apx-ci` and `apx-agent` lanes may open TCP
+  to any port from 1024 up on `127.0.0.1` (IPv4 only). Code running in those lanes can therefore reach every service the host has listening on `127.0.0.1` at such a port. Still refused:
+  privileged loopback ports (sshd on 22 and the like), UDP on loopback other than the allowlist resolver, every other `127.x` address, all IPv6 (so `::1`), and everything the `apx`
+  orchestrator account does on loopback beyond the resolver (that lane got no new rule). DNS is unchanged: port 53 from the three accounts is still redirected to the resolver.
+  To see what is exposed, list the listeners and look at the ones bound to `127.0.0.1` (or `0.0.0.0`) at port 1024 or above: `sudo ss -ltnp`. The bootstrap installs no loopback service
+  except the allowlist resolver (dnsmasq on `127.0.0.1:5354`); anything else there is something you added, so give it its own authentication or move it to a Unix socket.
 - A subdomain of an allowed name resolves if the name's real DNS answers it. That is only a channel to whoever controls that zone, which for these names is not an attacker.
 - PR code and apx share a kernel. A local privilege-escalation bug could reach the App key. A per-job sandbox (rootless podman or gVisor) is the later answer (stage 2, below).
 - The Claude token is tied to your plan; a hard-capped API key for the executor is worth deciding at provisioning.
@@ -127,7 +133,8 @@ sudo -u apx -H sh -c 'set -a; . /home/apx/.apx/apx.env; set +a; PYTHONPATH=/srv/
 sudo bash deploy/linux/egress-probe.sh
 ```
 Both must be clean before anything is enabled. (In the container test, the doctor's sandbox checks passed on real Linux, and its only failure was the missing `claude` CLI, which step 5 is for.) The probe tries to break out as each sandbox account (private and metadata addresses, an arbitrary public host, IPv6, SSH to GitHub, DoT, another
-resolver) and also requires the allowed path to work, so a refusal cannot mean "no connectivity". Then:
+resolver, and loopback: a privileged port and `::1` must be refused, an unprivileged IPv4 port must work for `apx-ci` and `apx-agent` and stay refused for `apx`, using throwaway listeners the probe
+starts and stops itself) and also requires the allowed path to work, so a refusal cannot mean "no connectivity". Then:
 ```
 sudo systemctl enable --now apx.timer apx-updater.timer
 journalctl -u apx.service -f

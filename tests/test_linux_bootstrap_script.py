@@ -235,3 +235,15 @@ def test_the_probe_needs_root_and_the_rules_loaded_and_pairs_every_refusal_with_
     ):
         assert case in c, case
     assert c.rstrip().endswith('exit "$problems"')
+
+
+def test_the_probe_checks_loopback_privileged_refused_high_allowed_for_ci_and_agent_only_and_ipv6_refused():
+    c = code(PROBE)
+    assert "must_fail \"loopback tcp to a privileged port" in c, "privileged loopback port must be refused for every account"
+    assert "must_fail \"loopback tcp to ::1" in c, "::1 stays refused"
+    assert 'must_pass "loopback tcp to an unprivileged port' in c, "high loopback port works for ci and agent"
+    assert 'must_fail "loopback tcp to an unprivileged port' in c, "and stays refused for the orchestrator account"
+    assert '"$WHO" = apx ]' in c, "the orchestrator lane is told apart from the two that got the rule"
+    # every refusal is paired with a control that connects as root, so a refusal cannot mean "no listener"
+    assert "control_ok" in c and "nc ${3:+-6} -z" in c, "root must connect first, or the case is BROKEN rather than ok"
+    assert "trap '" in c and "kill \"$lpid\"" in c, "the throwaway listeners are stopped on exit"

@@ -11,7 +11,7 @@ import subprocess
 
 import pytest
 
-from autopilot import cli
+from autopilot import claude_floor, cli
 
 
 def make_repo(tmp_path, files=None):
@@ -54,6 +54,12 @@ class FakeGh:
 
     def __getattr__(self, name):
         return getattr(subprocess, name)
+
+
+@pytest.fixture(autouse=True)
+def claude_at_floor(monkeypatch):
+    """Doctor now checks the machine's Claude Code version; these tests are about repos, so the machine is fine unless a test says not."""
+    monkeypatch.setattr(claude_floor, "probe", lambda binary="claude", run=None: "2.1.323 (Claude Code)\n")
 
 
 @pytest.fixture
@@ -178,3 +184,51 @@ def test_a_missing_secret_only_warns_when_gh_can_see_secrets(repo, monkeypatch, 
     code, out = doctor(repo, monkeypatch, capsys, FakeGh(secrets="OTHER_SECRET\t2026-01-01\n"))
     assert code == 0
     assert "WARN secret CLAUDE_CODE_OAUTH_TOKEN not set" in out
+
+
+# --- the Claude Code version floor (W0-19): one machine-level check, printed once ---
+def test_doctor_checks_the_claude_version_once_for_all_repos(tmp_path, monkeypatch, capsys):
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    for r in (a, b):
+        make_repo(r)
+        cli.init_repo(r, "A", "standard")
+    calls = []
+    monkeypatch.setattr(claude_floor, "probe", lambda binary="claude", run=None: calls.append(binary) or "2.1.323 (Claude Code)\n")
+    monkeypatch.setattr(cli, "subprocess", FakeGh())
+    cli.main(["doctor", str(a), str(b)])
+    out = capsys.readouterr().out
+    assert len(calls) == 1
+    assert "2.1.323" in out and "2.1.302" in out
+    assert out.index("2.1.323") < out.index("== a")  # printed first, once, not per repo
+
+
+def test_doctor_fails_when_claude_is_below_the_floor(repo, monkeypatch, capsys):
+    monkeypatch.setattr(claude_floor, "probe", lambda binary="claude", run=None: "2.1.301 (Claude Code)\n")
+    code, out = doctor(repo, monkeypatch, capsys)
+    assert code == 1
+    assert re.search(r"FAIL.*claude.*2\.1\.301.*2\.1\.302", out)
+
+
+def test_doctor_fails_when_claude_cannot_be_run(repo, monkeypatch, capsys):
+    def boom(binary="claude", run=None):
+        raise claude_floor.FloorError("claude is not installed")
+
+    monkeypatch.setattr(claude_floor, "probe", boom)
+    code, out = doctor(repo, monkeypatch, capsys)
+    assert code == 1 and re.search(r"FAIL.*claude", out)
+
+
+def test_doctor_fails_when_the_floor_file_is_broken(repo, monkeypatch, capsys, tmp_path):
+    bad = tmp_path / "claude.yaml"
+    bad.write_text("min_version: nope\n")
+    monkeypatch.setattr(claude_floor, "FLOOR_FILE", bad)
+    code, out = doctor(repo, monkeypatch, capsys)
+    assert code == 1 and "floor" in out.lower()
+
+
+def test_doctor_passes_at_the_floor_and_says_so(repo, monkeypatch, capsys):
+    monkeypatch.setattr(claude_floor, "probe", lambda binary="claude", run=None: "2.1.302 (Claude Code)\n")
+    code, out = doctor(repo, monkeypatch, capsys)
+    assert re.search(r"OK.*claude.*2\.1\.302", out)

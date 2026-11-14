@@ -18,6 +18,7 @@ from typing import Callable
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import automerge as kit_automerge  # noqa: E402
 
+from .. import claude_floor  # noqa: E402
 from . import hostenv  # noqa: E402
 from .app_auth import TokenCache, make_jwt  # noqa: E402
 from .github import make_api  # noqa: E402
@@ -194,6 +195,8 @@ def agent_checks(s, launcher) -> list[Check]:
     )
     ver = run([binary, "--version"])
     out.append(Check("agent account can run the claude CLI", ver.returncode == 0, ver.stdout.strip()[:40] or binary))
+    floor_ok, floor_detail = claude_floor.check_result(ver.returncode, ver.stdout)
+    out.append(Check("agent account claude meets the version floor", floor_ok, floor_detail))
     work = run(["/bin/sh", "-c", f'test -d "{s.agent_work or home + "/work"}" && test -w "{s.agent_work or home + "/work"}"'])
     out.append(Check("agent work directory exists and is writable", work.returncode == 0, s.agent_work or home + "/work"))
     return out
@@ -207,6 +210,7 @@ def run_doctor(
     approved: Callable[[str], list[str]] = kit_automerge.fetch_approved,
     launcher=None,
     agent_launcher=None,
+    claude_probe: Callable | None = None,
 ) -> list[Check]:
     out: list[Check] = []
     for tool, required in (("git", True), ("openssl", True), ("claude", True), ("gh", False)):
@@ -218,6 +222,8 @@ def run_doctor(
                 "found" if found else "missing" + ("" if required else " (needed only for the merge lane)"),
             )
         )
+    ok, detail = claude_floor.machine_check(probe=claude_probe)
+    out.append(Check("claude meets the version floor", ok, detail))
     # with an agent account the Claude token lives in ITS home and this account must not (and cannot) read it
     for label, path in (("app key", str(s.key_path)),) + (() if s.agent_user else (("claude oauth file", s.oauth_file),)):
         ok, why = _mode_ok(path)

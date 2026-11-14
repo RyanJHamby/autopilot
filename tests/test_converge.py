@@ -5,7 +5,7 @@ import argparse
 import json
 import shutil
 import subprocess
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -21,6 +21,8 @@ def status_file(tmp_path_factory, monkeypatch):
     path = tmp_path_factory.mktemp("status") / "last.json"
     monkeypatch.setattr(command, "STATUS", path)
     monkeypatch.setattr(command, "HISTORY", path.with_name("history.jsonl"))
+    # --apply refuses inside the work-hours freeze (from 2026-11-16); these tests must not depend on the day the suite runs
+    monkeypatch.setattr(command, "_clock", lambda: datetime(2026, 11, 14, 12, 0, tzinfo=timezone.utc))
     return path
 
 
@@ -471,7 +473,8 @@ def test_the_launchd_job_is_weekly_files_nothing_at_install_and_stores_no_secret
     plist = plistlib.loads(PLIST.read_bytes())
     command_line = plist["ProgramArguments"][-1]
     assert "ap standard converge --apply" in command_line and "REPO_DIR" in command_line
-    assert plist["StartCalendarInterval"] == {"Weekday": 1, "Hour": 9, "Minute": 0}
+    # weekly; WHEN is pinned against policy/time.yaml in test_converge_freeze.py (it moved from Monday 09:00, which is inside the freeze)
+    assert set(plist["StartCalendarInterval"]) == {"Weekday", "Hour", "Minute"}
     assert plist["RunAtLoad"] is False  # installing it must not file anything
     assert "EnvironmentVariables" not in plist  # no token or key: it uses the owner's own gh login
     assert "--all" not in command_line  # the schedule never widens its scope

@@ -1,0 +1,13 @@
+# Work-hours freeze (autonomy hardening plan, Part M M1). The single source for every enforcement point.
+# Only the owner edits this file (M1-07). Times are quoted on purpose: unquoted 08:30 is an integer in YAML 1.1.
+# src/autopilot/freeze.py refuses a file that changes the timezone, turns off fail_closed, or has unknown keys.
+timezone: America/New_York
+blackout:
+  days: [mon, tue, wed, thu, fri]
+  from: "08:30"
+  to: "18:30"
+effective_from: 2026-11-16   # no blackout before this date
+wind_down_minutes: 20        # background sessions get a checkpoint prompt this long before the window
+fail_closed: true            # unreadable clock or file means the default window applies
+lift:
+  dates: []                  # ET dates (YYYY-MM-DD) on which the window is lifted, e.g. a holiday; nothing else lifts it

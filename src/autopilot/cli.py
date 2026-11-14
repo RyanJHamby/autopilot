@@ -18,6 +18,7 @@ from pathlib import Path
 
 import yaml
 
+from autopilot import claude_floor
 from autopilot.standard import engine
 from autopilot.standard.engine import AUTOPILOT_WORKFLOWS, secret_exposed_workflows
 
@@ -667,6 +668,11 @@ def cmd_vars(ns: argparse.Namespace) -> int:
 
 def cmd_doctor(ns: argparse.Namespace) -> int:
     problems = 0
+    # One machine-level check, not per repo: the Claude Code on this machine must meet the floor in policy/claude.yaml.
+    ok, detail = claude_floor.machine_check()
+    print("== machine")
+    print(f"  {'OK' if ok else 'FAIL'} claude: {detail}")
+    problems += 0 if ok else 1
     for rp in ns.repos:
         repo = Path(rp).expanduser().resolve()
         print(f"== {repo_name(repo)}")

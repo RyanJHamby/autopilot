@@ -213,16 +213,21 @@ def run_doctor(
     claude_probe: Callable | None = None,
 ) -> list[Check]:
     out: list[Check] = []
-    for tool, required in (("git", True), ("openssl", True), ("claude", True), ("gh", False)):
+    # With an agent account, claude runs as that account (checked below with its own floor); the orchestrator never runs it.
+    claude_needed_here = not s.agent_user
+    for tool, required in (("git", True), ("openssl", True), ("claude", claude_needed_here), ("gh", False)):
         found = which(tool) is not None
-        out.append(
-            Check(
-                f"tool {tool}",
-                found or not required,
-                "found" if found else "missing" + ("" if required else " (needed only for the merge lane)"),
-            )
-        )
-    ok, detail = claude_floor.machine_check(probe=claude_probe)
+        if found:
+            detail = "found"
+        elif tool == "claude" and not claude_needed_here:
+            detail = f"missing (not needed here: claude runs as {s.agent_user})"
+        else:
+            detail = "missing" + ("" if required else " (needed only for the merge lane)")
+        out.append(Check(f"tool {tool}", found or not required, detail))
+    if claude_needed_here:
+        ok, detail = claude_floor.machine_check(probe=claude_probe)
+    else:
+        ok, detail = True, f"not needed here: claude runs as {s.agent_user} (its floor is checked below)"
     out.append(Check("claude meets the version floor", ok, detail))
     # with an agent account the Claude token lives in ITS home and this account must not (and cannot) read it
     for label, path in (("app key", str(s.key_path)),) + (() if s.agent_user else (("claude oauth file", s.oauth_file),)):

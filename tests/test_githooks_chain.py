@@ -51,7 +51,7 @@ class Box:
         self.git("add", ".")
 
     def git(self, *args, cwd=None, check=True):
-        p = subprocess.run(["git", *args], cwd=cwd or self.repo, env=self.env, capture_output=True, text=True)
+        p = subprocess.run(["git", *args], cwd=cwd or self.repo, env=self.env, capture_output=True, text=True, timeout=30)
         if check and p.returncode:
             raise AssertionError(f"git {args} failed: {p.stderr}")
         return p
@@ -63,7 +63,7 @@ class Box:
         _write_exe(self.global_hooks / name, f'echo "global: {name} $*" >> "{self.log}"\n' + body, mode)
 
     def calls(self):
-        return self.log.read_text().splitlines() if self.log.exists() else []
+        return [ln.strip() for ln in self.log.read_text().splitlines()] if self.log.exists() else []
 
     def commit(self, msg="m"):
         return self.git("commit", "-q", "-m", msg, check=False)
@@ -83,7 +83,7 @@ def box(tmp_path):
 @pytest.fixture()
 def wired(box):
     box.global_hooks_path(box.global_hooks)
-    for n in ("pre-commit", "commit-msg", "pre-push"):
+    for n in ("pre-commit", "commit-msg", "pre-merge-commit", "pre-push"):
         box.global_hook(n)
     return box
 
@@ -195,8 +195,26 @@ def test_the_global_hook_runs_inside_the_repo_so_it_can_inspect_the_index(wired)
 
 def test_every_hook_file_here_is_executable_and_uses_the_one_shared_chain_helper():
     names = {p.name for p in HOOKS.iterdir()}
-    assert {"pre-commit", "commit-msg", "pre-push"} <= names
+    assert {"pre-commit", "commit-msg", "pre-merge-commit", "pre-push"} <= names
     for p in HOOKS.iterdir():
         assert p.stat().st_mode & stat.S_IXUSR, p
-        if p.name in ("pre-commit", "commit-msg", "pre-push"):
-            assert "_chain-global" in p.read_text(), f"{p.name} must chain to the global hook"
+        if p.name != "_chain-global":
+            text = p.read_text()
+            assert "_chain-global" in text, f"{p.name} must chain to the global hook"
+            assert "# chains-global-hooks" in text.splitlines()[:3], f"{p.name} needs the marker the admin doctor looks for"
+            assert f"chain_global {p.name}" in text, f"{p.name} must chain to the global hook of its own name"
+
+
+def test_a_global_pre_merge_commit_runs_and_blocks_a_real_merge(wired):
+    assert wired.commit().returncode == 0
+    wired.git("checkout", "-q", "-b", "side")
+    (wired.repo / "g.txt").write_text("g")
+    wired.git("add", "g.txt")
+    assert wired.commit("side").returncode == 0
+    wired.git("checkout", "-q", "main")
+    (wired.repo / "h.txt").write_text("h")
+    wired.git("add", "h.txt")
+    assert wired.commit("main2").returncode == 0
+    wired.global_hook("pre-merge-commit", "exit 1\n")
+    p = wired.git("merge", "--no-ff", "-m", "merge", "side", check=False)
+    assert p.returncode != 0 and "global: pre-merge-commit" in wired.calls()

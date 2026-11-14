@@ -663,3 +663,11 @@ Tests first (nftrules rendering, probe, selftest), shown failing before the rule
 ## 2026-11-14 11:40 EST (branch agent/toolchain-tests-umask)
 
 After the loopback fix, `apx / build` on the Linux host still failed `pytest`: 6 failed, 2301 passed, 57 skipped, all six in `tests/test_apx_toolchains.py`. Cause: the `apx-ci` account has Ubuntu's default umask 002, so the test helper `fake_node` made a 775 `bin/` and the toolchain check refused it as group-writable before it compared versions. The check is right (real toolchains are root-owned 755); the test leaned on a 022 umask. Fix: the helper sets 755 explicitly. Reproduced here with `umask 002` (same six failures), and the full suite under umask 002 then passed (2363 passed, 1 skipped, this cloud container, not the host). Not yet run on the host.
+
+## 2026-11-14 10:50 EST (linux host: swap note)
+
+The first real Linux host came up with no swap. Added a short step to docs/apx-linux-host.md (after step 1) to create a 4 GB swap file with swappiness 10, so a memory spike slows the box instead of OOM-killing apx and so swap use can serve as the resize signal. The commands are the ones run on that host, where `free -h` showed Swap: 4.0Gi after a reboot. Also serves as the shadow-mode smoke test PR (the previous one, #256, was merged before apx's next pass could see it). Written by Claude in a cloud session; pow is not installed here, so this entry was added by hand.
+
+## 2026-11-14 11:15 EST (linux host: moving releases by hand)
+
+Loading the loopback rule (#258) on the first real host took four tries. Bootstrap builds releases from its own clone (/srv/apx/autopilot), checks the same sha out in /srv/apx/updater (cloned from that clone), renders the rules from /srv/apx/current, and fetches none of them; it also never moves an existing current link. Each missing fetch stopped bootstrap with `reference is not a tree` before the rules were reloaded, and one step briefly left current pointing at a release directory that did not exist (no harm: shadow mode). Documented the sequence that worked in docs/apx-linux-host.md under Operating it. The proper fix (APX_SHA fetches both clones, refuses a release whose HEAD differs from its name, and switches current) is a separate PR. Probe after the fix: sealed. Written by Claude in a cloud session; pow is not installed here.

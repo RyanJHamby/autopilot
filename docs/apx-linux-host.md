@@ -41,6 +41,21 @@ Anything in the right-hand column stays "unverified" until you have run it on th
 Small x86 VPS, Debian 12 or Ubuntu 24.04, about 4 vCPU, 16 GB RAM, 40 GB disk (my estimate from the preflight thresholds, not a measurement). Create your own admin
 account with your SSH key, turn on the provider's firewall to allow SSH from your own IP only, and nothing else inbound (apx polls; it has no webhook port).
 
+Many small VPS images ship with **no swap**. Without it, a memory spike kills a process outright (the OOM killer) instead of slowing
+it down, and "heavy swap" can't serve as a resize signal. On a 12 GB box a 4 GB swap file with `vm.swappiness=10` (used only under real
+pressure) is enough. As your admin account:
+
+```
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/90-swappiness.conf
+```
+
+Check with `free -h` (Swap: 4.0Gi) after a reboot. Verified on the first real Linux host on 2026-11-14.
+
 ### 2. Preflight (read-only)
 
 ```
@@ -158,6 +173,23 @@ If the new server misbehaves: `sudo DO=1 bash deploy/linux/retire.sh` stops its 
 - Stop immediately: `sudo systemctl disable --now apx.timer apx-updater.timer` (or `retire.sh`). Status: `systemctl list-timers 'apx*'`, `journalctl -u apx.service`.
 - Fail closed: `apx.service` and `apx-updater.service` `Require=` the rules and the resolver, so if the rules fail to load, apx does not run.
 - Egress rules changed? Re-run `bootstrap.sh`; it re-renders, checks with `nft -c`, and reloads. The resolver config is only read on start, so the script restarts it.
+- Moving to a newer release by hand (while the updater is still in dry-run). Bootstrap renders the rules from `/srv/apx/current`, builds releases from its own
+  clone `/srv/apx/autopilot`, and checks the same sha out in `/srv/apx/updater`, which is cloned from that clone. None of the three is fetched for you,
+  and `current` is never moved if it exists. What worked on the first real host (2026-11-14), with `SHA` set to the full commit id:
+
+  ```
+  sudo -u apx git -C /srv/apx/autopilot fetch -q origin
+  sudo -u apx git -C /srv/apx/autopilot branch -f main origin/main
+  sudo -u apx git -C /srv/apx/updater fetch -q origin
+  sudo APX_SHA=$SHA ADMIN_USER=$ADMIN_USER bash deploy/linux/bootstrap.sh
+  sudo -u apx git -C /srv/apx/releases/$SHA rev-parse HEAD
+  sudo -u apx ln -sfn releases/$SHA /srv/apx/current
+  sudo ADMIN_USER=$ADMIN_USER bash deploy/linux/bootstrap.sh
+  sudo bash deploy/linux/egress-probe.sh
+  ```
+
+  Check that `rev-parse` prints `$SHA` before moving `current`, and that the probe ends `sealed`. Without the fetches, bootstrap stops with
+  `reference is not a tree` before it reloads the rules.
 - Compromise: follow [apx-compromise.md](apx-compromise.md). Where it says `launchctl bootout`, use `systemctl disable --now apx.timer apx-updater.timer`; where it names `/Users/apx/...`,
   the paths here are `/home/apx/...`, `/home/apx-agent/...` and `/srv/apx`. It has not been rewritten for Linux yet, and its steps have never been drilled.
 

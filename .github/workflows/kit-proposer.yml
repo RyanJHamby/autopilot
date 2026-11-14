@@ -42,7 +42,7 @@ jobs:
           SINCE=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
           N=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=all&per_page=50" --jq "[.[]|select(.head.ref|startswith(\"autopilot/kit-fix-\"))|select(.created_at>\"$SINCE\")]|length")
           [ "$N" -lt 2 ] || { echo "::error::proposer daily cap reached ($N PRs in 24h)"; exit 1; }
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
       - name: sandbox and python dependencies
@@ -60,7 +60,7 @@ jobs:
           git checkout -b "$BR"
           for i in 1 2 3; do git push origin "$BR" && break; [ "$i" = 3 ] && exit 1; sleep $((i * 5)); done
           echo "BR=$BR" >> "$GITHUB_ENV"
-      - uses: anthropics/claude-code-action@34968b5981d5d170904281aa3df6f3c0d4a28855 # v1
+      - uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c # v1
         id: agent
         env:
           CLAUDE_BRANCH: autopilot/kit-fix-${{ github.event.issue.number }}-${{ github.run_id }}

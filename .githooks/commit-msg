@@ -1,0 +1,6 @@
+#!/bin/sh
+# chains-global-hooks
+# Passthrough: this repo has no commit-message checks of its own, but its core.hooksPath hides the global commit-msg hook, so run
+# that one. See _chain-global.
+. "$(dirname "$0")/_chain-global"
+chain_global commit-msg "$@"

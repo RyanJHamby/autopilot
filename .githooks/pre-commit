@@ -1,0 +1,6 @@
+#!/bin/sh
+# chains-global-hooks
+# Passthrough: this repo has no commit-time checks of its own, but its core.hooksPath hides the global pre-commit (freeze and
+# identity gates), so run that one. See _chain-global.
+. "$(dirname "$0")/_chain-global"
+chain_global pre-commit "$@"

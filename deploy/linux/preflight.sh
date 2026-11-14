@@ -45,6 +45,23 @@ if command -v python3 >/dev/null 2>&1; then
 fi
 for t in node npm uv; do if command -v "$t" >/dev/null 2>&1; then pass "$t found"; else warn "$t missing (needed to build or test some repos; see docs/apx-linux-host.md)"; fi; done
 
+# Private repos apx runs CI for (APX_PRIVATE_CI, comma-separated, same value as in the apx environment): every tool their CI needs must be
+# on the PATH apx-ci will have, or their required checks would fail on the host instead of on the code.
+if [ -n "${APX_PRIVATE_CI:-}" ]; then
+  root="$(cd "$(dirname "$0")/../.." && pwd)"
+  ci_path="/usr/local/bin:${APX_CI_HOME:-/home/apx-ci}/.local/bin:/usr/bin:/bin"
+  if command -v python3 >/dev/null 2>&1; then
+    out="$(PYTHONPATH="$root/src" python3 -m autopilot.apx.repo_ci check-tools "$APX_PRIVATE_CI" --path "$ci_path" 2>&1)" || true
+    while IFS= read -r line; do
+      case "$line" in PASS*) pass "${line#PASS  }" ;; FAIL*) fail "${line#FAIL  }" ;; *) [ -z "$line" ] || info "$line" ;; esac
+    done <<EOF_TOOLS
+$out
+EOF_TOOLS
+  else fail "python3 missing, so the tools for APX_PRIVATE_CI repos cannot be checked"; fi
+else
+  info "APX_PRIVATE_CI is not set: no private-repo CI is configured for this host (set it to check admin, control, pawl, agent-kit tools)"
+fi
+
 for u in apx apx-ci apx-agent; do if id "$u" >/dev/null 2>&1; then info "account $u already exists"; else info "account $u not created yet (bootstrap.sh creates it)"; fi; done
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet apx.timer 2>/dev/null; then
   warn "apx.timer is already active on THIS machine: never run two live hosts (docs/apx-host-move.md)"

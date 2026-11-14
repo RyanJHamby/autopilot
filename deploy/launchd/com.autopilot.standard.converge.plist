@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- The OWNER's weekly standard check (a LaunchAgent, runs as you, not as apx). Monday 09:00: it runs `ap standard converge` with its apply flag,
+<!-- The OWNER's weekly standard check (a LaunchAgent, runs as you, not as apx). Monday 19:00 (local time, ET for the owner: after the 18:30 end of the work-hours freeze in policy/time.yaml; tests/test_converge_freeze.py checks the two against each other). It runs `ap standard converge` with its apply flag,
      which audits the portfolio plus repos created in the last 14 days and files, edits or closes ONE `standard-gap` issue per repo.
      It never pushes, never opens a PR, never touches a default branch. It uses your own `gh` login: no token is stored anywhere.
      It sets PATH itself (launchd's login shell does not read .zshrc, so uv in ~/.local/bin and gh in /opt/homebrew/bin are otherwise not found).
      It runs only from a checkout that is on main with no uncommitted changes to tracked files, and pulls main first: otherwise it prints why and exits.
-     If the Mac is asleep at 09:00 launchd runs it on wake. RunAtLoad is false on purpose: installing it files nothing.
+     If the Mac is asleep at 19:00 launchd runs it on wake, which can be inside the freeze window: the converge command then refuses by itself (exit 0, last.json says `skipped`) and the next Monday's run does the work. RunAtLoad is false on purpose: installing it files nothing.
      How it went: ~/.autopilot/converge/last.json (ok, counts, errors); the log is /tmp/standard-converge.log.
      Install: replace REPO_DIR with your autopilot checkout, then see docs/standard-converge.md.
        sed "s|REPO_DIR|$PWD|" deploy/launchd/com.autopilot.standard.converge.plist > ~/Library/LaunchAgents/com.autopilot.standard.converge.plist
@@ -23,7 +23,7 @@
   <key>StartCalendarInterval</key>
   <dict>
     <key>Weekday</key><integer>1</integer>
-    <key>Hour</key><integer>9</integer>
+    <key>Hour</key><integer>19</integer>
     <key>Minute</key><integer>0</integer>
   </dict>
   <key>RunAtLoad</key><false/>

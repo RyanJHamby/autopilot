@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
+from autopilot import freeze
 from autopilot.converge import core, issues
 
 
@@ -40,6 +41,7 @@ def render(audits: list[core.Audit], skipped: list[tuple[str, str]], errors: lis
     return "\n".join(lines)
 
 
+POLICY_FILE = freeze.DEFAULT_FILE  # policy/time.yaml, read only through the one resolver
 STATUS = Path.home() / ".autopilot" / "converge" / "last.json"
 HISTORY = Path.home() / ".autopilot" / "converge" / "history.jsonl"  # private and local: per-repo counts, one line per applied run
 
@@ -73,6 +75,20 @@ def in_scope(r: core.Listed, portfolio: dict, today: date) -> bool:
     return r.name in (portfolio.get("repos") or {}) or core.is_new(r.created_at, today)
 
 
+def _clock() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def frozen_reason() -> str | None:
+    """Why `--apply` must not run now, else None. The work-hours freeze (policy/time.yaml) decided by autopilot.freeze, the one resolver.
+    Any failure of the resolver or the clock means frozen. No argument, flag or variable lifts it; only `lift.dates` in time.yaml does."""
+    try:
+        v = freeze.check_file(POLICY_FILE, clock=lambda: _clock())
+    except Exception as e:  # noqa: BLE001 - a resolver that cannot answer is a freeze
+        return f"freeze resolver failed ({type(e).__name__}): refusing"
+    return v.reason if v.frozen else None
+
+
 def cmd_converge(
     ns: argparse.Namespace,
     *,
@@ -84,6 +100,18 @@ def cmd_converge(
 ) -> int:
     status_path = status_path or STATUS  # resolved at call time so tests can redirect it
     history_path = history_path or HISTORY
+    if getattr(ns, "apply", False):  # --apply edits GitHub issues on personal repos; a dry run only reads. This comes before anything else.
+        frozen = frozen_reason()
+        if frozen:
+            # launchd runs a missed job on wake, which can be inside the window: refuse, say so, and record that it was skipped (not failed)
+            if ns.json:
+                print(json.dumps({"applied": False, "frozen": frozen}))
+            else:
+                print(f"converge: not running ({frozen}). Nothing was read or changed; the next scheduled run outside the window will do it.")
+            bad = write_status(status_path, {"ok": True, "exit": 0, "skipped": frozen, "audited": 0, "issues": {}, "errors": []})
+            if bad:
+                print(f"WARNING {bad}")
+            return 0
     portfolio = load_portfolio()
     owner = ns.owner or portfolio["owner"]
     today = today or date.today()

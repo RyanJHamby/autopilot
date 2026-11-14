@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import gate  # noqa: E402
 import runner as kit_runner  # noqa: E402
 
-from . import caps, cilane, claude_runner, committer, gitops, guardlane, hostenv, mergelane, report, status, window  # noqa: E402
+from . import caps, cilane, claude_runner, committer, freeze_gate, gitops, guardlane, hostenv, mergelane, report, status, window  # noqa: E402
 from .app_auth import TokenCache  # noqa: E402
 from .executor import Deps, IssueResult, execute  # noqa: E402
 from .github import Api, GitHubError, make_api  # noqa: E402
@@ -603,6 +603,9 @@ def usage_lines(ledger: Ledger, repos) -> list[str]:
 
 
 def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
+    blocked = freeze_gate.pass_blocked(s.active_window)  # the work-hours freeze: no polling, no checks, no runs (also checked per action)
+    if blocked:
+        return [blocked]
     _register_known_secrets(s)
     gitops.prune_work(s.work_dir)
     really_live = live and os.environ.get("APX_LIVE") == "1"
@@ -644,6 +647,7 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
         head_refs=heads,
         dry_run=False,
         private_repos=private_repos(api, s.installations),
+        gate=freeze_gate.action_gate,
     )
 
 
@@ -695,8 +699,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"apx config error: {e}", file=sys.stderr)
         return 2
     version = status.code_version(st.code_dir())
-    if st.active_window and not st.active_window.is_open(dt.datetime.now(dt.timezone.utc)):
-        line = window.idle_line(st.active_window)
+    blocked = freeze_gate.pass_blocked(st.active_window, dt.datetime.now(dt.timezone.utc))
+    if blocked:
+        line = blocked
         print(line)
         status.write_status(status_path, [line], live=ns.live, version=version, idle=True)  # a fresh heartbeat: idle is not dead
         return 0

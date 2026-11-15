@@ -143,3 +143,7 @@ def with_found(s, found: dict[str, Found]):
         discovered=s.discovered | frozenset(found),
         shadow_only=s.shadow_only | shadow,
     )
+
+
+def promote(s, found, api_for, tools_for):  # stub: tests first
+    raise NotImplementedError

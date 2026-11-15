@@ -7,7 +7,7 @@ in policy/portfolio.yaml, because agents may not edit that file; the owner can m
 Commands come from this file (trusted, merged by the owner), never from the PR, and go through the same filter as repo.yaml `ci:`
 steps (cilane.parse_ci_steps): no shell, plain characters only. A repo runs only when the owner lists it in APX_PRIVATE_CI.
 
-    python3 -m autopilot.apx.repo_ci check-tools OWNER/REPO,OWNER/REPO [--path DIR]   (used by the host preflight scripts)
+    python3 -m autopilot.apx.repo_ci check-tools OWNER/REPO,OWNER/REPO [--path DIR] [--toolchains-root DIR]   (host preflights)
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import cilane
+from . import cilane, toolchains
 
 SPEC_FILE = Path(__file__).with_name("repo_ci.json")
 TOOL = re.compile(r"^([A-Za-z0-9._+-]+)(?:>=([0-9]+(?:\.[0-9]+)*))?$")  # `name` or `name>=MAJOR[.MINOR]`
@@ -123,8 +123,11 @@ def parse_repos(value: str) -> list[str]:
     return [r.strip() for r in (value or "").split(",") if r.strip()]
 
 
-def check_tools(repos: list[str], search_path: str, which=shutil.which) -> tuple[list[str], bool]:
-    """(PASS/FAIL lines, all ok). A repo with no spec is a FAIL: naming it in APX_PRIVATE_CI could never have worked."""
+def check_tools(
+    repos: list[str], search_path: str, which=shutil.which, toolchain_root: Path | str | None = None
+) -> tuple[list[str], bool]:
+    """(PASS/FAIL lines, all ok). A repo with no spec is a FAIL: naming it in APX_PRIVATE_CI could never have worked. With a
+    toolchain_root, each repo's own toolchain bin directories (repo_toolchains.json) come first, as on that repo's job PATH."""
     specs = load_specs()
     lines, ok = [], True
     for repo in repos:
@@ -133,7 +136,8 @@ def check_tools(repos: list[str], search_path: str, which=shutil.which) -> tuple
             lines.append(f"FAIL  {repo} is in APX_PRIVATE_CI but has no CI spec (known: {', '.join(sorted(specs))})")
             ok = False
             continue
-        got, good = check_tools_spec({"tools": spec.tools}, repo, search_path, which)
+        dirs = toolchains.bin_dirs(repo, toolchain_root) if toolchain_root else []
+        got, good = check_tools_spec({"tools": spec.tools}, repo, ":".join([*dirs, search_path]), which)
         lines += got
         ok = ok and good
     return lines, ok
@@ -145,8 +149,9 @@ def main(argv: list[str] | None = None) -> int:
     ct = sub.add_parser("check-tools")
     ct.add_argument("repos", help="comma-separated, the value of APX_PRIVATE_CI")
     ct.add_argument("--path", default=os.environ.get("PATH", ""), help="the PATH apx-ci will have")
+    ct.add_argument("--toolchains-root", default=None, help="<shared dir>/toolchains: search each repo's declared toolchains first")
     ns = ap.parse_args(argv)
-    lines, ok = check_tools(parse_repos(ns.repos), ns.path)
+    lines, ok = check_tools(parse_repos(ns.repos), ns.path, toolchain_root=ns.toolchains_root)
     print("\n".join(lines))
     return 0 if ok else 1
 

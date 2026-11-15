@@ -450,7 +450,9 @@ def test_absent_ceiling_is_an_advisory_that_never_fails_the_doctor(tmp_path, pol
     assert c.detail == (
         "not set: no daily dollar ceiling across repos (add `global_usd_per_day:` under `defaults:` in policy/portfolio.yaml)"
     )
-    assert dr.render(list(out.values()))[1]
+    # An absent ceiling must never be what fails the doctor. (Other checks, such as the state-path check, may fail here only
+    # because pytest's tmp_path is under /tmp.)
+    assert SPEND not in [name for name, check in out.items() if not check.ok]
 
 
 def test_a_valid_ceiling_passes_with_the_value_and_the_ledgers_24h_spend(tmp_path, policy):

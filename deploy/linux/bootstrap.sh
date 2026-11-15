@@ -107,7 +107,7 @@ if [ "$DRY_RUN" != 1 ]; then
 fi
 
 # --- directories and tool homes ---------------------------------------------------------------------------------------------------
-run install -d -m 700 -o apx -g apx /home/apx/.apx /home/apx/.local /home/apx/.local/bin
+run install -d -m 700 -o apx -g apx /home/apx/.apx /home/apx/.apx/work /home/apx/.local /home/apx/.local/bin
 run install -d -m 700 -o apx-ci -g apx-ci /home/apx-ci/work /home/apx-ci/.local /home/apx-ci/.local/bin
 run install -d -m 700 -o apx-agent -g apx-agent /home/apx-agent/work /home/apx-agent/.apx /home/apx-agent/.local /home/apx-agent/.local/bin
 # Shared and world-readable, NOT writable by the sandbox: the code it runs and the interpreter it uses.

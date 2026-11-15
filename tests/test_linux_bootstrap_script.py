@@ -248,3 +248,9 @@ def test_the_probe_checks_loopback_privileged_refused_high_allowed_for_ci_and_ag
     # every refusal is paired with a control that connects as root, so a refusal cannot mean "no listener"
     assert "control_ok" in c and "nc ${3:+-6} -z" in c, "root must connect first, or the case is BROKEN rather than ok"
     assert "trap '" in c and "kill \"$lpid\"" in c, "the throwaway listeners are stopped on exit"
+
+
+def test_bootstrap_creates_the_shared_work_dir_private_to_apx_outside_tmp():
+    # the daemon and the updater both lock <state>/work (hostenv.default_work_dir); PrivateTmp would give each its own /tmp
+    line = next(ln for ln in code(BOOTSTRAP).splitlines() if ln.startswith("run install -d -m 700 -o apx -g apx "))
+    assert "/home/apx/.apx/work" in line.split()

@@ -141,13 +141,31 @@ curl -fsSLO "https://nodejs.org/dist/v$V/SHASUMS256.txt.sig"
 To change a version later, unpack the new one next to the old (`node-<new>`), change the entry in `repo_toolchains.json` in a PR, and remove the old directory once nothing declares it.
 The sandbox still sees no secrets from this: the directories sit outside every account's home, hold no credentials, and the job's environment is still the same short allowlist.
 
+**pawl for control.** control's `check` runs the `pawl` CLI, which is built from the private `RyanJHamby/pawl` repo, and its `plan-coverage` scripts import `yaml`. The
+sandbox account has no GitHub token and must never get one, so nothing on the host fetches pawl. `repo_toolchains.json` declares `"RyanJHamby/control": ["pawl@0.1.0"]`:
+the directory `/srv/apx/toolchains/pawl-0.1.0` is a root-owned virtualenv holding exactly that pawl build and PyYAML, and its `bin/` (with `pawl` and that venv's `python3`)
+comes first on control's job PATH only. pawl has no runtime dependencies (its `pyproject.toml` says so as a rule); PyYAML comes from PyPI, hash-pinned.
+
+1. On your Mac (where you have GitHub access), build a wheel from a commit you name, not from a moving branch, and note its sha256. The version string `0.1.0` covers many
+   commits until pawl tags a release, so the commit is the real pin; write it and the sha256 in your private notes. The wheel's bytes depend on the build backend version and
+   your umask, so the sha256 proves the copy arrived intact, not that a rebuild elsewhere matches.
+2. Copy it to the host as your admin account and compare the sha256 there (`sha256sum -c`).
+3. As root: `mkdir` the directory (stops if it exists), `python3 -m venv` into it, `pip install --require-hashes --only-binary=:all:` PyYAML with the wheel hashes from PyPI's
+   own page for that release, then `pip install --no-index --no-deps` the pawl wheel. Then `chown -R root:root` and `chmod -R go-w`.
+4. As the sandbox account: `pawl --version` must print `0.1.0`, and that venv's `python3 -c "import yaml"` must succeed. The preflight checks the directory, its version and its
+   modes; the doctor checks, as `apx-ci` on control's job PATH, that `pawl` resolves there and that its `python3` imports yaml (`"repo_probes"` in `host_tools.json`).
+
+To move to a new pawl, install it next to the old one (`pawl-<new>`), change the entry in a PR, and remove the old directory once nothing declares it. If two builds share a
+version string, bump pawl's version first: the directory name is derived from it, and a build is never installed over one in use.
+
 **Host tools per repo.** Beyond Node, each repo's CI needs tools from the host itself. Which ones is data: the `"tools"` list of a private repo's entry in
 `src/autopilot/apx/repo_ci.json` (repos in `APX_PRIVATE_CI`), and `"repos"` in `src/autopilot/apx/host_tools.json` for the autopilot-managed repos, whose own
 `.autopilot/repo.yaml` lists commands but not tools (`drillpad-workspace` needs `clang++` and `rustc`, `stencil` needs `node`, `npm` and `npx` from its toolchain).
 Where being on the PATH is not enough, `"probes"` in the same file holds a command that must succeed, per tool, for every repo that declares it: `gitleaks git --help` must show
 the `git` subcommand (Ubuntu's apt gitleaks 8.18 runs but has none), `clang++` must compile, link and run a one-line C++20 program with `-fsanitize=undefined`, and `rustc` must
 accept `--edition 2021`. The doctor (step 6) runs these as `apx-ci`, on the same PATH that repo's sandbox job gets, and prints one FAIL per repo and tool with the install hint.
-To add a tool or a probe, change the data in a PR; no code names a repo.
+A probe that only one repo needs goes under `"repo_probes"` (OWNER/REPO, then tool), with an optional `hint`; for that repo and tool it replaces the unscoped probe.
+control's `python3` must import yaml; pawl's own CI, on a python3 without PyYAML, is not bound by it. To add a tool or a probe, change the data in a PR; no code names a repo.
 
 - `clang++`: `sudo apt-get install clang libclang-rt-dev`. On Ubuntu 24.04, `clang` alone does not bring the UBSan runtime, so the probe fails to link until
   `libclang-rt-dev` is there. Install from apt, into `/usr/bin`: drillpad-workspace runs its compilers with `PATH=/usr/bin:/bin:$HOME/.cargo/bin`, so a copy only in `/usr/local/bin`

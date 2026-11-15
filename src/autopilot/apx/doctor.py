@@ -8,11 +8,13 @@ mis-click in the GitHub UI cannot silently widen what a leaked key could do.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import re
 import shutil
 import sqlite3
 import stat
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +41,8 @@ REQUIRED = {
 }
 # Anything outside REQUIRED is refused unless it is in this harmless set (read-only, no code or secret reach).
 TOLERATED_EXTRA = {"metadata"}
+# Claude Code's managed settings on Linux; `sandbox.bwrapPath` there overrides the PATH lookup for bubblewrap.
+MANAGED_SETTINGS = Path("/etc/claude-code/managed-settings.json")
 
 
 @dataclass
@@ -204,6 +208,56 @@ def agent_checks(s, launcher) -> list[Check]:
     work = run(["/bin/sh", "-c", f'test -d "{s.agent_work or home + "/work"}" && test -w "{s.agent_work or home + "/work"}"'])
     out.append(Check("agent work directory exists and is writable", work.returncode == 0, s.agent_work or home + "/work"))
     return out
+
+
+BWRAP_CHECK = "agent account can start Claude Code's sandbox (bubblewrap)"
+BWRAP_PROBE = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "/bin/true"]
+BWRAP_MISSING = "bubblewrap missing: Claude Code can't start its sandbox (sudo apt-get install -y bubblewrap)"
+BWRAP_HINT = (
+    "if it says uid map / permission denied, Ubuntu's AppArmor userns restriction is blocking it: add an AppArmor profile for "
+    "/usr/bin/bwrap that allows userns (docs/apx-linux-host.md), don't disable the restriction system-wide"
+)
+
+
+def _managed_bwrap_path() -> str:
+    """`sandbox.bwrapPath` from Claude Code's managed settings, if set to an absolute path; else "" (claude then looks on its PATH)."""
+    try:
+        v = json.loads(MANAGED_SETTINGS.read_text()).get("sandbox", {}).get("bwrapPath")
+    except (OSError, ValueError, AttributeError):
+        return ""
+    return v if isinstance(v, str) and v.startswith("/") else ""
+
+
+def bwrap_check(s, launcher) -> Check:
+    """Linux only. Claude Code refuses to start without bubblewrap (its subprocess env scrubbing and isolation need it), so prove, AS the
+    agent account and on the PATH its claude runs with (sandbox.job_path), that bwrap is there and can set up a namespace."""
+    env = {"PATH": sandbox.job_path(s.agent_home()), "HOME": s.agent_home()}
+
+    def run(argv, timeout):
+        return launcher.run(argv, cwd="/", env=env, capture_output=True, text=True, timeout=timeout)
+
+    configured = _managed_bwrap_path()
+    try:
+        if configured:
+            found = configured if run(["/bin/sh", "-c", 'test -x "$1"', "sh", configured], 10).returncode == 0 else ""
+        else:
+            r = run(["/bin/sh", "-c", 'command -v -- "$1"', "sh", "bwrap"], 10)
+            lines = r.stdout.strip().splitlines() if r.returncode == 0 else []
+            found = lines[-1].strip() if lines and lines[-1].strip().startswith("/") else ""
+        if not found:
+            where = f" (sandbox.bwrapPath {configured} is not executable)" if configured else ""
+            return Check(BWRAP_CHECK, False, BWRAP_MISSING + where)
+        p = run([found, *BWRAP_PROBE], 10)
+    except subprocess.TimeoutExpired:
+        return Check(BWRAP_CHECK, False, f"bwrap probe timed out after 10s; {BWRAP_HINT}")
+    except Exception as e:  # noqa: BLE001 - a broken sudo fails the check, never the doctor
+        return Check(BWRAP_CHECK, False, f"could not run as the agent account ({type(e).__name__})")
+    label = f"{found} (sandbox.bwrapPath)" if configured else found
+    if p.returncode == 0:
+        return Check(BWRAP_CHECK, True, label)
+    err = (p.stderr or "").strip().splitlines()
+    first = err[0].strip()[:160] if err else f"exit {p.returncode}"
+    return Check(BWRAP_CHECK, False, f"{found}: {first}; {BWRAP_HINT}")
 
 
 def state_path_checks(s) -> list[Check]:
@@ -378,7 +432,10 @@ def run_doctor(
     if s.agent_user:
         from .runas import Launcher as _L
 
-        out.extend(agent_checks(s, agent_launcher or _L(s.agent_user)))
+        agent = agent_launcher or _L(s.agent_user)
+        out.extend(agent_checks(s, agent))
+        if not hostenv.is_darwin():
+            out.append(bwrap_check(s, agent))
     out.append(spend_ceiling_check(s.db_path))
     out.append(sprint_check(s.db_path))
     out.append(Check("installations within scope", set(s.installations) <= ALLOWED_REPOS, ", ".join(sorted(s.installations))))

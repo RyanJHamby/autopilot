@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from . import caps
 from .checks import post_check, post_pending
 from .github import Api
 from .ledger import Ledger
@@ -148,7 +149,7 @@ def run_agent(api: Api, ledger: Ledger, deps: Deps, action: Action, *, hard: boo
     """Returns 'success' or 'failure'. The ledger row is closed on every path, including a crash (which re-raises)."""
     repo, issue = action.repo, int(action.ref)
     started = dt.datetime.now(dt.timezone.utc).isoformat()
-    run_id = ledger.start(repo, issue, hard=hard)
+    run_id = ledger.start(repo, issue, hard=hard, budget_usd=caps.detail_budget(action.detail))
     conclusion, model, turns, model_id, cost_usd = "failure", None, None, None, None
     try:
         r = deps.work_on_issue(repo, issue, run_id)
@@ -184,7 +185,7 @@ def run_fix(api: Api, ledger: Ledger, deps: Deps, action: Action) -> str:
         return "skipped: fixes are not enabled"
     issue = int(m.group(1))
     started = dt.datetime.now(dt.timezone.utc).isoformat()
-    run_id = ledger.start(repo, issue, kind="fix", ref=sha)
+    run_id = ledger.start(repo, issue, kind="fix", ref=sha, budget_usd=caps.detail_budget(action.detail))
     conclusion, model, turns, model_id, cost_usd = "failure", None, None, None, None
     why = ""
     try:

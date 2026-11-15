@@ -2,6 +2,7 @@
 stencil #22 failed and only `run-agent ... failure` plus a needs-human label were left)."""
 
 import sqlite3
+from types import SimpleNamespace
 
 from autopilot.apx import executor as ex
 from autopilot.apx.ledger import NOTE_MAX, Ledger
@@ -165,3 +166,23 @@ def test_recent_runs_with_reasons_for_the_cli():
     run(Api(), led, deps(FAILED), agent())
     (r,) = led.recent(5)
     assert r["repo"] == REPO and r["issue"] == 22 and r["conclusion"] == "failure" and "protected-path" in r["note"]
+
+
+def test_the_runs_flag_prints_recent_runs_with_their_reasons(tmp_path, monkeypatch, capsys):
+    from autopilot.apx import daemon as dm
+
+    p = tmp_path / "l.sqlite"
+    run(Api(), Ledger(str(p)), deps(FAILED), agent())
+    monkeypatch.setattr(dm.Settings, "from_env", staticmethod(lambda *a, **k: SimpleNamespace(db_path=str(p))))
+    assert dm.main(["--runs", "5"]) == 0
+    out = capsys.readouterr().out
+    assert f"{REPO} #22" in out and "failure" in out and "protected-path" in out
+
+
+def test_the_runs_flag_on_a_missing_ledger_says_so(tmp_path, monkeypatch, capsys):
+    from autopilot.apx import daemon as dm
+
+    p = tmp_path / "absent.sqlite"
+    monkeypatch.setattr(dm.Settings, "from_env", staticmethod(lambda *a, **k: SimpleNamespace(db_path=str(p))))
+    assert dm.main(["--runs", "5"]) == 1
+    assert "cannot read" in capsys.readouterr().err

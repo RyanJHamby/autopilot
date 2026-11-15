@@ -776,6 +776,25 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     )
 
 
+def print_runs(n: int) -> int:
+    """The last n ledger rows, newest first, one line each plus the failure note. Read-only; 1 if the ledger cannot be read."""
+    import sqlite3
+
+    try:
+        path = Settings.from_env().db_path
+        rows = Ledger.read_only(path).recent(n)
+    except (ConfigError, sqlite3.Error) as e:
+        print(f"cannot read the ledger: {type(e).__name__}: {e}", file=sys.stderr)
+        return 1
+    for r in rows:
+        cost = f"${r['cost_usd']:.2f}" if r["cost_usd"] is not None else "cost n/a"
+        print(f"{r['id']} {r['created_at']} {r['kind']} {r['repo']} #{r['issue']} {r['conclusion'] or r['status']} "
+              f"turns={r['turns'] if r['turns'] is not None else '?'} {cost}")
+        if r["note"]:
+            print(f"    {r['note']}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="apx: owner-run executor (dry-run unless --live and APX_LIVE=1)")
     ap.add_argument("--once", action="store_true", help="one planning/execution pass, then exit")
@@ -785,7 +804,10 @@ def main(argv: list[str] | None = None) -> int:
         "--spike-check", metavar="OWNER/REPO#PR", help="after the spike, verify what it was meant to prove (read-only)"
     )
     ap.add_argument("--app-slug", default="autopilot-apx")
+    ap.add_argument("--runs", type=int, metavar="N", help="print the last N runs from the ledger with their failure notes (read-only)")
     ns = ap.parse_args(argv)
+    if ns.runs:
+        return print_runs(ns.runs)
     if ns.doctor:
         from .doctor import render, run_doctor
 

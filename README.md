@@ -48,7 +48,7 @@ All commands that change GitHub are dry-run by default.
 Constitution forbids contacting people, calendars/inboxes/task managers, social/publishing, secrets, spend,
 protected paths. Enforced by: no connectors in the Action runtime; `.claude/settings.json` deny rules; minimal
 job permissions + owner-only triggers; a `guard` required check (secrets, messaging/social/mail SDKs and URLs,
-protected paths, test weakening, size) run from the base branch copy; branch ruleset; CODEOWNERS.
+protected paths, test weakening, size, unresolved merge-conflict markers in added lines) run from the base branch copy; branch ruleset; CODEOWNERS.
 
 ## Launching a repo (one command)
 ```

@@ -31,6 +31,7 @@ from . import (  # noqa: E402
     cilane,
     claude_runner,
     committer,
+    enroll,
     freeze_gate,
     gitops,
     guardlane,
@@ -104,6 +105,9 @@ class Settings:
     agent_work: str = ""  # default /Users/<agent_user>/work
     agent_binary: str = ""  # default /Users/<agent_user>/.local/bin/claude
     active_window: Optional[window.Window] = None  # None = always on; outside it a pass (and an update) does nothing
+    discovery: bool = True  # APX_DISCOVERY=0 turns it off: only the repos named above (enroll.py)
+    discovered: frozenset = frozenset()  # set per pass by enroll.with_found, never from apx.env
+    shadow_only: frozenset = frozenset()  # discovered repos that get shadow checks only, whatever APX_SHADOW says
 
     def ci_home(self) -> str:
         return hostenv.home_of(self.ci_user)
@@ -155,6 +159,7 @@ class Settings:
                 active_window=window.parse(
                     e.get("APX_ACTIVE_WINDOW", ""), e.get("APX_ACTIVE_TZ", ""), e.get("APX_ACTIVE_WEEKENDS", "1")
                 ),
+                discovery=e.get("APX_DISCOVERY", "1") != "0",
             )
         except ValueError as ex:
             raise ConfigError(str(ex)) from None
@@ -192,8 +197,8 @@ class Settings:
 
     def full_loop(self, repo: str) -> bool:
         """True when apx, not Actions, runs this repo end to end: agent runs, rebases and the merge lane as well as checks."""
-        if repo in self.private_ci:
-            return False  # checks only: no agent runs, rebases or merges for the private repos, whatever the shadow setting
+        if repo in self.private_ci or repo in self.shadow_only:
+            return False  # checks only: no agent runs, rebases or merges for these repos, whatever the shadow setting
         return (not self.shadow) or repo in self.cutover
 
     def private_checks(self, repo: str) -> tuple:
@@ -209,7 +214,7 @@ class Settings:
     def contexts(self, repo: str) -> dict[str, str]:
         """Shadow names are non-required (cannot satisfy or block a merge). A repo that is authoritative, or any repo once
         shadow mode is off, posts the names its ruleset requires."""
-        if self.shadow and repo not in self.authoritative and repo not in self.cutover:
+        if repo in self.shadow_only or (self.shadow and repo not in self.authoritative and repo not in self.cutover):
             return {"guard": "apx / guard", "ci": "apx / build"}
         guard, ci = REQUIRED_CONTEXTS[repo]
         return {"guard": guard, "ci": ci}
@@ -238,6 +243,7 @@ def plan_repos(s: Settings) -> dict[str, dict]:
             "agents": s.agents_allowed(r),
             "ci_contexts": [s.contexts(r)["ci"]],
             "main_check": s.full_loop(r) or r in s.authoritative,  # repos whose required checks come from apx also watch main
+            "discovered": r in s.discovered,
         }
     return out
 
@@ -714,7 +720,10 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
         if note:
             print(note)
     really_live = live and os.environ.get("APX_LIVE") == "1"
-    cache = TokenCache(s.app_id, s.key_path, s.installations, api_factory=api_factory)
+    cache = TokenCache(s.app_id, s.key_path, dict(s.installations), api_factory=api_factory)
+    found, discovery_log = enroll.discover(s, cache.api_for)
+    s = enroll.with_found(s, found)  # this pass only: discovered repos join the installations (shadow unless promoted)
+    cache.installations = dict(s.installations)
     api = routed_api(cache)
     ledger = Ledger(s.db_path)
     ledger.abandon_stale(dt.timedelta(hours=2))
@@ -726,7 +735,7 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     except Exception as e:  # noqa: BLE001 - the notes already carry each sprint's state; recording must not break a pass
         sprint_log.append(f"sprint ledger record failed: {type(e).__name__}")
     actions: list[Action] = [a for r in planned.values() for a in r["actions"]]
-    log = [f"{repo}: {len(r['actions'])} action(s) - {r['note']}" for repo, r in planned.items()]
+    log = discovery_log + [f"{repo}: {len(r['actions'])} action(s) - {r['note']}" for repo, r in planned.items()]
     log += usage_lines(ledger, s.installations) + spend_lines(ledger) + sprint_log
     if not really_live:
         return log + execute(api, ledger, None, actions, contexts={}, head_refs={}, dry_run=True)  # type: ignore[arg-type]

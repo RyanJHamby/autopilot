@@ -382,10 +382,10 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
     """repos: {"o/r": {"default_branch": "main", "contexts": ["guard / guard", "build"]}} -> {"o/r": {"actions": [...], "note": str}}"""
     result: dict[str, dict] = {}
     for repo, meta in repos.items():
-        if repo not in ALLOWED_REPOS:
+        if repo not in ALLOWED_REPOS and not meta.get("discovered"):  # discovered: listed by the App installation (enroll.py)
             raise ValueError(f"{repo} is outside apx scope")
         try:
-            ok, why = enabled(api, repo, opted_in=bool(meta.get("spec_ci")))
+            ok, why = enabled(api, repo, opted_in=bool(meta.get("spec_ci") or meta.get("discovered")))
             if not ok:
                 result[repo] = {"actions": [], "note": why}
                 continue

@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import automerge as kit_automerge  # noqa: E402
 
 from .. import claude_floor  # noqa: E402
-from . import caps, host_tools, hostenv, repo_ci, sandbox, spend, sprint, toolchains  # noqa: E402
+from . import caps, enroll, host_tools, hostenv, repo_ci, sandbox, spend, sprint, toolchains  # noqa: E402
 from .app_auth import TokenCache, make_jwt  # noqa: E402
 from .github import make_api  # noqa: E402
 from .ledger import Ledger  # noqa: E402
@@ -381,11 +381,21 @@ def run_doctor(
         out.append(Check("app authentication", False, f"{type(e).__name__}: key, app id or network"))
         return out
     cache = TokenCache(s.app_id, s.key_path, s.installations, api_factory=api_factory)
+    discovered: dict[str, str] = {}
+    try:
+        held = enroll.held_by_policy() if s.discovery else None
+    except enroll.ERRORS:
+        held = None  # unreadable policy: no repo counts as discoverable, extras stay out of scope
     for repo in sorted(s.installations):
         try:
             repos = cache.api_for(repo)("GET", "/installation/repositories?per_page=100")["repositories"]  # type: ignore[index]
             names = {r["full_name"] for r in repos}
-            extra = names - ALLOWED_REPOS
+            extra = names - ALLOWED_REPOS - set(s.installations)
+            if held is not None:  # with discovery on, the owner's unheld repos are discovered (enroll.py), not out of scope
+                for r in sorted(extra):
+                    if enroll.why_not(r, s.owner, held) is None:
+                        discovered[r] = "shadow (discovered; checks only)"
+                extra -= set(discovered)
             out.append(
                 Check(
                     f"installation for {repo}",
@@ -395,6 +405,9 @@ def run_doctor(
             )
         except Exception as e:  # noqa: BLE001
             out.append(Check(f"installation for {repo}", False, f"{type(e).__name__}"))
+    if s.discovery:
+        name = "discovered repos (App installed, not in APX_INSTALLATIONS)"
+        out.append(Check(name, True, "; ".join(f"{r}: {why}" for r, why in sorted(discovered.items())) or "none"))
     try:
         ok = s.kit_ref in approved(s.kit_repo)
         out.append(Check("kit sha is approved", ok, s.kit_ref[:7] if ok else f"{s.kit_ref[:7]} is not on the APPROVED list"))

@@ -1,0 +1,4 @@
+{
+  "default": ["docs/journal.md", "JOURNAL.md", "journal.md"],
+  "repos": {}
+}

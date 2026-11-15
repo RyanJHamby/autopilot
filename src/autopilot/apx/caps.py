@@ -49,3 +49,7 @@ def budget_for(role: str) -> float:
         return valid_budget(raw)
     except ValueError as e:
         raise CapError(f"{PORTFOLIO_FILE.name}: {e}") from None
+
+
+def global_usd_per_day():
+    raise NotImplementedError

@@ -274,6 +274,20 @@ merges or branch updates, even with `APX_SHADOW=0` (src/autopilot/apx/enroll.py)
 - Off switch: `APX_DISCOVERY=0` in apx.env (env repos only). A listing that fails, or that has more than 100 repositories, means env
   repos only for that pass.
 
+To promote it to **live** (still nothing on the server), add `apx: live` to the repo's `.autopilot/repo.yaml` on its default branch, by a
+PR you merge or a commit you make yourself (the GitHub web editor counts). apx honours it only when all of these hold, and otherwise
+keeps the repo in shadow and says why in the pass log and the doctor:
+
+- the latest commit touching `.autopilot/repo.yaml` on the default branch is Verified, and either sits in PRs merged by `APX_OWNER`
+  (not by the apx lane) or was authored by the owner and committed by the owner or the web editor;
+- apx knows its CI: a `ci:` list in that repo.yaml, and a default-branch ruleset that requires `guard / guard` and exactly one other
+  check (apx posts its results under those names); or `private_ci: true` and an entry in `src/autopilot/apx/repo_ci.json`
+  (checks only, like `APX_PRIVATE_CI`);
+- its declared host tools pass the doctor's check as the sandbox account (`APX_CI_USER` must be set).
+
+Live without `private_ci` is the same full loop as `APX_CUTOVER`: checks under the required names, and agent runs (only with
+`APX_AGENT_USER`), branch updates and the merge lane. To demote, remove the line or uninstall the App.
+
 ## Emergency lockdown
 
 One command cuts all outbound traffic for `apx`, `apx-ci`, `apx-agent` and `apx-dns` (IPv4 and IPv6, loopback included, open connections

@@ -38,6 +38,7 @@ from . import (  # noqa: E402
     mergelane,
     repo_ci,
     report,
+    spend,
     status,
     toolchains,
     window,
@@ -693,6 +694,14 @@ def usage_lines(ledger: Ledger, repos) -> list[str]:
         return [f"usage meter unavailable: {type(e).__name__}"]
 
 
+def spend_lines(ledger: Ledger) -> list[str]:
+    """The 24h spend across all repos against policy's global_usd_per_day, once per pass (a meter: never breaks a pass)."""
+    try:
+        return [spend.spend_line(ledger)]
+    except Exception as e:  # noqa: BLE001
+        return [f"spend meter unavailable: {type(e).__name__}"]
+
+
 def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     blocked = freeze_gate.pass_blocked(s.active_window)  # the work-hours freeze: no polling, no checks, no runs (also checked per action)
     if blocked:
@@ -712,7 +721,7 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     planned = plan(api, ledger, repos, s.owner)
     actions: list[Action] = [a for r in planned.values() for a in r["actions"]]
     log = [f"{repo}: {len(r['actions'])} action(s) - {r['note']}" for repo, r in planned.items()]
-    log += usage_lines(ledger, s.installations)
+    log += usage_lines(ledger, s.installations) + spend_lines(ledger)
     if not really_live:
         return log + execute(api, ledger, None, actions, contexts={}, head_refs={}, dry_run=True)  # type: ignore[arg-type]
     details = {f"{a.repo}#{a.ref}": a.detail for a in actions if a.kind == "run-agent"}

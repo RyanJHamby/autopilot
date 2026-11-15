@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import sqlite3
+from pathlib import Path
 
 SCHEMA = """
 create table if not exists runs (
@@ -23,6 +24,7 @@ create table if not exists runs (
   turns integer,
   model_id text,
   cost_usd real,
+  budget_usd real,
   kind text not null default 'run',
   ref text not null default ''
 )
@@ -32,6 +34,7 @@ MIGRATIONS = (
     "alter table runs add column ref text not null default ''",
     "alter table runs add column model_id text",
     "alter table runs add column cost_usd real",
+    "alter table runs add column budget_usd real",
 )
 IN_FLIGHT = ("queued", "in_progress")
 
@@ -51,14 +54,31 @@ class Ledger:
                 self.db.execute(stmt)
         self.db.commit()
 
+    @classmethod
+    def read_only(cls, path: str) -> "Ledger":
+        """Open an existing ledger file without creating, migrating or writing it (the doctor's view). sqlite3.Error if it is absent."""
+        led = cls.__new__(cls)
+        led.db = sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)
+        led.db.row_factory = sqlite3.Row
+        return led
+
     def start(
-        self, repo: str, issue: int, *, hard: bool = False, now: dt.datetime | None = None, kind: str = "run", ref: str = ""
+        self,
+        repo: str,
+        issue: int,
+        *,
+        hard: bool = False,
+        now: dt.datetime | None = None,
+        kind: str = "run",
+        ref: str = "",
+        budget_usd: float | None = None,
     ) -> int:
-        """kind 'fix' marks a red-CI retry of an existing PR; ref is then the PR head sha the retry was for."""
+        """kind 'fix' marks a red-CI retry of an existing PR; ref is then the PR head sha the retry was for. budget_usd is the run's
+        dollar cap, which the global spend ceiling charges while the run is in flight or if it finishes without a reported cost."""
         now = now or dt.datetime.now(dt.timezone.utc)
         cur = self.db.execute(
-            "insert into runs (repo, issue, hard, created_at, kind, ref) values (?, ?, ?, ?, ?, ?)",
-            (repo, issue, int(hard), _iso(now), kind, ref),
+            "insert into runs (repo, issue, hard, created_at, kind, ref, budget_usd) values (?, ?, ?, ?, ?, ?, ?)",
+            (repo, issue, int(hard), _iso(now), kind, ref, budget_usd),
         )
         self.db.commit()
         return int(cur.lastrowid)

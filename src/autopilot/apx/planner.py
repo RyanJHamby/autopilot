@@ -26,6 +26,7 @@ from . import (
     caps,  # noqa: E402
     intake,  # noqa: E402
     repo_ci,  # noqa: E402
+    spend,  # noqa: E402
 )
 from .github import Api, GitHubError  # noqa: E402
 from .ledger import Ledger  # noqa: E402
@@ -419,4 +420,6 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
             yaml.YAMLError,
         ) as e:  # OSError: DNS/URLError
             result[repo] = {"actions": [], "note": f"planner error (fail closed): {type(e).__name__}"}
-    return result
+    # the global dollar ceiling across all repos (policy/portfolio.yaml defaults.global_usd_per_day; absent = none): agent runs and
+    # CI fixes only, checked against the ledger's 24h spend plus everything planned above
+    return spend.enforce(result, ledger, now)

@@ -94,7 +94,16 @@ apx and updater timers. Run it again any time: a second run changes nothing.
    APX_KIT_REF=<an approved kit sha, 40 hex>
    APX_CI_USER=apx-ci
    APX_AGENT_USER=apx-agent
+   APX_DB=/home/apx/.apx/apx.sqlite
+   APX_WORK=/home/apx/.apx/work
    ```
+   The last two are the defaults when unset (`<APX_STATE or ~/.apx>/apx.sqlite` and `.../work`); writing them down makes them visible.
+   Why: the ledger holds the daily run counts, the global caps and the breaker, so it must outlive releases. A relative path resolves
+   inside `/srv/apx/current`, which is a different `releases/<sha>` after every switch, so each release would start a fresh ledger. The
+   work dir holds `apx.lock`, which the updater takes so it never swaps under a running pass; `apx.service` and `apx-updater.service`
+   both set `PrivateTmp=yes`, so a work dir under `/tmp` is a different directory for each and the lock protects nothing. Bootstrap
+   creates `/home/apx/.apx/work` (apx, 0700); the doctor fails a relative, release-tree or tmp ledger and a `/tmp` or `/var/tmp` work dir.
+   The first pass on the default copies an old `<current release>/apx.sqlite` there once (never moves it) and logs that it did.
    Shadow mode is on until `APX_SHADOW=0` is added. Start with `autopilot` only; add the other repos later.
 
 ### 5. Toolchains (your decision; the script installs none of them)

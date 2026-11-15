@@ -7,6 +7,7 @@ mis-click in the GitHub UI cannot silently widen what a leaked key could do.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import stat
@@ -202,6 +203,28 @@ def agent_checks(s, launcher) -> list[Check]:
     return out
 
 
+def state_path_checks(s) -> list[Check]:
+    """The ledger must outlive every release and the work dir (with its apx.lock) must be the one both the daemon and the updater see.
+    Both come from Settings.from_env (hostenv.default_db_path / default_work_dir when unset), so the two services cannot disagree unless
+    a path is relative (each unit has its own working directory) or under /tmp (each Linux unit has its own, PrivateTmp=yes)."""
+    out = []
+    db, why = str(s.db_path), ""
+    if not os.path.isabs(db):
+        why = f"{db} is relative: it resolves inside the release the service runs from, so every release switch starts a fresh ledger"
+    elif hostenv.is_under(db, s.shared_dir):
+        why = f"{os.path.realpath(db)} is under {s.shared_dir}: a release switch would start a fresh ledger (and the sandbox can read it)"
+    elif any(hostenv.is_under(db, t) for t in hostenv.tmp_roots()):
+        why = f"{os.path.realpath(db)} is under a tmp dir: per-unit (PrivateTmp) or cleaned, so the daily caps would reset"
+    out.append(Check("ledger path (APX_DB)", not why, why or os.path.realpath(db)))
+    work, why = str(s.work_dir), ""
+    if not os.path.isabs(work):
+        why = f"{work} is relative: the daemon and the updater run from different directories and would lock different files"
+    elif not hostenv.is_darwin() and any(hostenv.is_under(work, t) for t in ("/tmp", "/var/tmp")):
+        why = f"{work} is under a tmp dir and each unit has its own (PrivateTmp=yes): the updater would never see the daemon's lock"
+    out.append(Check("work dir (APX_WORK, shared by the daemon and the updater)", not why, why or os.path.realpath(work)))
+    return out
+
+
 def _tool_check(repo: str, entry: str, run, data) -> Check:
     tool, minimum = repo_ci.parse_tool(entry)
     name, hint = f"{repo}: host tool {tool}", data.hint_for(repo, tool)
@@ -280,6 +303,7 @@ def run_doctor(
     else:
         ok, detail = True, f"not needed here: claude runs as {s.agent_user} (its floor is checked below)"
     out.append(Check("claude meets the version floor", ok, detail))
+    out.extend(state_path_checks(s))
     # with an agent account the Claude token lives in ITS home and this account must not (and cannot) read it
     for label, path in (("app key", str(s.key_path)),) + (() if s.agent_user else (("claude oauth file", s.oauth_file),)):
         ok, why = _mode_ok(path)

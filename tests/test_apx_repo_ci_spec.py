@@ -168,7 +168,7 @@ def test_check_tools_searches_each_repos_own_toolchain_first(tmp_path):
 def test_both_preflights_check_private_repo_tools_with_their_toolchains(script, shared):
     text = (ROOT / script).read_text()
     line = next(ln for ln in text.splitlines() if "autopilot.apx.repo_ci check-tools" in ln)
-    assert f'--toolchains-root "${{APX_SHARED:-{shared}}}/toolchains"' in line
+    assert f'--toolchains-root "${{APX_TOOLCHAINS_ROOT:-${{APX_SHARED:-{shared}}}/toolchains}}"' in line  # same root as the daemon
 
 
 def test_memory_cap_leaves_headroom_on_the_planned_12_gb_box():

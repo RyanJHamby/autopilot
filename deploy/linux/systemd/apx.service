@@ -11,6 +11,8 @@ User=apx
 Group=apx
 WorkingDirectory=/srv/apx/current
 Environment=HOME=/home/apx
+# nothing writes into the release it runs from (no __pycache__), so release.sh can refuse any extra file in one
+Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PATH=/home/apx/.local/bin:/usr/local/bin:/usr/bin:/bin
 # Same shape as the macOS job. Settings (paths and ids, no secrets) come from apx.env; shadow mode stays on unless APX_SHADOW=0 is set there.
 ExecStart=/bin/sh -c 'set -a; . /home/apx/.apx/apx.env; set +a; export APX_LIVE=1 PYTHONPATH=/srv/apx/current/src; exec /srv/apx/venv/bin/python -m autopilot.apx.daemon --once --live'

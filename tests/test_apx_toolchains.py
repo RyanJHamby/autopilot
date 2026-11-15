@@ -314,3 +314,65 @@ def test_the_runbook_documents_the_install_without_inventing_checksums_or_piping
     assert "/srv/apx/toolchains" in doc and "SHASUMS256.txt" in doc and "sha256sum" in doc and "node-20" in doc and "node-22" in doc
     assert not re.search(r"\b[0-9a-f]{64}\b", doc), "a sha256 in the doc would be one I could not have verified"
     assert not re.search(r"\|\s*(sudo\s+)?(ba|z)?sh\b", doc.split("### 5.")[1].split("### 6.")[0])  # no curl | sh in step 5
+
+
+# --- who can swap a toolchain: every component up to / ---------------------------------------------------------------------------
+
+
+def fake_lstat(owners: dict, modes: dict | None = None, default_uid: int = 0):
+    """os.lstat for a made-up tree: every path is a root-owned 755 dir unless `owners` / `modes` say otherwise."""
+    modes = modes or {}
+
+    def lstat(p):
+        p = str(p)
+        return os.stat_result((stat.S_IFDIR | modes.get(p, 0o755), 0, 0, 2, owners.get(p, default_uid), 0, 0, 0, 0, 0))
+
+    return lstat
+
+
+NODE = "/srv/apx/toolchains/node-20/bin/node"
+
+
+def test_a_toolchain_under_a_dir_the_daemon_account_owns_is_a_problem_even_when_the_leaf_is_root_owned():
+    """/srv/apx is apx's (it swaps `current` there), so apx can rename toolchains/ away and put its own node in its place."""
+    probs = toolchains.chain_problems(NODE, lstat=fake_lstat({"/srv/apx": 1001}))
+    assert probs == ["/srv/apx is owned by uid 1001, not root: that account can rename what is inside it"]
+    assert toolchains.chain_problems(NODE, lstat=fake_lstat({})) == []
+
+
+def test_every_component_must_be_unwritable_by_group_and_other_unless_a_root_owned_sticky_dir():
+    assert toolchains.chain_problems(NODE, lstat=fake_lstat({}, {"/srv": 0o775})) == ["/srv is group- or world-writable"]
+    assert toolchains.chain_problems(NODE, lstat=fake_lstat({}, {"/srv": 0o1777})) == []  # like /tmp or macOS /Users/Shared
+    assert toolchains.chain_problems(NODE, lstat=fake_lstat({}, {NODE: 0o757}))[0].startswith(NODE)
+
+
+def test_a_symlinked_component_is_checked_where_it_points_too(tmp_path):
+    real = tmp_path / "real"
+    (real / "bin").mkdir(parents=True)
+    (tmp_path / "link").symlink_to(real)
+    seen = []
+
+    def lstat(p):
+        seen.append(str(p))
+        return os.stat_result((stat.S_IFDIR | 0o755, 0, 0, 2, 0, 0, 0, 0, 0, 0))
+
+    assert toolchains.chain_problems(tmp_path / "link" / "bin", lstat=lstat) == []
+    assert str(tmp_path / "link") in seen and str(real / "bin") in seen
+
+
+def test_the_root_is_configurable_so_the_toolchains_can_leave_the_daemons_dir():
+    assert toolchains.default_root("/srv/apx", env={}) == Path("/srv/apx/toolchains")
+    assert toolchains.default_root("/srv/apx", env={"APX_TOOLCHAINS_ROOT": "/opt/apx-toolchains"}) == Path("/opt/apx-toolchains")
+
+
+def test_owner_checks_cover_declared_dirs_that_exist_and_skip_missing_ones(tmp_path, monkeypatch):
+    root = tmp_path / "toolchains"
+    fake_node(root, "node-20", "20.1.0")
+    spec = toolchains.load_declared(write_spec(tmp_path, {"o/a": ["node@20"], "o/b": ["node@22"]}))
+    monkeypatch.setattr(toolchains, "_lstat", fake_lstat({str(tmp_path): 1001}))
+    out = toolchains.owner_checks(["o/a", "o/b"], root, declared=spec)
+    assert len(out) == 1, "a missing dir is the preflight's FAIL and the sandbox's refusal, not this check's"
+    name, ok, detail = out[0]
+    assert name == "o/a: toolchain node@20 is root-owned up to /" and not ok and f"{tmp_path} is owned by uid 1001" in detail
+    monkeypatch.setattr(toolchains, "_lstat", fake_lstat({}))
+    assert toolchains.owner_checks(["o/a"], root, declared=spec)[0][1]

@@ -104,6 +104,7 @@ class Settings:
     agent_work: str = ""  # default /Users/<agent_user>/work
     agent_binary: str = ""  # default /Users/<agent_user>/.local/bin/claude
     active_window: Optional[window.Window] = None  # None = always on; outside it a pass (and an update) does nothing
+    journal_autoresolve: bool = True  # APX_JOURNAL_AUTORESOLVE=0 turns off resolving append-only journal conflicts (journal.py)
 
     def ci_home(self) -> str:
         return hostenv.home_of(self.ci_user)
@@ -152,6 +153,7 @@ class Settings:
                 agent_user=e.get("APX_AGENT_USER", ""),
                 agent_work=e.get("APX_AGENT_WORK", ""),
                 agent_binary=e.get("APX_AGENT_BINARY", ""),
+                journal_autoresolve=e.get("APX_JOURNAL_AUTORESOLVE", "1") != "0",
                 active_window=window.parse(
                     e.get("APX_ACTIVE_WINDOW", ""), e.get("APX_ACTIVE_TZ", ""), e.get("APX_ACTIVE_WEEKENDS", "1")
                 ),
@@ -227,6 +229,7 @@ def plan_repos(s: Settings) -> dict[str, dict]:
                 "merge": False,
                 "agents": False,
                 "main_check": False,
+                "journal": False,
                 "spec_ci": True,
             }
             continue
@@ -238,6 +241,7 @@ def plan_repos(s: Settings) -> dict[str, dict]:
             "agents": s.agents_allowed(r),
             "ci_contexts": [s.contexts(r)["ci"]],
             "main_check": s.full_loop(r) or r in s.authoritative,  # repos whose required checks come from apx also watch main
+            "journal": s.journal_autoresolve,  # acted on only with the full loop; in shadow mode the planner just notes it
         }
     return out
 

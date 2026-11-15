@@ -43,6 +43,12 @@ defaults:
   # held inside it. true = the check runs apx posts on PRs (guard / build / test) are held too; false lets only those proceed.
   # OPEN QUESTION FOR THE OWNER: do check runs count as "changes to personal repos during work hours"? true is the safe default.
   apx_freeze_gates_check_runs: true
+  global_usd_per_day: 12.00   # dollars per rolling 24h, all repos; placeholder until real run costs exist
+  sprint:                     # per sprint in a yolo repo; a repo's repo.yaml can only lower these
+    window_h: 4
+    runs: 4
+    usd: 8.00
+    per_run_usd: 2.00
 
 repos:
   # --- wave 1 (only drillpad-workspace and stencil are active; the rest are on hold by the owner, 2026-10-16) ---

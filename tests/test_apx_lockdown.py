@@ -44,7 +44,9 @@ def test_the_lockdown_drop_is_the_first_output_rule_so_it_comes_before_every_lan
     text = nftrules.render_nft(UIDS, dns_port=port)
     r = output_rules(text)
     assert r[0] == DROP, r
-    assert all(f"meta skuid {u} jump" in " ".join(r[1:]) for u in UIDS.values()), "every account still goes to its lane after the drop"
+    assert all(f"meta skuid {u} jump" in " ".join(r[1:]) for u in UIDS.values()), (
+        "every account still goes to its lane after the drop"
+    )
     assert re.search(r"set lockdown \{\s+typeof meta skuid\s+\}", text), "an empty uid set by default: lockdown off"
 
 
@@ -96,7 +98,16 @@ def test_shellcheck_is_clean(script, binary):
 
 def test_the_helper_only_touches_the_lockdown_set_and_never_the_table_or_the_ruleset():
     c = re.sub(r'\b(say|die) "[^"]*"', "", code(HELPER))  # messages may name commands for the human; only what runs is checked
-    for forbidden in ("delete table", "flush ruleset", "flush table", "flush chain", "nft -f", "systemctl", "delete rule", "add rule"):
+    for forbidden in (
+        "delete table",
+        "flush ruleset",
+        "flush table",
+        "flush chain",
+        "nft -f",
+        "systemctl",
+        "delete rule",
+        "add rule",
+    ):
         assert forbidden not in c, forbidden
     calls = re.findall(r"(?<![\w./-])nft\b[^\n|;&)]*", c)
     assert calls
@@ -158,7 +169,13 @@ def test_the_host_doc_has_an_emergency_lockdown_section_with_on_off_status_and_t
     doc = (ROOT / "docs" / "apx-linux-host.md").read_text()
     sec = doc[doc.index("## Emergency lockdown") :]
     sec = sec[: sec.index("\n## ", 5)] if "\n## " in sec[5:] else sec
-    for cmd in ("apx-lockdown on", "apx-lockdown off", "apx-lockdown status", "--expect-lockdown", "disable --now apx.timer apx-updater.timer"):
+    for cmd in (
+        "apx-lockdown on",
+        "apx-lockdown off",
+        "apx-lockdown status",
+        "--expect-lockdown",
+        "disable --now apx.timer apx-updater.timer",
+    ):
         assert cmd in sec, cmd
 
 
@@ -177,7 +194,10 @@ def netns(script: str, tmp_path: Path) -> subprocess.CompletedProcess:
 @pytest.mark.skipif(not KERNEL, reason="needs root, nft, unshare, setpriv and ip")
 def test_the_rendered_rules_pass_nft_check_and_load(tmp_path):
     (tmp_path / "apx.nft").write_text(nftrules.render_nft(UIDS, lockdown_dir=str(tmp_path / "lock")))
-    r = netns("nft list tables >/dev/null 2>&1 || exit 99; nft -c -f apx.nft && nft -f apx.nft && nft list set inet apx lockdown", tmp_path)
+    r = netns(
+        "nft list tables >/dev/null 2>&1 || exit 99; nft -c -f apx.nft && nft -f apx.nft && nft list set inet apx lockdown",
+        tmp_path,
+    )
     assert r.returncode == 0, r.stderr
     assert "elements" not in r.stdout
 
@@ -257,7 +277,9 @@ def test_the_units_stop_command_locks_the_four_accounts_and_keeps_the_table(tmp_
     body = m.group(1).replace("$$", "$")
     fake = tmp_path / "bin"
     fake.mkdir()
-    (fake / "id").write_text('#!/bin/sh\ncase "$2" in apx) echo 1001;; apx-ci) echo 1002;; apx-agent) echo 1003;; apx-dns) echo 1004;; esac\n')
+    (fake / "id").write_text(
+        '#!/bin/sh\ncase "$2" in apx) echo 1001;; apx-ci) echo 1002;; apx-agent) echo 1003;; apx-dns) echo 1004;; esac\n'
+    )
     (fake / "id").chmod(0o755)
     script = f"""nft list tables >/dev/null 2>&1 || exit 99
 nft -f apx.nft

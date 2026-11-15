@@ -9,6 +9,7 @@ import getpass
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,13 @@ ROOT = Path(__file__).resolve().parents[1]
 RELEASE = ROOT / "deploy" / "linux" / "release.sh"
 BOOTSTRAP = ROOT / "deploy" / "linux" / "bootstrap.sh"
 
-pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+# deploy/linux/release.sh is a Linux-host script (GNU coreutils: `mv -T`, `ln -T`, GNU stat). It runs on the Linux CI host and in
+# Actions; on macOS the BSD tools reject those flags, so these tests are skipped there rather than made to pass on tools the
+# script never runs with.
+pytestmark = [
+    pytest.mark.skipif(shutil.which("git") is None, reason="needs git"),
+    pytest.mark.skipif(sys.platform != "linux", reason="release.sh is a Linux-host script (GNU coreutils)"),
+]
 
 
 def git(*args, cwd=None) -> str:

@@ -27,15 +27,27 @@ def used_24h(ledger: Ledger, *, now: dt.datetime | None = None, fallback: float 
         f"select status, conclusion, cost_usd, budget_usd from runs where (created_at >= ? and created_at <= ?) or status in ({q})",
         (_iso(now - dt.timedelta(hours=24)), _iso(now), *IN_FLIGHT),
     ).fetchall()
-    total = 0.0
-    for r in rows:
-        if r["status"] not in IN_FLIGHT and r["cost_usd"] is not None:
-            total += float(r["cost_usd"])
-        elif r["status"] not in IN_FLIGHT and r["conclusion"] in NOT_SPENT:
-            continue
-        else:
-            total += float(r["budget_usd"]) if r["budget_usd"] is not None else fallback
-    return total
+    return sum(cost_of(r, fallback) for r in rows)
+
+
+def cost_of(r, fallback: float) -> float:
+    """What one ledger row counts as spent (the rules in the module docstring). Also used by sprint.py for one repo's sprint."""
+    if r["status"] not in IN_FLIGHT and r["cost_usd"] is not None:
+        return float(r["cost_usd"])
+    if r["status"] not in IN_FLIGHT and r["conclusion"] in NOT_SPENT:
+        return 0.0
+    return float(r["budget_usd"]) if r["budget_usd"] is not None else fallback
+
+
+def used_since(ledger: Ledger, repo: str, since: dt.datetime, *, fallback: float | None = None) -> tuple[int, float]:
+    """(runs that count, dollars) for one repo's runs started at or after `since`, by the same rules. A run that never reached the
+    model (skipped/cancelled, no cost) counts as neither, as in gate.decide()."""
+    fallback = caps.largest_budget() if fallback is None else fallback
+    rows = ledger.db.execute(
+        "select status, conclusion, cost_usd, budget_usd from runs where repo=? and created_at >= ?", (repo, _iso(since))
+    ).fetchall()
+    counted = [r for r in rows if not (r["status"] not in IN_FLIGHT and r["cost_usd"] is None and r["conclusion"] in NOT_SPENT)]
+    return len(counted), sum(cost_of(r, fallback) for r in counted)
 
 
 def hold_reason(ledger: Ledger, now: dt.datetime | None = None):

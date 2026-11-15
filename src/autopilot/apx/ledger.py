@@ -36,6 +36,24 @@ MIGRATIONS = (
     "alter table runs add column cost_usd real",
     "alter table runs add column budget_usd real",
 )
+# One row per sprint (sprint.py): written when a pass first sees it active, closed once with its summary. ended_at stays set, so a
+# sprint that ended never reopens, even if a cost reported later comes in under the run's cap.
+SPRINTS = """
+create table if not exists sprints (
+  repo text not null,
+  started_at text not null,
+  window_h real not null,
+  max_runs integer not null,
+  max_usd real not null,
+  per_run_usd real not null,
+  ended_at text,
+  reason text,
+  runs integer,
+  merged integer,
+  cost_usd real,
+  primary key (repo, started_at)
+)
+"""
 IN_FLIGHT = ("queued", "in_progress")
 
 
@@ -48,6 +66,7 @@ class Ledger:
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
         self.db.execute(SCHEMA)
+        self.db.execute(SPRINTS)
         have = {r["name"] for r in self.db.execute("pragma table_info(runs)")}
         for stmt in MIGRATIONS:  # a ledger file from before these columns existed is upgraded in place
             if stmt.split()[5] not in have:
@@ -147,3 +166,27 @@ class Ledger:
         )
         self.db.commit()
         return cur.rowcount
+
+    def sprint_seen(self, repo: str, started_at: str, limits) -> None:
+        self.db.execute(
+            "insert or ignore into sprints (repo, started_at, window_h, max_runs, max_usd, per_run_usd) values (?, ?, ?, ?, ?, ?)",
+            (repo, started_at, limits.window_h, limits.runs, limits.usd, limits.per_run_usd),
+        )
+        self.db.commit()
+
+    def sprint_end(self, repo: str, started_at: str, *, reason: str, runs: int, merged: int | None, cost_usd: float, now: dt.datetime) -> None:
+        """Closes a sprint once; a second call for the same sprint changes nothing."""
+        self.db.execute(
+            "update sprints set ended_at=?, reason=?, runs=?, merged=?, cost_usd=? where repo=? and started_at=? and ended_at is null",
+            (_iso(now), reason, runs, merged, cost_usd, repo, started_at),
+        )
+        self.db.commit()
+
+    def sprint(self, repo: str, started_at: str):
+        return self.db.execute("select * from sprints where repo=? and started_at=?", (repo, started_at)).fetchone()
+
+    def open_sprints(self, repo: str | None = None) -> list:
+        q, args = "select * from sprints where ended_at is null", ()
+        if repo is not None:
+            q, args = q + " and repo=?", (repo,)
+        return self.db.execute(q + " order by repo, started_at", args).fetchall()

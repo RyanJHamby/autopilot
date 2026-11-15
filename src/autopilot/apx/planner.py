@@ -29,6 +29,7 @@ from . import (
     repo_ci,  # noqa: E402
     spend,  # noqa: E402
 )
+from . import sprint as sprint_mod  # noqa: E402
 from .github import Api, GitHubError  # noqa: E402
 from .ledger import Ledger  # noqa: E402
 
@@ -209,17 +210,36 @@ def plan_agent_runs(
     now=None,
     rebase_issues: list[int] | None = None,
     ci_contexts: list[str] | None = None,
+    sprint_out: dict | None = None,
 ) -> tuple[list[Action], str]:
     cfg = load_cfg(api, repo, default_branch)
+    # a sprint (sprint.py) only changes this repo's cfg and per-run cap; every other gate below still applies. sprint_out, when given,
+    # receives the evaluated sprint (or None) so the daemon can record it.
+    st, sprint_note = (None, "")
+    if sprint_out is not None:
+        st, sprint_note = sprint_mod.evaluate(api, repo, owner, cfg, ledger, now or dt.datetime.now(dt.timezone.utc))
+        sprint_out["state"] = st
+    if st is not None:
+        sprint_note = "; ".join(n for n in (sprint_note, st.note()) if n)
+        if st.ended is None:
+            cfg = sprint_mod.apply(cfg, ledger.runs(repo), st)
+        elif st.now < st.ends:
+            return [], f"{sprint_note}; no new runs until the window closes"
+
+    def with_sprint(note: str) -> str:
+        return f"{note}; {sprint_note}" if sprint_note else note
+
     open_prs = api("GET", f"/repos/{repo}/pulls?state=open&per_page=100")
     branches = [p["head"]["ref"] for p in open_prs]  # type: ignore[union-attr]
     n_agent = sum(1 for b in branches if b.startswith("agent/"))
     d = gate.decide(cfg, ledger.runs(repo), n_agent, role="implementer", now=now)
     if not d.allow:
-        return [], d.reason
+        return [], with_sprint(d.reason)
     # the dollar cap per run, from policy/portfolio.yaml (placeholders until the owner confirms them); a CapError is a ValueError, which
     # the planner turns into "planner error (fail closed)": no cap, no run
     budget = caps.budget_for(cfg.get("mode", "standard"))
+    if st is not None and st.ended is None:
+        budget = min(budget, st.limits.per_run_usd)
     detail = f"model={d.model} effort={d.effort} turns={d.max_turns} budget={caps.fmt(budget)}"
     # finishing an open PR comes before starting new work, and shares the same daily cap
     fixes = plan_ci_fixes(api, repo, owner, ledger, ci_contexts or [], limit=max(d.remaining, 0))
@@ -261,7 +281,7 @@ def plan_agent_runs(
     note = "ok"
     if held_intake:
         note += "; held at intake: " + ", ".join(f"#{n} ({why})" for n, why in sorted(held_intake.items()))
-    return acts, note
+    return acts, with_sprint(note)
 
 
 MAX_CI_FIXES = 2
@@ -426,6 +446,7 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
             j_acts, j_notes = plan_journal(api, repo, meta.get("default_branch", "main")) if meta.get("journal") else ([], [])
             rebases = plan_rebases(api, repo, owner, ledger, now, skip={int(a.ref.split(":")[0]) for a in j_acts})
             updates = [a for a in rebases if a.kind == "update-branch"]
+            box: dict = {}  # plan_agent_runs puts the repo's evaluated sprint here
             if main_state == "red":
                 # new work built on a broken main is blamed for errors it did not cause: hold agent runs and fixes until main is green
                 runs, note = [], f"main failed {meta['ci_contexts'][0]}: agent work paused until it is green"
@@ -442,6 +463,7 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
                     now,
                     rebase_issues=redo,
                     ci_contexts=meta.get("ci_contexts"),
+                    sprint_out=box,
                 )
             else:
                 runs, note = [], "agent runs blocked: no dedicated agent account (backlog S1b)"
@@ -449,6 +471,8 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
             note += "".join(f"; will resolve journal conflict on #{a.ref.split(':')[0]}" for a in j_acts)
             note += "".join(f"; {n}" for n in j_notes)
             result[repo] = {"actions": actions + runs + updates + j_acts + merges, "note": note}
+            if "state" in box:
+                result[repo]["sprint"] = box["state"]
         except (
             GitHubError,
             OSError,

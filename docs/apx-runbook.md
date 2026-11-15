@@ -259,6 +259,44 @@ recorded `cost_usd` once there is a week of it.
   note says why. `0` is valid and means no agent runs.
 - Checks, branch updates (rebases) and merges are never held by it.
 
+## Sprints: a time-boxed allowance for scrappy work (yolo repos only, owner starts it)
+
+With `runs_per_day` at 1 or 2 a one-hour build is impossible. A sprint gives ONE repo a short burst instead: by default 4 runs within
+4 hours, at most $8.00 in total, and at most $2.00 per run (`src/autopilot/apx/sprint.py`).
+
+- **Start:** apply the label `sprint` to any open issue or PR in the repo (one tap from the phone). apx honours it only if the latest
+  `labeled` event for it has you (`APX_OWNER`) as the actor; a label applied by anyone else is ignored and the repo's note says so.
+  The sprint starts at that event's time. **Stop early:** remove the label. **Another one:** remove and re-apply it.
+- **Only `mode: yolo`.** In any other mode the label does nothing and the note says `sprint needs mode: yolo`.
+- **While active:** the repo's `runs_per_day` is replaced by what the sprint has left (runs, and what its remaining dollars cover at
+  the per-run cap), and each run gets `--max-budget-usd` = the lower of `max_budget_usd.yolo` and the sprint's per-run cap. Spent
+  dollars are the ledger's `cost_usd` for that repo since the start; a run in flight or finished without a reported cost counts at
+  its cap (the same fail-closed rule as the spend ceiling). The note reads `sprint active: N run(s), M merged PR(s), $X of $Y, 2h10m left`.
+- **Never bypassed:** the work-hours freeze, shadow mode (checks only), the owner `/pause` and `AUTOPILOT_HOLD_UNTIL`, the breaker,
+  `max_open_agent_prs`, and `global_usd_per_day`.
+- **End:** the window closes, the runs are used, or the dollars left are under one per-run cap. No new runs for that repo until the
+  window closes; after it the normal rolling-24h cap applies again (and counts the sprint's runs). The note gives the summary once
+  (`sprint ended (dollar limit): 3 run(s), 1 merged PR(s), $6.50 of $8.00`) and the ledger's `sprints` table keeps it. An ended sprint
+  never reopens, even if a cost reported later is lower than its cap.
+- **Doctor:** `--doctor` lists active sprints with the runs, dollars and time each has left, or `none active`.
+
+### Limits (owner sets them; agents cannot edit `policy/`)
+
+Without a policy block the built-in defaults above apply. To set your own ceilings, add this under `defaults:` in
+`policy/portfolio.yaml` (the values shown are the built-in defaults, placeholders with no measured cost data behind them):
+
+```yaml
+  sprint:            # per sprint, one repo at a time; values in a repo's repo.yaml can only lower these
+    window_h: 4      # hours from the moment you apply the label
+    runs: 4          # agent runs and CI fixes in the window
+    usd: 8.00        # API-equivalent dollars in the window (ledger cost_usd; unknown cost counts at the run's cap)
+    per_run_usd: 2.00
+```
+
+A repo can ask for less in its default-branch `.autopilot/repo.yaml`, e.g. `sprint: {window_h: 1, runs: 2, usd: 3.00}`. A value above
+policy's is ignored (the note names it). An invalid value in either file (not a positive number, `runs` not a whole number, an unknown
+key, `per_run_usd` above 50) refuses the sprint, and the normal caps apply.
+
 ## Knowing when apx has stopped (owner-only, local)
 
 apx writes `/Users/Shared/apx/status.json` after every pass (world-readable, no secrets). Check it any time, no sudo:

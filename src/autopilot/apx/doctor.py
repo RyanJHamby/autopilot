@@ -233,9 +233,9 @@ def repo_tool_checks(s, launcher, *, path_for: Callable[[str], str] | None = Non
     """Every host tool each enrolled repo (APX_INSTALLATIONS plus APX_PRIVATE_CI) declares must resolve, AS the sandbox account, on the
     PATH that repo's sandbox job gets, and pass its capability probe if host_tools.json has one. One check per repo and tool."""
     data, specs = host_tools.load(), repo_ci.load_specs()
-    toolchain_root = Path(s.shared_dir) / "toolchains"
+    toolchain_root = toolchains.default_root(s.shared_dir)
     path_for = path_for or (lambda repo: sandbox.job_path(s.ci_home(), toolchains.bin_dirs(repo, toolchain_root)))
-    out: list[Check] = []
+    out = [Check(*c) for c in toolchains.owner_checks(sorted(set(s.installations) | set(s.private_ci)), toolchain_root)]
     for repo in sorted(set(s.installations) | set(s.private_ci)):
         entries = host_tools.declared(repo, s.private_ci, data, specs)
         if not entries:

@@ -396,3 +396,7 @@ def render(checks: list[Check]) -> tuple[str, bool]:
         else f"doctor: {sum(not c.ok for c in checks)} check(s) failed; fix before any --live run"
     )
     return "\n".join(lines), ok
+
+
+def sprint_check(db_path: str, now=None) -> Check:  # stub: tests first
+    raise NotImplementedError

@@ -25,6 +25,7 @@ from . import batch as batches_mod  # noqa: E402
 from . import (
     caps,  # noqa: E402
     intake,  # noqa: E402
+    journal,  # noqa: E402
     repo_ci,  # noqa: E402
     spend,  # noqa: E402
 )
@@ -316,9 +317,39 @@ def plan_merges(api: Api, repo: str, owner: str) -> list[Action]:
     return out
 
 
-def plan_rebases(api: Api, repo: str, owner: str, ledger: Ledger, now: dt.datetime | None = None) -> list[Action]:
+def plan_journal(api: Api, repo: str, default_branch: str) -> tuple[list[Action], list[str]]:
+    """Conflicted PRs on a trusted branch (TRUSTED_PREFIXES, this repo, not a fork) whose only both-sides change is an append to an
+    allowlisted journal get a `resolve-journal` action; the others get a note saying why apx left them. Read-only. One PR's read
+    error is noted and skipped, so it can never stop the checks for the rest of the repo."""
+    acts: list[Action] = []
+    notes: list[str] = []
+    try:
+        allow = journal.journal_files(repo)
+    except (OSError, ValueError) as e:  # a broken allowlist turns the feature off, never the repo's checks
+        return acts, [f"journal allowlist unreadable ({type(e).__name__}); journal conflicts left for a human"]
+    for brief in api("GET", f"/repos/{repo}/pulls?state=open&per_page=100"):  # type: ignore[union-attr]
+        head = brief.get("head") or {}
+        if (head.get("repo") or {}).get("full_name") != repo or not head.get("ref", "").startswith(TRUSTED_PREFIXES):
+            continue
+        n = brief["number"]
+        try:
+            prep, why = journal.prepare(api, repo, n, default_branch, allow, TRUSTED_PREFIXES)
+        except (GitHubError, OSError, KeyError, TypeError, AttributeError, ValueError) as e:
+            notes.append(f"#{n} journal check failed ({type(e).__name__}); left alone")
+            continue
+        if prep is not None:
+            acts.append(Action(journal.KIND, repo, f"{n}:{prep.head_sha}:{default_branch}", f"PR #{n} {why}"))
+        elif why:
+            notes.append(f"#{n} {why}")
+    return acts, notes
+
+
+def plan_rebases(
+    api: Api, repo: str, owner: str, ledger: Ledger, now: dt.datetime | None = None, skip: set[int] | frozenset = frozenset()
+) -> list[Action]:
     """Behind agent PRs get GitHub's signed update-branch; conflicted ones are re-run from a fresh base (once a day).
-    Reuses the kit's rebase.decide so Actions and apx can never disagree about what to do."""
+    Reuses the kit's rebase.decide so Actions and apx can never disagree about what to do. `skip`: PRs apx is resolving itself
+    this pass (a journal-only conflict), so they are not also re-run by a model."""
     now = now or dt.datetime.now(dt.timezone.utc)
     day_ago = now - dt.timedelta(hours=24)
     out: list[Action] = []
@@ -329,7 +360,7 @@ def plan_rebases(api: Api, repo: str, owner: str, ledger: Ledger, now: dt.dateti
             continue
         ref = brief["head"]["ref"]
         issue = kit_rebase.issue_of(ref)
-        if issue is None:
+        if issue is None or brief["number"] in skip:
             continue
         pr = api("GET", f"/repos/{repo}/pulls/{brief['number']}")  # mergeable_state is computed on the single-PR endpoint
         state = pr.get("mergeable_state")  # type: ignore[union-attr]
@@ -385,9 +416,15 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
             if not meta.get("loop", meta.get("agents")):
                 # shadow mode: Actions is still the system of record, so apx only reports checks. Updating branches or
                 # running agents here would race the Actions jobs and open duplicate PRs.
-                result[repo] = {"actions": actions, "note": "shadow: checks only"}
+                note = "shadow: checks only"
+                if meta.get("journal"):  # journal conflicts: say what would be done, do nothing
+                    j_acts, j_notes = plan_journal(api, repo, meta.get("default_branch", "main"))
+                    note += "".join(f"; would resolve journal conflict on #{a.ref.split(':')[0]}" for a in j_acts)
+                    note += "".join(f"; {n}" for n in j_notes)
+                result[repo] = {"actions": actions, "note": note}
                 continue
-            rebases = plan_rebases(api, repo, owner, ledger, now)
+            j_acts, j_notes = plan_journal(api, repo, meta.get("default_branch", "main")) if meta.get("journal") else ([], [])
+            rebases = plan_rebases(api, repo, owner, ledger, now, skip={int(a.ref.split(":")[0]) for a in j_acts})
             updates = [a for a in rebases if a.kind == "update-branch"]
             if main_state == "red":
                 # new work built on a broken main is blamed for errors it did not cause: hold agent runs and fixes until main is green
@@ -409,7 +446,9 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
             else:
                 runs, note = [], "agent runs blocked: no dedicated agent account (backlog S1b)"
             merges = plan_merges(api, repo, owner) if meta.get("merge") else []  # off in shadow mode: Actions still merges
-            result[repo] = {"actions": actions + runs + updates + merges, "note": note}
+            note += "".join(f"; will resolve journal conflict on #{a.ref.split(':')[0]}" for a in j_acts)
+            note += "".join(f"; {n}" for n in j_notes)
+            result[repo] = {"actions": actions + runs + updates + j_acts + merges, "note": note}
         except (
             GitHubError,
             OSError,

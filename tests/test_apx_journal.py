@@ -354,7 +354,9 @@ def test_resolution_writes_a_two_parent_merge_commit_main_second_and_moves_the_b
     assert "apx" in c["message"]
     files = f.files_at(new)
     assert files[J] == BASE + MAIN_ENTRY + PR_ENTRY
-    assert files["src/new.py"] == b"new\n" and "src/old.py" not in files and files["src/pr.py"] == b"pr\n"  # both sides' other work kept
+    assert (
+        files["src/new.py"] == b"new\n" and "src/old.py" not in files and files["src/pr.py"] == b"pr\n"
+    )  # both sides' other work kept
     assert [w[0] for w in f.writes] == ["POST", "POST", "POST", "PATCH"]  # blob, tree, commit, ref: nothing else
 
 
@@ -436,3 +438,14 @@ def test_action_kind_is_a_branch_write_so_the_freeze_gate_holds_it():
 
     assert journal.KIND not in freeze_gate.CHECK_KINDS
     assert Action(journal.KIND, REPO, "7:x:main").kind == "resolve-journal"
+
+
+def test_a_broken_allowlist_turns_the_feature_off_but_never_the_checks(monkeypatch, tmp_path):
+    bad = tmp_path / "j.json"
+    bad.write_text("{not json")
+    monkeypatch.setattr(journal, "ALLOWLIST_FILE", bad)
+    monkeypatch.setattr(journal.load_allowlist, "__defaults__", (bad,))
+    f = world()
+    r = plan_one(f)
+    assert resolve_actions(r) == [] and "allowlist unreadable" in r["note"]
+    assert any(a.kind == "check-pr" for a in r["actions"])  # the repo's checks are still planned

@@ -260,6 +260,23 @@ def bwrap_check(s, launcher) -> Check:
     return Check(BWRAP_CHECK, False, f"{found}: {first}; {BWRAP_HINT}")
 
 
+SOCAT_CHECK = "agent account has socat for Claude Code's sandbox"
+SOCAT_MISSING = "socat missing: Claude Code's sandbox can't run shell commands (sudo apt-get install -y socat)"
+
+
+def socat_check(s, launcher) -> Check:
+    """Linux only. With bubblewrap alone the agent starts but every Bash call fails: the sandbox relays network traffic through socat
+    (https://code.claude.com/docs/en/sandboxing, "Set up Linux and WSL2"). Look it up AS the agent account, on its claude's PATH."""
+    env = {"PATH": sandbox.job_path(s.agent_home()), "HOME": s.agent_home()}
+    try:
+        r = launcher.run(["/bin/sh", "-c", 'command -v -- "$1"', "sh", "socat"], cwd="/", env=env, capture_output=True, text=True, timeout=10)
+    except Exception as e:  # noqa: BLE001 - a broken sudo or a timeout fails the check, never the doctor
+        return Check(SOCAT_CHECK, False, f"could not run as the agent account ({type(e).__name__})")
+    lines = r.stdout.strip().splitlines() if r.returncode == 0 else []
+    found = lines[-1].strip() if lines and lines[-1].strip().startswith("/") else ""
+    return Check(SOCAT_CHECK, True, found) if found else Check(SOCAT_CHECK, False, SOCAT_MISSING)
+
+
 def state_path_checks(s) -> list[Check]:
     """The ledger must outlive every release and the work dir (with its apx.lock) must be the one both the daemon and the updater see.
     Both come from Settings.from_env (hostenv.default_db_path / default_work_dir when unset), so the two services cannot disagree unless
@@ -436,6 +453,7 @@ def run_doctor(
         out.extend(agent_checks(s, agent))
         if not hostenv.is_darwin():
             out.append(bwrap_check(s, agent))
+            out.append(socat_check(s, agent))
     out.append(spend_ceiling_check(s.db_path))
     out.append(sprint_check(s.db_path))
     out.append(Check("installations within scope", set(s.installations) <= ALLOWED_REPOS, ", ".join(sorted(s.installations))))

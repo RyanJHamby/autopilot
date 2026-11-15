@@ -148,6 +148,18 @@ curl -fsSLO "https://nodejs.org/dist/v$V/SHASUMS256.txt.sig"
    world-writable. (Before `apx.env` exists it only says it skipped the check.)
 
 To change a version later, unpack the new one next to the old (`node-<new>`), change the entry in `repo_toolchains.json` in a PR, and remove the old directory once nothing declares it.
+
+**Where the toolchains live.** `/srv/apx` belongs to `apx` (it swaps `current` and `previous` there), so `apx` can rename
+`/srv/apx/toolchains` away and put a `node` of its own in its place, however root-owned the directories inside are. The doctor checks
+every component from each declared binary up to `/` (as written and as resolved): each must be owned by root and not group- or
+world-writable (a root-owned sticky dir such as `/tmp` is fine). Under `/srv/apx` that check FAILS, with this hint. The fix is a
+root-owned root and one setting; repeat steps 3 and 4 with `/opt/apx-toolchains` in place of `/srv/apx/toolchains`, then:
+```
+sudo install -d -m 755 -o root -g root /opt/apx-toolchains
+echo 'APX_TOOLCHAINS_ROOT=/opt/apx-toolchains' | sudo -u apx tee -a /home/apx/.apx/apx.env
+```
+The daemon, the doctor and both preflights read `APX_TOOLCHAINS_ROOT` (unset: `<shared dir>/toolchains`, as before). Then run the
+preflight and the doctor again; remove `/srv/apx/toolchains` once both pass.
 The sandbox still sees no secrets from this: the directories sit outside every account's home, hold no credentials, and the job's environment is still the same short allowlist.
 
 **pawl for control.** control's `check` runs the `pawl` CLI, which is built from the private `RyanJHamby/pawl` repo, and its `plan-coverage` scripts import `yaml`. The
@@ -188,7 +200,7 @@ control's `python3` must import yaml; pawl's own CI, on a python3 without PyYAML
 ### 6. Doctor, then shadow
 
 ```
-sudo -u apx -H sh -c 'set -a; . /home/apx/.apx/apx.env; set +a; PYTHONPATH=/srv/apx/current/src /srv/apx/venv/bin/python -m autopilot.apx.daemon --doctor'
+sudo -u apx -H sh -c 'set -a; . /home/apx/.apx/apx.env; set +a; PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/srv/apx/current/src /srv/apx/venv/bin/python -m autopilot.apx.daemon --doctor'
 sudo bash deploy/linux/egress-probe.sh
 ```
 Both must be clean before anything is enabled. The doctor's `<repo>: host tool <tool>` lines are the per-repo host tools above. (In the container test, the doctor's sandbox checks passed on real Linux, and its only failure was the missing `claude` CLI, which step 5 is for.) The probe tries to break out as each sandbox account (private and metadata addresses, an arbitrary public host, IPv6, SSH to GitHub, DoT, another
@@ -226,8 +238,10 @@ If the new server misbehaves: `sudo DO=1 bash deploy/linux/retire.sh` stops its 
 
   With `APX_SHA` set, bootstrap hands the release to `deploy/linux/release.sh` before it renders the rules. That script fetches `main` into
   `/srv/apx/autopilot` and moves its `main` there, fetches into `/srv/apx/updater` (which is cloned from that clone), and refuses a sha that is
-  not on `origin/main`. It builds `releases/$SHA` aside and renames it in, refuses if the release's `HEAD` is not `$SHA` or its tree is
-  dirty, checks the updater out at `$SHA`, and only then switches `current` (a temp link, then `mv -T`), so `current` never points at a
+  not on `origin/main`. It builds `releases/$SHA` aside and renames it in, refuses if the release's `HEAD` is not `$SHA`, its tree is
+  dirty, or it holds any untracked or ignored file (a planted `.pth`, `sitecustomize.py` or `__pycache__/*.pyc` runs like tracked code; a
+  release that ran before `apx.service` set `PYTHONDONTWRITEBYTECODE=1` has `__pycache__` and is refused too: move it out of `releases/`
+  as the message says and run again, which rebuilds it from `main`), checks the updater out at `$SHA`, and only then switches `current` (a temp link, then `mv -T`), so `current` never points at a
   missing directory. The old target is kept as `/srv/apx/previous`, and the rollback is printed: the same bootstrap command with the old sha.
   Any refusal stops bootstrap before the rules are touched and leaves `current` as it was. `DRY_RUN=1` prints the steps. Check that the
   probe ends `sealed`. Without `APX_SHA`, bootstrap still never moves an existing `current`. Run bootstrap from a checkout new enough to have `release.sh`.

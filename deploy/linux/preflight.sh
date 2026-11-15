@@ -51,7 +51,7 @@ if [ -n "${APX_PRIVATE_CI:-}" ]; then
   root="$(cd "$(dirname "$0")/../.." && pwd)"
   ci_path="/usr/local/bin:${APX_CI_HOME:-/home/apx-ci}/.local/bin:/usr/bin:/bin"
   if command -v python3 >/dev/null 2>&1; then
-    out="$(PYTHONPATH="$root/src" python3 -m autopilot.apx.repo_ci check-tools "$APX_PRIVATE_CI" --path "$ci_path" --toolchains-root "${APX_SHARED:-/srv/apx}/toolchains" 2>&1)" || true
+    out="$(PYTHONPATH="$root/src" python3 -m autopilot.apx.repo_ci check-tools "$APX_PRIVATE_CI" --path "$ci_path" --toolchains-root "${APX_TOOLCHAINS_ROOT:-${APX_SHARED:-/srv/apx}/toolchains}" 2>&1)" || true
     while IFS= read -r line; do
       case "$line" in PASS*) pass "${line#PASS  }" ;; FAIL*) fail "${line#FAIL  }" ;; *) [ -z "$line" ] || info "$line" ;; esac
     done <<EOF_TOOLS
@@ -68,7 +68,7 @@ fi
 if [ -n "${APX_INSTALLATIONS:-}${APX_PRIVATE_CI:-}" ]; then
   root="$(cd "$(dirname "$0")/../.." && pwd)"
   if command -v python3 >/dev/null 2>&1; then
-    out="$(PYTHONPATH="$root/src" python3 -m autopilot.apx.toolchains check "${APX_INSTALLATIONS:-},${APX_PRIVATE_CI:-}" --root "${APX_SHARED:-/srv/apx}/toolchains" 2>&1)" || true
+    out="$(PYTHONPATH="$root/src" python3 -m autopilot.apx.toolchains check "${APX_INSTALLATIONS:-},${APX_PRIVATE_CI:-}" --root "${APX_TOOLCHAINS_ROOT:-${APX_SHARED:-/srv/apx}/toolchains}" 2>&1)" || true
     while IFS= read -r line; do
       case "$line" in PASS*) pass "${line#PASS  }" ;; FAIL*) fail "${line#FAIL  }" ;; *) [ -z "$line" ] || info "$line" ;; esac
     done <<EOF_TCHAINS

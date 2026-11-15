@@ -168,7 +168,7 @@ run chmod -R go+rX "$SHARED/releases" "$SHARED/updater" "$SHARED/autopilot"
 if [ "$DRY_RUN" = 1 ]; then
   say "DRY-RUN: render /etc/apx/apx.nft and /etc/apx/dnsmasq.conf from autopilot.apx.nftrules with the real uids, check both, install"
 else
-  render_env=(env PYTHONPATH="$SHARED/current/src")
+  render_env=(env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$SHARED/current/src")  # no __pycache__ in the release (release.sh refuses one)
   nft_tmp="$(mktemp)"
   dns_tmp="$(mktemp)"
   trap 'rm -f "$nft_tmp" "$dns_tmp"' EXIT
@@ -262,6 +262,6 @@ if [ "$fails" != 0 ]; then say "$fails check(s) failed above. Do not go on until
 cat <<EOF
 Done. Next, by you (docs/apx-linux-host.md has the details):
   1. install the NEW App key and model token (never copied from the old host), and /home/apx/.apx/apx.env (paths and ids only)
-  2. run the doctor as apx:  sudo -u apx -H sh -c 'set -a; . /home/apx/.apx/apx.env; set +a; PYTHONPATH=$SHARED/current/src $SHARED/venv/bin/python -m autopilot.apx.daemon --doctor'
+  2. run the doctor as apx:  sudo -u apx -H sh -c 'set -a; . /home/apx/.apx/apx.env; set +a; PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=$SHARED/current/src $SHARED/venv/bin/python -m autopilot.apx.daemon --doctor'
   3. only then:  systemctl enable --now apx.timer apx-updater.timer     (shadow mode is on until APX_SHADOW=0 is set)
 EOF

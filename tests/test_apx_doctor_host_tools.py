@@ -16,8 +16,8 @@ from autopilot.apx import doctor as dr
 from autopilot.apx import host_tools, repo_ci, sandbox, toolchains
 from autopilot.apx.runas import Launcher
 
-DRILL, STENCIL, AUTO, ADMIN, CONTROL = (
-    f"RyanJHamby/{r}" for r in ("drillpad-workspace", "stencil", "autopilot", "admin", "control")
+DRILL, STENCIL, AUTO, ADMIN, CONTROL, PAWL = (
+    f"RyanJHamby/{r}" for r in ("drillpad-workspace", "stencil", "autopilot", "admin", "control", "pawl")
 )
 
 
@@ -115,6 +115,52 @@ def test_private_repo_minimum_versions_are_checked_as_the_sandbox_account(tmp_pa
     assert checks(s, b)[f"{CONTROL}: host tool python3"].ok
 
 
+NO_YAML = 'case "$1" in --version) echo "Python 3.12.3" ;; *) echo "ModuleNotFoundError: No module named \'yaml\'" >&2; exit 1 ;; esac'
+WITH_YAML = 'case "$1" in --version) echo "Python 3.12.3" ;; *) echo 6.0.2 ;; esac'
+
+
+def test_controls_python3_must_import_yaml_but_pawls_need_not(tmp_path):
+    """control's plan-coverage scripts import yaml; on the first try with pawl installed they failed with ModuleNotFoundError. The probe is
+    scoped to that repo ("repo_probes" in host_tools.json), because pawl's own CI, on the same python3, needs no PyYAML."""
+    s = make_settings(tmp_path, [CONTROL, PAWL], private=f"{CONTROL},{PAWL}")
+    b = tmp_path / "bin"
+    for t in ("git", "pawl", "make"):
+        fake(b, t)
+    fake(b, "python3", NO_YAML)
+    out = checks(s, b)
+    c = out[f"{CONTROL}: host tool python3"]
+    assert not c.ok and "PyYAML" in c.detail and "pawl-" in c.detail  # the hint points at the pawl toolchain venv
+    assert out[f"{PAWL}: host tool python3"].ok
+    fake(b, "python3", WITH_YAML)
+    assert checks(s, b)[f"{CONTROL}: host tool python3"].ok
+
+
+def test_the_shipped_repo_probe_for_control_imports_yaml():
+    data = host_tools.load()
+    p = data.probe_for(CONTROL, "python3")
+    assert p is not None and p.argv[0] == "python3" and "import yaml" in " ".join(p.argv)
+    assert data.probe_for(PAWL, "python3") is None and data.probe_for(CONTROL, "git") is None
+    assert data.hint_for(CONTROL, "python3") != data.hint("python3")
+    assert data.hint_for(PAWL, "python3") == data.hint("python3")
+    assert data.probe_for(DRILL, "clang++") is data.probes["clang++"]  # unscoped probes still apply to every repo
+
+
+def test_the_real_yaml_probe_passes_on_a_python_that_has_it(tmp_path):
+    """The probe's own argv against a real interpreter, so a typo in the data cannot pass unnoticed. Skipped without PyYAML here."""
+    import sys
+
+    probe = subprocess.run([sys.executable, "-c", "import yaml"], capture_output=True)
+    if probe.returncode != 0:
+        pytest.skip("no PyYAML in this interpreter")
+    s = make_settings(tmp_path, [CONTROL], private=CONTROL)
+    b = tmp_path / "bin"
+    for t in ("git", "pawl"):
+        fake(b, t)
+    (b / "python3").symlink_to(sys.executable)
+    c = checks(s, b)[f"{CONTROL}: host tool python3"]
+    assert c.ok, c.detail
+
+
 def test_a_repo_that_declares_nothing_says_so_and_passes(tmp_path, monkeypatch):
     s = make_settings(tmp_path, [AUTO])
     data = host_tools.load()
@@ -197,6 +243,10 @@ def test_every_enrolled_autopilot_repo_declares_its_host_tools():
         {"repos": {}, "probes": {"clang++": {"argv": ["sh", "-c", "true"], "needs": "x"}}, "hints": {}},  # relative, not the tool
         {"repos": {}, "probes": {"clang++": {"argv": ["clang++"]}}, "hints": {}},  # says nothing about what it proves
         {"repos": {}, "probes": {"gitleaks": {"argv": ["gitleaks"], "needs": "x", "expect": "("}}, "hints": {}},
+        {"repos": {}, "probes": {}, "hints": {}, "repo_probes": {CONTROL: "python3"}},
+        {"repos": {}, "probes": {}, "hints": {}, "repo_probes": {CONTROL: {"python3": {"argv": ["sh"], "needs": "x"}}}},
+        {"repos": {}, "probes": {}, "hints": {}, "repo_probes": {CONTROL: {"python3": {"argv": ["python3"], "needs": "x", "hint": 3}}}},
+        {"repos": {}, "probes": {}, "hints": {}, "repo_probes": {"not a repo": {"python3": {"argv": ["python3"], "needs": "x"}}}},
     ],
 )
 def test_malformed_data_is_refused(tmp_path, bad):

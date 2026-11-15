@@ -66,9 +66,9 @@ def fake_bin(dirpath, names):
         f.chmod(f.stat().st_mode | stat.S_IXUSR)
 
 
-def tools_cli(path, repos):
+def tools_cli(path, repos, *extra):
     return subprocess.run(
-        [sys.executable, "-m", "autopilot.apx.repo_ci", "check-tools", repos, "--path", str(path)],
+        [sys.executable, "-m", "autopilot.apx.repo_ci", "check-tools", repos, "--path", str(path), *extra],
         capture_output=True,
         text=True,
         env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
@@ -142,6 +142,33 @@ def test_version_checked_through_the_cli_and_python_needs_3_11_for_control_and_p
     fake_tool(tmp_path, "python3", "Python 3.8.0")
     r = tools_cli(tmp_path, PAWL)
     assert r.returncode == 1 and "3.8.0" in r.stdout
+
+
+def test_check_tools_searches_each_repos_own_toolchain_first(tmp_path):
+    """control's pawl lives in its toolchain directory, not on the default PATH, so the preflight must look where the job will look:
+    that repo's toolchain bin directories first (toolchains.bin_dirs), then the default. Another repo never sees control's directory."""
+    root = tmp_path / "toolchains"
+    tc = root / "pawl-0.1.0" / "bin"
+    tc.mkdir(parents=True)
+    fake_tool(tc, "pawl", "0.1.0")
+    fake_tool(tc, "python3", "Python 3.12.3")
+    base = tmp_path / "base"
+    base.mkdir()
+    fake_bin(base, ["git", "make"])
+    assert tools_cli(base, CONTROL).returncode == 1  # without the root, pawl is missing, as before
+    r = tools_cli(base, CONTROL, "--toolchains-root", str(root))
+    assert r.returncode == 0 and "FAIL" not in r.stdout, r.stdout
+    r = tools_cli(base, PAWL, "--toolchains-root", str(root))  # pawl's own repo declares no toolchain: no python3 for it here
+    assert r.returncode == 1 and "python3" in r.stdout
+    lines, ok = repo_ci.check_tools([CONTROL], str(base), toolchain_root=root)
+    assert ok, lines
+
+
+@pytest.mark.parametrize("script,shared", [("deploy/linux/preflight.sh", "/srv/apx"), ("deploy/apx-host-preflight.sh", "/Users/Shared/apx")])
+def test_both_preflights_check_private_repo_tools_with_their_toolchains(script, shared):
+    text = (ROOT / script).read_text()
+    line = next(ln for ln in text.splitlines() if "autopilot.apx.repo_ci check-tools" in ln)
+    assert f'--toolchains-root "${{APX_SHARED:-{shared}}}/toolchains"' in line
 
 
 def test_memory_cap_leaves_headroom_on_the_planned_12_gb_box():

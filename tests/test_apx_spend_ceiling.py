@@ -204,3 +204,11 @@ def test_usage_line_reports_the_24h_total_and_ceiling(policy):
     assert spend.spend_line(led, now=NOW) == "all repos: spend last 24h $1.25 of $12.00 ceiling"
     policy("  global_usd_per_day: nope\n")
     assert "fail closed" in spend.spend_line(led, now=NOW)
+
+
+def test_daemon_logs_the_spend_line_once_and_a_broken_meter_never_breaks_a_pass(policy):
+    from autopilot.apx import daemon
+
+    policy()
+    assert daemon.spend_lines(Ledger()) == ["all repos: spend last 24h $0.00 (global_usd_per_day not set)"]
+    assert daemon.spend_lines(None)[0].startswith("spend meter unavailable")  # type: ignore[arg-type]

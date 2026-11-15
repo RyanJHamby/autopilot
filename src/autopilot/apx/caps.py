@@ -51,5 +51,43 @@ def budget_for(role: str) -> float:
         raise CapError(f"{PORTFOLIO_FILE.name}: {e}") from None
 
 
-def global_usd_per_day():
-    raise NotImplementedError
+def _defaults() -> dict:
+    try:
+        d = yaml.safe_load(Path(PORTFOLIO_FILE).read_text())["defaults"]
+    except (OSError, yaml.YAMLError, KeyError, TypeError) as e:
+        raise CapError(f"cannot read defaults from {PORTFOLIO_FILE.name} ({type(e).__name__})") from None
+    if not isinstance(d, dict):
+        raise CapError(f"{PORTFOLIO_FILE.name}: defaults is not a mapping")
+    return d
+
+
+def global_usd_per_day() -> float | None:
+    """`defaults.global_usd_per_day`: the dollar ceiling for all agent runs in all repos over a rolling 24h. Absent means no global
+    ceiling (None). Present but not a finite number >= 0, or a policy file that cannot be read, raises CapError: no agent runs."""
+    d = _defaults()
+    if "global_usd_per_day" not in d:
+        return None
+    v = d["global_usd_per_day"]
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0:
+        raise CapError(f"{PORTFOLIO_FILE.name}: global_usd_per_day must be a number of dollars >= 0, got {v!r}")
+    return float(v)
+
+
+def largest_budget() -> float:
+    """The highest per-role cap in policy, for a ledger row that recorded none; MAX_BUDGET_USD if policy gives no usable number."""
+    try:
+        return max(valid_budget(v) for v in _defaults()["max_budget_usd"].values())
+    except (CapError, KeyError, TypeError, AttributeError, ValueError):
+        return MAX_BUDGET_USD
+
+
+def detail_budget(detail: str) -> float | None:
+    """The run's dollar cap from an action detail: the lowest valid `budget=` token (as daemon.parse_detail), None if there is none."""
+    given = []
+    for p in detail.split():
+        if p.startswith("budget="):
+            try:
+                given.append(valid_budget(float(p.split("=", 1)[1])))
+            except ValueError:
+                continue
+    return min(given) if given else None

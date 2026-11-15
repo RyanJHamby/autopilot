@@ -4,6 +4,8 @@ For the apx off-Actions executor on the Mac: three accounts (`apx`, `apx-ci`, `a
 (`RyanJHamby/autopilot`, `RyanJHamby/drillpad-workspace`, `RyanJHamby/stencil`). Background: `docs/apx-app.md`, `docs/apx-runbook.md`,
 `docs/apx-backlog.md`, `policy/CONSTITUTION.md`.
 
+On the Linux host, use [apx-compromise-linux.md](apx-compromise-linux.md) instead: the same steps with systemd, `/home/apx` and `/srv/apx`.
+
 How to read this:
 - **[RYAN-SUDO]** = run in Terminal.app by Ryan. Agents never run `sudo`.
 - **[RYAN-ADMIN]** = needs Ryan's GitHub admin login, GitHub web UI, Claude account or Vercel. An agent cannot do it.

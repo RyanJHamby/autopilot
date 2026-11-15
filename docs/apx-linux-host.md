@@ -230,8 +230,8 @@ If the new server misbehaves: `sudo DO=1 bash deploy/linux/retire.sh` stops its 
   bootstrap without `APX_SHA` (it re-renders the rules and checks the updater out at the same commit), and the probe. On the first host
   (2026-11-14) skipping a fetch stopped bootstrap with `reference is not a tree`, and pointing `current` at a release directory before it
   existed left the host broken until the link was put back.
-- Compromise: follow [apx-compromise.md](apx-compromise.md). Where it says `launchctl bootout`, use `systemctl disable --now apx.timer apx-updater.timer`; where it names `/Users/apx/...`,
-  the paths here are `/home/apx/...`, `/home/apx-agent/...` and `/srv/apx`. It has not been rewritten for Linux yet, and its steps have never been drilled.
+- Compromise: follow [apx-compromise-linux.md](apx-compromise-linux.md), the Linux version of [apx-compromise.md](apx-compromise.md) (stop, contain egress,
+  revoke, preserve evidence, investigate, rebuild), with a rehearsal section for a dry run on this host.
 
 ## Not built yet
 

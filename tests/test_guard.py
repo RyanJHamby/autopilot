@@ -135,3 +135,66 @@ def test_append_only_paths_allow_add_but_not_modify_or_delete():
     # humans and unlisted paths are unaffected
     assert analyze([FileChange(p, status="D", removed=["{}"])], agent=False, append_only=ao) == []
     assert analyze([FileChange("src/x.py", status="M", added=["a"])], agent=True, append_only=ao) == []
+
+
+# Conflict markers are built from pieces so this file never contains a line that is itself a marker.
+LT, GT, EQ, BAR = "<" * 7, ">" * 7, "=" * 7, "|" * 7
+
+
+def test_added_conflict_markers_fail_with_file_and_line():
+    text = (
+        "diff --git a/docs/journal.md b/docs/journal.md\n--- a/docs/journal.md\n+++ b/docs/journal.md\n"
+        f"@@ -10,0 +11,5 @@\n+{LT} HEAD\n+mine\n+{EQ}\n+theirs\n+{GT} origin/main\n"
+        "diff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n"
+        f"@@ -3 +3,2 @@\n-x = 1\n+x = 2\n+{BAR} base\n"
+    )
+    vs = [v for v in analyze(parse_diff(text), agent=False) if v.check == "conflict-marker"]
+    assert [(v.path, v.line) for v in vs] == [("docs/journal.md", 11), ("docs/journal.md", 13), ("docs/journal.md", 15), ("src/a.py", 4)]
+    assert "docs/journal.md:11" in str(vs[0])
+    assert "conflict-marker" in checks(analyze(parse_diff(text), agent=True))  # agents and humans alike
+
+
+def test_conflict_markers_only_in_removed_lines_pass():
+    text = (
+        "diff --git a/docs/journal.md b/docs/journal.md\n--- a/docs/journal.md\n+++ b/docs/journal.md\n"
+        f"@@ -11,5 +11,2 @@\n-{LT} HEAD\n-mine\n-{EQ}\n-theirs\n-{GT} origin/main\n+mine\n+theirs\n"
+    )
+    assert analyze(parse_diff(text), agent=True) == []
+
+
+def test_marker_like_text_that_is_not_a_marker_line_passes():
+    ch = [
+        FileChange("docs/a.md", added=[f"`{LT} `", f"{EQ}=", f" {EQ}", f"{LT}HEAD", f"x = '{GT} b'"]),
+        FileChange("docs/b.md", added=["# Title", "-------", "=" * 8]),
+    ]
+    assert analyze(ch, agent=False) == []
+
+
+def test_conflict_marker_without_line_numbers_still_names_the_file():
+    vs = analyze([FileChange("src/x.py", added=["ok", f"{GT} theirs"])], agent=False)
+    assert [(v.check, v.path) for v in vs] == [("conflict-marker", "src/x.py")]
+    assert "src/x.py" in str(vs[0])
+
+
+def test_main_fails_on_a_committed_conflict_marker(tmp_path, monkeypatch, capsys):
+    import subprocess
+
+    def g(*a):
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "-c", "user.email=t@t", "-c", "user.name=t", *a],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+
+    g("init", "-q", "-b", "main")
+    (tmp_path / "journal.md").write_text("# J\n\nold\n")
+    g("add", ".")
+    g("commit", "-qm", "base")
+    g("checkout", "-qb", "feature/x")
+    (tmp_path / "journal.md").write_text(f"# J\n\nold\n{LT} HEAD\nmine\n{EQ}\ntheirs\n{GT} main\n")
+    g("commit", "-qam", "bad merge")
+    monkeypatch.chdir(tmp_path)
+    assert guard.main(["--base", "main", "--agent", "false", "--config", "none.yaml"]) == 1
+    out = capsys.readouterr().out
+    assert "journal.md:4" in out and "::error file=journal.md,line=4::conflict-marker" in out

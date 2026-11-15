@@ -1,4 +1,5 @@
 {
   "RyanJHamby/stencil": ["node@20"],
-  "RyanJHamby/autopilot": ["node@22"]
+  "RyanJHamby/autopilot": ["node@22"],
+  "RyanJHamby/control": ["pawl@0.1.0"]
 }

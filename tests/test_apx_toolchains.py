@@ -51,6 +51,25 @@ def test_the_shipped_declaration_gives_stencil_node_20_and_autopilot_node_22():
     assert set(d) <= planner.ALLOWED_REPOS  # only repos apx can run at all
 
 
+def test_control_runs_with_the_pinned_pawl_toolchain_and_its_check_is_the_generic_one(tmp_path):
+    """control's `check` needs the pawl CLI from a private repo; the sandbox has no GitHub token, so the owner installs a pinned build
+    root-owned at <shared>/toolchains/pawl-<version> (docs/apx-linux-host.md, step 5) and the same checks as Node apply to it."""
+    control = "RyanJHamby/control"
+    assert toolchains.load_declared()[control] == ("pawl@0.1.0",)  # exact pin: one version string covers many commits until pawl tags
+    root = tmp_path / "toolchains"
+    assert toolchains.bin_dirs(control, root) == [str(root / "pawl-0.1.0" / "bin")]
+    b = root / "pawl-0.1.0" / "bin"
+    b.mkdir(parents=True)
+    b.chmod(0o755)
+    (b / "pawl").write_text("#!/bin/sh\necho 0.1.0\n")  # `pawl --version` prints the bare version
+    (b / "pawl").chmod(0o755)
+    lines, ok = toolchains.check_repos([control], root)
+    assert ok and lines == [f"PASS  pawl 0.1.0 at {b} for {control} CI (declared pawl@0.1.0)"]
+    (b / "pawl").write_text("#!/bin/sh\necho 0.2.0\n")
+    lines, ok = toolchains.check_repos([control], root)
+    assert not ok and "0.2.0" in lines[0] and "0.1.0" in lines[0]
+
+
 @pytest.mark.parametrize(
     "entry", ["node", "node@", "node@twenty", "node@20.", "../node@20", "no de@20", "node@20;ls", "node@20/../x", "NODE@20", "node@1.2.3.4"]
 )

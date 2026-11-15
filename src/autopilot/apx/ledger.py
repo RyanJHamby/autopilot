@@ -26,7 +26,8 @@ create table if not exists runs (
   cost_usd real,
   budget_usd real,
   kind text not null default 'run',
-  ref text not null default ''
+  ref text not null default '',
+  note text
 )
 """
 MIGRATIONS = (
@@ -35,7 +36,9 @@ MIGRATIONS = (
     "alter table runs add column model_id text",
     "alter table runs add column cost_usd real",
     "alter table runs add column budget_usd real",
+    "alter table runs add column note text",
 )
+NOTE_MAX = 2000  # a failure reason is a paragraph, not a log: longer text is cut here
 # One row per sprint (sprint.py): written when a pass first sees it active, closed once with its summary. ended_at stays set, so a
 # sprint that ended never reopens, even if a cost reported later comes in under the run's cap.
 SPRINTS = """
@@ -111,13 +114,15 @@ class Ledger:
         turns: int | None = None,
         model_id: str | None = None,
         cost_usd: float | None = None,
+        note: str | None = None,
         now: dt.datetime | None = None,
     ) -> None:
-        """model is the alias that was asked for; model_id is the resolved id and cost_usd the CLI's total_cost_usd (None = not reported)."""
+        """model is the alias that was asked for; model_id is the resolved id and cost_usd the CLI's total_cost_usd (None = not reported).
+        note is why a run failed, already redacted by the caller (executor.failure_reason); it is cut to NOTE_MAX characters here."""
         now = now or dt.datetime.now(dt.timezone.utc)
         self.db.execute(
-            "update runs set status='completed', conclusion=?, model=?, turns=?, model_id=?, cost_usd=?, finished_at=? where id=?",
-            (conclusion, model, turns, model_id, cost_usd, _iso(now), run_id),
+            "update runs set status='completed', conclusion=?, model=?, turns=?, model_id=?, cost_usd=?, note=?, finished_at=? where id=?",
+            (conclusion, model, turns, model_id, cost_usd, note[:NOTE_MAX] if note else None, _iso(now), run_id),
         )
         self.db.commit()
 
@@ -131,6 +136,14 @@ class Ledger:
             {"created_at": r["created_at"], "conclusion": r["conclusion"], "status": r["status"], "hard": bool(r["hard"])}
             for r in rows
         ]
+
+    def recent(self, limit: int = 5) -> list[dict]:
+        """The last runs across all repos, newest first, with their failure notes (the `--runs` view)."""
+        rows = self.db.execute(
+            "select id, repo, issue, kind, created_at, status, conclusion, turns, cost_usd, note from runs order by id desc limit ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def inflight_issues(self, repo: str) -> set[int]:
         q = ",".join("?" for _ in IN_FLIGHT)

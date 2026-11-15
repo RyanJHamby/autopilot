@@ -158,6 +158,33 @@ Do it in this order so two systems never act on the same repo:
    issues if the spending limit is ever lifted, so step 3 should follow step 2 closely.
 Rollback: remove the repo from `APX_CUTOVER`, re-enable Actions.
 
+## Journal conflicts: apx merges append-only journals itself
+
+Every PR appends an entry to the end of the journal, so parallel PRs conflict there once one merges. In a repo with the full
+loop (cut over, or shadow off), apx resolves that one kind of conflict on its own (`src/autopilot/apx/journal.py`):
+
+- **Which PRs:** open, not from a fork, head branch starting `agent/`, `dependabot/` or `autopilot/kit-`, targeting the default
+  branch, `mergeable_state` = `dirty`. Owner PRs on other branch names are never written to.
+- **Strict rule:** the compare API gives the merge base and the files changed on each side. If ANY file changed on both
+  sides is not in `src/autopilot/apx/journal_files.json` (default `docs/journal.md`, `JOURNAL.md`, `journal.md`, optional
+  per-repo override, exact paths only), apx does nothing and the planner note names the file. For each journal, the
+  merge-base copy must be a byte prefix of main's and of the PR's (both sides only appended, base ending in a newline);
+  otherwise the note says "journal edited not appended; needs a human". A result that would contain a conflict-marker line
+  is refused too.
+- **Result:** main's journal, then the PR's new text (one newline at the seam, a blank line never doubled). Every other path
+  main changed is taken from main, everything else stays as on the PR. That is the same tree a clean three-way merge gives.
+- **API only, never a clone:** blob, tree, then a commit with parents `[PR head, main head]` and the message
+  `Merge main into <branch>: keep both journal entries (main first)`, then `PATCH refs/heads/<branch>` with `force: false`.
+  No PR code runs. A commit an App creates through the API is signed by GitHub, which repos that require verified
+  signatures need; a local merge pushed by apx would not be. If the branch moved since it was read, the ref update fails
+  and the next pass tries again. It needs `contents: write`, which the App already has; no new permission.
+- **Never merges a PR.** The new head gets the normal checks, and the tiers decide merging as before. A conflicted
+  `agent/<n>-` PR that apx resolves this way is not also re-run by the model that pass.
+- **Shadow mode** (repo not cut over): nothing is written; the pass log says `would resolve journal conflict on #N`.
+  Private repos with only a CI spec get nothing. The work-hours freeze holds it like any other branch write.
+- **Turn it off:** `APX_JOURNAL_AUTORESOLVE=0` in apx.env (default on). A malformed `journal_files.json` also turns it
+  off for that pass, with a note; the repo's checks still run.
+
 ## Sandbox account: keep PR code away from the secrets (backlog S1)
 
 The App key and the Claude token are files owned by `apx`. Anything that runs as `apx` can read them, including a PR's tests. With a

@@ -164,10 +164,11 @@ def test_the_resolver_has_no_privilege_but_net_admin_and_is_not_root():
     assert "--conf-file=/etc/apx/dnsmasq.conf" in s["ExecStart"]
 
 
-def test_the_rules_are_checked_before_they_are_loaded_and_removed_on_stop():
+def test_the_rules_are_checked_before_they_are_loaded_and_stop_locks_instead_of_removing_them():
     s = unit("apx-nft.service")["Service"]
     assert s["ExecStartPre"].startswith("/usr/sbin/nft -c -f /etc/apx/apx.nft")
-    assert s["ExecStart"] == "/usr/sbin/nft -f /etc/apx/apx.nft" and s["ExecStop"] == "/usr/sbin/nft delete table inet apx"
+    assert s["ExecStart"] == "/usr/sbin/nft -f /etc/apx/apx.nft" and "nft add element inet apx lockdown" in s["ExecStop"]
+    assert "delete table" not in s["ExecStop"], "stopping must never leave the apx accounts with open egress (tests/test_apx_lockdown.py)"
 
 
 @pytest.mark.parametrize("timer", ["apx.timer", "apx-updater.timer"])

@@ -111,11 +111,13 @@ GitHub and other resolvers; their DNS is redirected to the allowlist resolver. W
 GitHub (plus the control-plane host if bootstrap was given `CONTROL_HOST`), `apx-ci` gets GitHub and the package registries, `apx-agent` gets GitHub and the
 model API. Your admin account, root, apt and the resolver itself are not restricted.
 
-**Never stop `apx-nft.service` during an incident.** Its `ExecStop=` deletes `table inet apx`, and the output chain's policy is accept, so stopping it removes
-every restriction on the three accounts.
+**First, lock egress down:** `sudo apx-lockdown on`. It drops every outbound packet from `apx`, `apx-ci`, `apx-agent` and `apx-dns`, IPv4 and IPv6,
+open connections included, without removing the firewall, and survives `systemctl reload apx-nft` and reboots. It never touches your admin account,
+root or inbound SSH. Check with `sudo apx-lockdown status` and `sudo bash deploy/linux/egress-probe.sh --expect-lockdown`. Details:
+[Emergency lockdown](apx-linux-host.md#emergency-lockdown). Since that change, stopping `apx-nft.service` also leaves the four accounts locked down
+instead of deleting the table, but `apx-lockdown on` is the supported way.
 
-**A deny-all mode is not supported on Linux yet.** Nothing in the code renders a rule set that refuses the allowed names too, and this page does not invent
-one. What you can do with what exists:
+If the lockdown helper is missing (a host bootstrapped before it existed), fall back to the resolver step below.
 
 2.1 Stop the resolver (derived from the unit files, **unverified** on the host). With `apx-dns.service` stopped, the three accounts' DNS is still redirected to
 its port and nothing answers, so no new name resolves and no new address enters a lane's set. Addresses already in a set stay reachable on 443 until their

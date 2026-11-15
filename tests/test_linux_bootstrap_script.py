@@ -262,3 +262,12 @@ def test_bootstrap_installs_bubblewrap_and_preflight_checks_it_because_claude_co
     assert "bubblewrap" in re.findall(r"[a-z0-9][a-z0-9+.-]+", block)
     pre = code(PREFLIGHT)
     assert "command -v bwrap" in pre and "bwrap --ro-bind / / --dev /dev --proc /proc /bin/true" in pre
+
+
+def test_bootstrap_installs_socat_and_preflight_checks_it_because_claude_codes_sandbox_needs_it_too():
+    # 2026-11-15: with bubblewrap in place, the first agent run reported "Bash fails in this environment because the sandbox needs
+    # `socat`, which isn't installed". Claude Code's sandboxing docs list bubblewrap and socat for Linux.
+    block = code(BOOTSTRAP).split("apt-get install", 1)[1].split("put root:root", 1)[0]
+    pkgs = re.findall(r"[a-z0-9][a-z0-9+.-]+", block)
+    assert "socat" in pkgs and "bubblewrap" in pkgs
+    assert "command -v socat" in code(PREFLIGHT)

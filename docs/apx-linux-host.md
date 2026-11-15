@@ -197,17 +197,22 @@ control's `python3` must import yaml; pawl's own CI, on a python3 without PyYAML
   `sudo install -m 755 -o root -g root gitleaks /usr/local/bin/gitleaks`. Write the version and checksum you verified in your private notes, not here.
   `gitleaks git --help` as `apx-ci` must show `gitleaks git` in its usage.
 
-#### Claude Code sandbox (bubblewrap)
+#### Claude Code sandbox (bubblewrap and socat)
 
 Claude Code will not start as `apx-agent` without bubblewrap: on 2026-11-15 the first agent runs on the host failed with `Claude Code could not start: bubblewrap is
-required for subprocess env scrubbing and isolation`. `bootstrap.sh` installs it now; on a host bootstrapped before that, as your admin account:
+required for subprocess env scrubbing and isolation`. With bubblewrap in place, the next run started but could not run a shell command; the agent wrote in its PR:
+"Bash fails in this environment because the sandbox needs `socat`, which isn't installed, and running outside the sandbox is blocked." Claude Code's sandboxing docs
+list both packages for Linux: bubblewrap for filesystem isolation and socat as the relay that routes network traffic through the sandbox proxy
+([Set up Linux and WSL2](https://code.claude.com/docs/en/sandboxing), checked 2026-11-15). `bootstrap.sh` installs both now; on a host bootstrapped before that, as your
+admin account:
 ```
-sudo apt-get install -y bubblewrap
+sudo apt-get install -y bubblewrap socat
+sudo -u apx-agent sh -c 'command -v socat'    # must print a path
 sudo -u apx-agent bwrap --ro-bind / / --dev /dev --proc /proc /bin/true && echo ok    # the probe; changes nothing
 ```
 The doctor (step 6) runs the same probe as `apx-agent`, through the same launcher as its other agent checks, on the PATH the agent's `claude` runs with (or at
-`sandbox.bwrapPath` if Claude Code's managed settings, `/etc/claude-code/managed-settings.json`, set one), and FAILs if bwrap is missing or the probe fails. The preflight
-runs it as your admin account.
+`sandbox.bwrapPath` if Claude Code's managed settings, `/etc/claude-code/managed-settings.json`, set one), and FAILs if bwrap is missing or the probe fails. A sibling check looks socat up the same way and FAILs if it is missing. The preflight
+runs the bwrap probe as your admin account and notes whether socat is installed.
 
 On Ubuntu 24.04 an installed bwrap can still fail with `setting up uid map: Permission denied` (or `Operation not permitted`): AppArmor restricts unprivileged user
 namespaces (`sysctl kernel.apparmor_restrict_unprivileged_userns` prints `1`). Do **not** set that sysctl to 0: it turns the restriction off for every program on the host.

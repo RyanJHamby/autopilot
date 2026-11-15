@@ -34,6 +34,8 @@ if ! command -v bwrap >/dev/null 2>&1; then info "bubblewrap not installed yet (
 elif [ "$(id -u)" = 0 ]; then info "bwrap found; run this as your admin account to probe it (the doctor probes it as apx-agent)"
 elif err="$(bwrap --ro-bind / / --dev /dev --proc /proc /bin/true 2>&1)"; then pass "bwrap can start a sandbox"
 else fail "bwrap cannot start a sandbox: $(printf '%s' "$err" | head -1). If it says uid map / permission denied, add the AppArmor bwrap profile (docs/apx-linux-host.md, Claude Code sandbox)"; fi
+# The sandbox also needs socat (its network relay): without it Claude Code starts but every shell command it runs fails.
+if command -v socat >/dev/null 2>&1; then pass "socat is installed"; else info "socat not installed yet (bootstrap.sh installs it; Claude Code's sandbox needs it)"; fi
 
 mem_gb=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0) / 1048576))
 if [ "$mem_gb" -ge 15 ]; then pass "about ${mem_gb} GB RAM"

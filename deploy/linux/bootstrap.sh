@@ -81,9 +81,10 @@ if [ "$SKIP_PACKAGES" != 1 ]; then
   command -v apt-get >/dev/null 2>&1 || { say "needs apt (Debian or Ubuntu)"; exit 1; }
   run env DEBIAN_FRONTEND=noninteractive apt-get update -qq
   # dnsmasq-base, not dnsmasq: the full package starts its own resolver on port 53, which we neither want nor need.
+  # bubblewrap: Claude Code refuses to start as apx-agent without it (its sandbox; docs/apx-linux-host.md).
   run env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
     git curl ca-certificates openssl sudo util-linux nftables dnsmasq-base iproute2 netcat-openbsd \
-    python3 python3-venv python3-pip unattended-upgrades
+    python3 python3-venv python3-pip unattended-upgrades bubblewrap
   put root:root 644 /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";

@@ -197,6 +197,38 @@ control's `python3` must import yaml; pawl's own CI, on a python3 without PyYAML
   `sudo install -m 755 -o root -g root gitleaks /usr/local/bin/gitleaks`. Write the version and checksum you verified in your private notes, not here.
   `gitleaks git --help` as `apx-ci` must show `gitleaks git` in its usage.
 
+#### Claude Code sandbox (bubblewrap)
+
+Claude Code will not start as `apx-agent` without bubblewrap: on 2026-11-15 the first agent runs on the host failed with `Claude Code could not start: bubblewrap is
+required for subprocess env scrubbing and isolation`. `bootstrap.sh` installs it now; on a host bootstrapped before that, as your admin account:
+```
+sudo apt-get install -y bubblewrap
+sudo -u apx-agent bwrap --ro-bind / / --dev /dev --proc /proc /bin/true && echo ok    # the probe; changes nothing
+```
+The doctor (step 6) runs the same probe as `apx-agent`, through the same launcher as its other agent checks, on the PATH the agent's `claude` runs with (or at
+`sandbox.bwrapPath` if Claude Code's managed settings, `/etc/claude-code/managed-settings.json`, set one), and FAILs if bwrap is missing or the probe fails. The preflight
+runs it as your admin account.
+
+On Ubuntu 24.04 an installed bwrap can still fail with `setting up uid map: Permission denied` (or `Operation not permitted`): AppArmor restricts unprivileged user
+namespaces (`sysctl kernel.apparmor_restrict_unprivileged_userns` prints `1`). Do **not** set that sysctl to 0: it turns the restriction off for every program on the host.
+Give bwrap alone a profile that allows `userns`, in `/etc/apparmor.d/bwrap`:
+```
+abi <abi/4.0>,
+include <tunables/global>
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+```
+then `sudo apparmor_parser -r /etc/apparmor.d/bwrap` and run the probe again. Sources for the shape, checked 2026-11-15: Ubuntu's announcement of the restriction gives
+the same pattern for Chrome (`abi <abi/4.0>`, `include <tunables/global>`, `userns,`, `include if exists <local/...>`; its flag is spelled `default_allow`, the pre-release
+name): https://ubuntu.com/blog/ubuntu-23-10-restricted-unprivileged-user-namespaces . Chromium's guide for Ubuntu 24.04 uses exactly `profile <name> <path>
+flags=(unconfined) { userns, ... }`: https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md . The reload command is the one in
+Ubuntu Server's AppArmor how-to: https://ubuntu.com/server/docs/how-to/security/apparmor/ . **Unverified on the real host**: no agent has loaded this profile or run the probe
+there. Trade-off: the profile lets any account that can run `/usr/bin/bwrap` create user namespaces through it, which is what bwrap is for; it is still narrower than
+turning the restriction off. Ubuntu also points to a stricter upstream AppArmor profile, `bwrap-userns-restrict`
+(https://discourse.ubuntu.com/t/understanding-apparmor-user-namespace-restriction/58007); not tried here.
+
 ### 6. Doctor, then shadow
 
 ```

@@ -254,3 +254,11 @@ def test_bootstrap_creates_the_shared_work_dir_private_to_apx_outside_tmp():
     # the daemon and the updater both lock <state>/work (hostenv.default_work_dir); PrivateTmp would give each its own /tmp
     line = next(ln for ln in code(BOOTSTRAP).splitlines() if ln.startswith("run install -d -m 700 -o apx -g apx "))
     assert "/home/apx/.apx/work" in line.split()
+
+
+def test_bootstrap_installs_bubblewrap_and_preflight_checks_it_because_claude_code_needs_its_sandbox():
+    # 2026-11-15: the first agent runs on the Linux host failed with "bubblewrap is required for subprocess env scrubbing and isolation"
+    block = code(BOOTSTRAP).split("apt-get install", 1)[1].split("put root:root", 1)[0]
+    assert "bubblewrap" in re.findall(r"[a-z0-9][a-z0-9+.-]+", block)
+    pre = code(PREFLIGHT)
+    assert "command -v bwrap" in pre and "bwrap --ro-bind / / --dev /dev --proc /proc /bin/true" in pre

@@ -179,7 +179,7 @@ control's `python3` must import yaml; pawl's own CI, on a python3 without PyYAML
 ### 6. Doctor, then shadow
 
 ```
-sudo -u apx -H sh -c 'set -a; . /home/apx/.apx/apx.env; set +a; PYTHONPATH=/srv/apx/current/src /srv/apx/venv/bin/python -m autopilot.apx.daemon --doctor'
+sudo -u apx -H sh -c 'set -a; . /home/apx/.apx/apx.env; set +a; PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/srv/apx/current/src /srv/apx/venv/bin/python -m autopilot.apx.daemon --doctor'
 sudo bash deploy/linux/egress-probe.sh
 ```
 Both must be clean before anything is enabled. The doctor's `<repo>: host tool <tool>` lines are the per-repo host tools above. (In the container test, the doctor's sandbox checks passed on real Linux, and its only failure was the missing `claude` CLI, which step 5 is for.) The probe tries to break out as each sandbox account (private and metadata addresses, an arbitrary public host, IPv6, SSH to GitHub, DoT, another

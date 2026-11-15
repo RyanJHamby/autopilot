@@ -327,7 +327,7 @@ key, `per_run_usd` above 50) refuses the sprint, and the normal caps apply.
 ## When an agent run fails
 
 A run that ends without a PR (or a CI fix that does not land) gets `needs-human` and one comment on the issue (the PR, for a fix):
-`apx agent run failed: <reason>. Turns: N of M. Estimated cost: $X (API-equivalent). Run id: <id>. Remove `needs-human` to retry.`
+"apx agent run failed: <reason>. Turns: N of M. Estimated cost: $X (API-equivalent). Run id: <id>. Remove needs-human to retry."
 The same reason is kept in the ledger's `note` column and in the executor log line (`run-agent <repo> #<n> failure: <first 200
 chars>`). The reason is apx's own text (guard violations, a runner error), redacted for secrets and cut to 2000 characters. On a repo
 not confirmed private, output after a code fence is dropped and the model's summary is withheld, in the comment and in the ledger alike;

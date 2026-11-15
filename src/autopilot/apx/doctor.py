@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import sqlite3
 import stat
 import sys
 from dataclasses import dataclass
@@ -19,9 +20,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import automerge as kit_automerge  # noqa: E402
 
 from .. import claude_floor  # noqa: E402
-from . import host_tools, hostenv, repo_ci, sandbox, toolchains  # noqa: E402
+from . import caps, host_tools, hostenv, repo_ci, sandbox, spend, toolchains  # noqa: E402
 from .app_auth import TokenCache, make_jwt  # noqa: E402
 from .github import make_api  # noqa: E402
+from .ledger import Ledger  # noqa: E402
 from .planner import ALLOWED_REPOS  # noqa: E402
 
 RANK = {"read": 1, "write": 2, "admin": 3}
@@ -253,6 +255,32 @@ def repo_tool_checks(s, launcher, *, path_for: Callable[[str], str] | None = Non
     return out
 
 
+def spend_ceiling_check(db_path: str) -> Check:
+    """policy's defaults.global_usd_per_day, validated exactly as the planner does (caps.global_usd_per_day). Absent is an advisory, not
+    a failure; invalid fails, because the planner then holds every agent run. The 24h spend is read-only from the ledger (spend.used_24h)."""
+    name = "global spend ceiling (global_usd_per_day)"
+    try:
+        ceiling = caps.global_usd_per_day()
+    except caps.CapError as e:
+        return Check(name, False, f"{e}; the planner holds every agent run and CI fix until this is fixed")
+    if ceiling is None:
+        return Check(
+            name,
+            True,
+            "not set: no daily dollar ceiling across repos (add `global_usd_per_day:` under `defaults:` in policy/portfolio.yaml)",
+        )
+    try:
+        led = Ledger.read_only(db_path)
+        try:
+            used = spend.used_24h(led)
+        finally:
+            led.db.close()
+    except sqlite3.Error as e:
+        return Check(name, True, f"${ceiling:.2f} per rolling 24h; current spend not shown: ledger {db_path} unreadable ({type(e).__name__})")
+    full = "; full: new agent runs are held" if used >= ceiling else ""
+    return Check(name, True, f"${ceiling:.2f} per rolling 24h; ${used:.2f} used in the last 24h (ledger {db_path}){full}")
+
+
 def run_doctor(
     s,
     *,
@@ -301,6 +329,7 @@ def run_doctor(
         from .runas import Launcher as _L
 
         out.extend(agent_checks(s, agent_launcher or _L(s.agent_user)))
+    out.append(spend_ceiling_check(s.db_path))
     out.append(Check("installations within scope", set(s.installations) <= ALLOWED_REPOS, ", ".join(sorted(s.installations))))
     try:
         jwt_api = api_factory(make_jwt(s.app_id, s.key_path))

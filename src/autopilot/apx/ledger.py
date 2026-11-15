@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import sqlite3
+from pathlib import Path
 
 SCHEMA = """
 create table if not exists runs (
@@ -52,6 +53,14 @@ class Ledger:
             if stmt.split()[5] not in have:
                 self.db.execute(stmt)
         self.db.commit()
+
+    @classmethod
+    def read_only(cls, path: str) -> "Ledger":
+        """Open an existing ledger file without creating, migrating or writing it (the doctor's view). sqlite3.Error if it is absent."""
+        led = cls.__new__(cls)
+        led.db = sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)
+        led.db.row_factory = sqlite3.Row
+        return led
 
     def start(
         self,

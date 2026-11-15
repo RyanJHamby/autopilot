@@ -204,7 +204,7 @@ def agent_checks(s, launcher) -> list[Check]:
 
 def _tool_check(repo: str, entry: str, run, data) -> Check:
     tool, minimum = repo_ci.parse_tool(entry)
-    name, hint = f"{repo}: host tool {tool}", data.hint(tool)
+    name, hint = f"{repo}: host tool {tool}", data.hint_for(repo, tool)
     r = run(["/bin/sh", "-c", 'command -v -- "$1"', "sh", tool])
     lines = r.stdout.strip().splitlines() if r.returncode == 0 else []
     found = lines[-1].strip() if lines and lines[-1].strip().startswith("/") else ""
@@ -216,7 +216,7 @@ def _tool_check(repo: str, entry: str, run, data) -> Check:
         if not m or repo_ci._ver(m.group(0)) < repo_ci._ver(minimum):
             have = m.group(0) if m else "of unknown version"
             return Check(name, False, f"{found} is {have}, needs {minimum} or newer; install: {hint}")
-    probe = data.probes.get(tool)
+    probe = data.probe_for(repo, tool)
     if probe is None:
         return Check(name, True, found)
     argv = [found if i == 0 and a == tool else a for i, a in enumerate(probe.argv)]

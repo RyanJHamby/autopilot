@@ -108,6 +108,7 @@ class Settings:
     discovery: bool = True  # APX_DISCOVERY=0 turns it off: only the repos named above (enroll.py)
     discovered: frozenset = frozenset()  # set per pass by enroll.with_found, never from apx.env
     shadow_only: frozenset = frozenset()  # discovered repos that get shadow checks only, whatever APX_SHADOW says
+    live_contexts: dict = field(default_factory=dict)  # discovered repos promoted live: (guard, ci) from their ruleset
 
     def ci_home(self) -> str:
         return hostenv.home_of(self.ci_user)
@@ -216,7 +217,7 @@ class Settings:
         shadow mode is off, posts the names its ruleset requires."""
         if repo in self.shadow_only or (self.shadow and repo not in self.authoritative and repo not in self.cutover):
             return {"guard": "apx / guard", "ci": "apx / build"}
-        guard, ci = REQUIRED_CONTEXTS[repo]
+        guard, ci = REQUIRED_CONTEXTS.get(repo) or self.live_contexts[repo]
         return {"guard": guard, "ci": ci}
 
 
@@ -709,6 +710,16 @@ def spend_lines(ledger: Ledger) -> list[str]:
         return [f"spend meter unavailable: {type(e).__name__}"]
 
 
+def tools_for(s: Settings):
+    """The doctor's host-tool check for one repo, as the sandbox account: returns the failing checks. None without a sandbox account."""
+    if not s.ci_user:
+        return None
+    from .doctor import tool_checks_for
+
+    launcher = Launcher(s.ci_user)
+    return lambda repo, private: [f"{c.name}: {c.detail}" for c in tool_checks_for(s, launcher, repo, private) if not c.ok]
+
+
 def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     blocked = freeze_gate.pass_blocked(s.active_window)  # the work-hours freeze: no polling, no checks, no runs (also checked per action)
     if blocked:
@@ -722,8 +733,10 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     really_live = live and os.environ.get("APX_LIVE") == "1"
     cache = TokenCache(s.app_id, s.key_path, dict(s.installations), api_factory=api_factory)
     found, discovery_log = enroll.discover(s, cache.api_for)
+    cache.installations = {**s.installations, **{r: f.installation for r, f in found.items()}}
+    found, promote_log = enroll.promote(s, found, cache.api_for, tools_for(s))
     s = enroll.with_found(s, found)  # this pass only: discovered repos join the installations (shadow unless promoted)
-    cache.installations = dict(s.installations)
+    discovery_log += promote_log
     api = routed_api(cache)
     ledger = Ledger(s.db_path)
     ledger.abandon_stale(dt.timedelta(hours=2))

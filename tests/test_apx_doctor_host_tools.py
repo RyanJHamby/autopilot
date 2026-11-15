@@ -3,6 +3,7 @@ good enough. On the first Linux host, drillpad-workspace's tests failed for a mi
 without the `gitleaks git` subcommand; nothing had checked either in advance. The declarations and the capability probes are DATA
 (src/autopilot/apx/host_tools.json, plus the "tools" lists in repo_ci.json), never code per repo."""
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -280,3 +281,18 @@ def test_the_real_probe_passes_with_a_real_compiler_when_one_is_here(tmp_path, t
     if not c.ok and tool == "clang++" and "fsanitize" in c.detail:
         pytest.skip(f"this environment's clang++ cannot link UBSan: {c.detail}")
     assert c.ok, c.detail
+
+
+def test_the_doctor_fails_when_the_daemon_account_could_swap_a_toolchain(tmp_path, monkeypatch):
+    """The compromise runbook relies on the doctor to say whether the toolchains can be trusted; /srv/apx is apx-owned by design."""
+    s = make_settings(tmp_path, [STENCIL])
+    b = toolchains.bin_dirs(STENCIL, toolchains.default_root(s.shared_dir))[0]
+    fake(Path(b), "node")
+    apx_owned = str(Path(s.shared_dir))
+    monkeypatch.setattr(
+        toolchains, "_lstat", lambda p: os.stat_result((0o40755, 0, 0, 2, 1001 if str(p) == apx_owned else 0, 0, 0, 0, 0, 0))
+    )
+    c = checks(s, tmp_path / "bin")[f"{STENCIL}: toolchain node@20 is root-owned up to /"]
+    assert not c.ok and apx_owned in c.detail and "APX_TOOLCHAINS_ROOT" in c.detail
+    monkeypatch.setattr(toolchains, "_lstat", lambda p: os.stat_result((0o40755, 0, 0, 2, 0, 0, 0, 0, 0, 0)))
+    assert checks(s, tmp_path / "bin")[f"{STENCIL}: toolchain node@20 is root-owned up to /"].ok

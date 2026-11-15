@@ -34,6 +34,7 @@ def settings(tmp_path, ci_user="", agent_user=""):
             "APX_OAUTH_FILE": str(oauth),
             "APX_KIT_REPO": "o/kit",
             "APX_KIT_REF": "a" * 40,
+            "APX_SHARED": str(tmp_path / "shared"),  # never the real host's /srv/apx (its toolchains are checked now)
             **({"APX_CI_USER": ci_user} if ci_user else {}),
             **({"APX_AGENT_USER": agent_user} if agent_user else {}),
         }

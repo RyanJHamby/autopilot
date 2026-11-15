@@ -7,7 +7,7 @@
 #      move that clone's main and HEAD to it, so the updater clone, which fetches from it, can see the commit
 #   2. fetch it into the updater clone ($SHARED/updater, made if missing) and check it is on main there too
 #   3. build $SHARED/releases/<sha> in a staging dir and rename it into place, or reuse an existing one; either way refuse unless its
-#      HEAD is the sha and its tree is clean. A wrong existing dir is reported, never repaired or removed.
+#      HEAD is the sha and its tree is clean, with no untracked or ignored file in it. A wrong existing dir is reported, never repaired or removed.
 #   4. check the updater out at the sha
 #   5. switch `current` atomically (a temp link, then mv -T) only to a release that exists and verified; record the old target as
 #      `previous` and print the one-command rollback
@@ -38,7 +38,7 @@ if [ "$DRY_RUN" = 1 ]; then
   for s in "git -C $CLONE ${FETCH[*]}" "git -C $CLONE merge-base --is-ancestor $WANT_SHA $MAIN (refuse if not)" \
     "git -C $CLONE checkout -q --detach $WANT_SHA; git -C $CLONE branch -f main $MAIN" \
     "git -C $UPDATER ${FETCH[*]} (clone it from $CLONE if missing); the same merge-base check" \
-    "build $SHARED/$TARGET in a staging dir unless it exists; refuse unless rev-parse HEAD = $WANT_SHA and the tree is clean" \
+    "build $SHARED/$TARGET in a staging dir unless it exists; refuse unless rev-parse HEAD = $WANT_SHA and the tree is clean (no untracked or ignored files either)" \
     "git -C $UPDATER checkout -q --detach $WANT_SHA" \
     "ln -sfn $TARGET $SHARED/.current.new; mv -T $SHARED/.current.new $SHARED/current; record the old target as $SHARED/previous"; do
     say "DRY-RUN (as $APX_USER): $s"
@@ -68,6 +68,13 @@ verify() { # dir
   head="$(as_apx git -C "$1" rev-parse HEAD 2>/dev/null || true)"
   [ "$head" = "$WANT_SHA" ] || die "$1 has HEAD ${head:-unreadable}, not $WANT_SHA; current untouched. Move it aside and run again"
   [ -z "$(as_apx git -C "$1" status --porcelain --untracked-files=no)" ] || die "$1 has local changes; current untouched"
+  # Extra files count too, ignored ones included: a planted .pth, sitecustomize.py, a .py shadowing a stdlib name or a .pyc in
+  # __pycache__/ runs as apx just like tracked code. Nothing is allowlisted: apx.service and bootstrap's renderer run with
+  # PYTHONDONTWRITEBYTECODE=1 and APX_DB must be an absolute path outside releases/, so a release apx has run stays clean; anything else is refused, never cleaned.
+  local extra
+  extra="$(as_apx git -C "$1" status --porcelain --ignored --untracked-files=all 2>&1 || echo "git status failed")"
+  extra="${extra//$'\n'/, }"
+  [ -z "$extra" ] || die "$1 has untracked or ignored files (${extra:0:300}); current untouched. Move it aside (mv $1 $SHARED/${1##*/}.dirty) and run again to rebuild it"
 }
 stage=""
 cleanup() { if [ -n "$stage" ] && [ -d "$stage" ]; then as_apx rm -rf -- "$stage"; fi; as_apx rm -f -- "$SHARED/.current.new" "$SHARED/.previous.new"; }

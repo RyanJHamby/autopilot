@@ -5,7 +5,7 @@ declaration is DATA in repo_toolchains.json (repo -> ["node@20"]). It lives next
 .autopilot/repo.yaml, for three reasons: it is merged by the owner here and never read from a PR; the host preflight can check it
 without the network; and the directory is derived from the entry, never taken from it, so the data cannot name an arbitrary path.
 
-`node@20` means the directory <root>/node-20/bin, where <root> is <shared dir>/toolchains. The owner installs it there (root-owned,
+`node@20` means the directory <root>/node-20/bin, where <root> is APX_TOOLCHAINS_ROOT or <shared dir>/toolchains (default_root). The owner installs it there (root-owned,
 so the sandbox account can read and run it but never write it; docs/apx-linux-host.md, step 5). The sandbox job's PATH gets that
 directory first, for that repo's jobs only (sandbox.run_in_sandbox). The version is a prefix by whole segment: `node@20` accepts
 20.x.y, `node@20.18.1` accepts exactly that.
@@ -58,6 +58,58 @@ def bin_dirs(repo: str, root: Path | str, declared: dict | None = None) -> list[
     """The bin directories to put first on this repo's sandbox PATH; [] when the repo declares none (the default PATH, as before)."""
     d = load_declared() if declared is None else declared
     return [str(Path(root) / dir_name(e) / "bin") for e in d.get(repo, ())]
+
+
+def default_root(shared_dir: Path | str, env=None) -> Path:
+    """APX_TOOLCHAINS_ROOT, else <shared dir>/toolchains. The shared dir belongs to the daemon account (it swaps `current` there), so a
+    toolchains dir inside it can be renamed away by that account; a root-owned path such as /opt/apx-toolchains cannot."""
+    e = os.environ if env is None else env
+    return Path(e.get("APX_TOOLCHAINS_ROOT") or Path(shared_dir) / "toolchains")
+
+
+_lstat = os.lstat  # replaced in tests, which cannot make root-owned dirs
+
+
+def chain_problems(path: Path | str, *, lstat=None) -> list[str]:
+    """Who could swap what this path names: every component from it up to /, as written and as resolved, must be owned by root and not
+    writable by group or other (a root-owned sticky dir such as /tmp is fine: nobody else can rename what is in it). [] when safe."""
+    lstat = lstat or _lstat
+    seen: set[str] = set()
+    out = []
+    for leaf in (Path(os.path.abspath(path)), Path(os.path.realpath(path))):
+        for p in (leaf, *leaf.parents):
+            if str(p) in seen:
+                continue
+            seen.add(str(p))
+            try:
+                st = lstat(p)
+            except OSError:
+                out.append(f"{p} is missing")
+                continue
+            if st.st_uid != 0:
+                out.append(f"{p} is owned by uid {st.st_uid}, not root: that account can rename what is inside it")
+            elif stat.S_ISLNK(st.st_mode):
+                continue  # a link's own mode means nothing; its parent (checked) decides who can replace it
+            elif stat.S_IMODE(st.st_mode) & 0o022 and not (stat.S_ISDIR(st.st_mode) and st.st_mode & stat.S_ISVTX):
+                out.append(f"{p} is group- or world-writable")
+    return out
+
+
+def owner_checks(repos: list[str], root: Path | str, declared: dict | None = None) -> list[tuple[str, bool, str]]:
+    """(name, ok, detail) per declared toolchain whose directory exists (a missing one is the preflight's FAIL and the sandbox's
+    refusal): its binary and every directory up to / must be root's alone (chain_problems)."""
+    d = load_declared() if declared is None else declared
+    out = []
+    for repo in dict.fromkeys(repos):
+        for entry in d.get(repo, ()):
+            b = Path(root) / dir_name(entry) / "bin"
+            if not os.path.lexists(b):
+                continue
+            probs = chain_problems(b / parse_entry(entry)[0])
+            hint = "; install toolchains under a root-owned path and set APX_TOOLCHAINS_ROOT (docs/apx-linux-host.md, step 5)"
+            detail = "; ".join(probs[:3]) + hint if probs else str(b)
+            out.append((f"{repo}: toolchain {entry} is root-owned up to /", not probs, detail))
+    return out
 
 
 def _matches(have: str, want: str) -> bool:

@@ -176,6 +176,57 @@ def test_a_release_dir_that_is_not_a_git_checkout_is_refused(host):
     host.assert_current_resolves()
 
 
+def planted_rollback(host, rel: str, *, ignore: str = "") -> tuple[str, Path]:
+    """Move to a new commit, then plant `rel` in the old (previous) release, as an account that can write the shared tree could."""
+    new = host.push_main("b")
+    assert host.run(new).returncode == 0
+    old = host.shared / "releases" / host.first
+    if ignore:
+        (old / ".git" / "info").mkdir(exist_ok=True)
+        (old / ".git" / "info" / "exclude").write_text(ignore + "\n")
+    (old / rel).parent.mkdir(parents=True, exist_ok=True)
+    (old / rel).write_text("import os  # runs at interpreter start\n")
+    return new, old / rel
+
+
+@pytest.mark.parametrize("rel", ["src/sitecustomize.py", "src/autopilot/json.py", "evil.pth"])
+def test_an_untracked_file_in_an_existing_release_is_refused_and_current_is_untouched(host, rel):
+    new, planted = planted_rollback(host, rel)
+    r = host.run(host.first)
+    assert r.returncode != 0 and "untracked or ignored" in r.stdout and "move it aside" in r.stdout.lower(), r.stdout + r.stderr
+    assert host.current() == f"releases/{new}", "current never moves to a release with extra files"
+    assert planted.exists(), "the dir is reported for a look, never cleaned or deleted"
+    host.assert_current_resolves()
+
+
+def test_an_ignored_file_in_an_existing_release_is_refused_too(host):
+    """__pycache__/, *.egg-info and the like are gitignored, and a planted .pyc or .pth there is just as live as a .py file."""
+    new, planted = planted_rollback(host, "src/__pycache__/os.cpython-312.pyc", ignore="__pycache__/")
+    assert git("status", "--porcelain", "--untracked-files=all", cwd=planted.parents[2]) == "", "invisible without --ignored"
+    r = host.run(host.first)
+    assert r.returncode != 0 and "untracked or ignored" in r.stdout, r.stdout + r.stderr
+    assert host.current() == f"releases/{new}" and planted.exists()
+
+
+def test_a_clean_existing_release_is_reused_in_place(host):
+    new = host.push_main("b")
+    assert host.run(new).returncode == 0
+    old = host.shared / "releases" / host.first
+    inode = old.stat().st_ino
+    r = host.run(host.first)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert host.current() == f"releases/{host.first}" and old.stat().st_ino == inode, "reused, not rebuilt"
+
+
+def test_after_moving_a_dirty_release_aside_the_same_command_rebuilds_it(host):
+    new, planted = planted_rollback(host, "src/sitecustomize.py")
+    old = host.shared / "releases" / host.first
+    old.rename(host.shared / f"{host.first}.dirty")  # what the refusal tells the operator to do (outside releases/)
+    r = host.run(host.first)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert host.current() == f"releases/{host.first}" and not (old / "src" / "sitecustomize.py").exists()
+
+
 def test_a_first_install_with_no_current_and_no_updater_creates_both(host):
     os.unlink(host.shared / "current")
     shutil.rmtree(host.shared / "updater")
@@ -252,3 +303,10 @@ def test_the_switch_is_atomic_and_checked_before_it_happens():
     c = code(RELEASE)
     assert "mv -T" in c and "ln -sfn" in c
     assert c.index("merge-base --is-ancestor") < c.index("rev-parse HEAD") < c.index("mv -T")
+
+
+def test_what_runs_from_a_release_writes_no_bytecode_into_it():
+    """release.sh refuses ignored files too, so __pycache__ written by the daemon or the rule renderer would block every rollback."""
+    unit = (ROOT / "deploy" / "linux" / "systemd" / "apx.service").read_text()
+    assert "Environment=PYTHONDONTWRITEBYTECODE=1" in unit and "WorkingDirectory=/srv/apx/current" in unit
+    assert 'render_env=(env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$SHARED/current/src")' in code(BOOTSTRAP)

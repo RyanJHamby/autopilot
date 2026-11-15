@@ -181,6 +181,8 @@ else
   put root:root 644 /etc/apx/apx.nft <"$nft_tmp"
   put root:root 644 /etc/apx/dnsmasq.conf <"$dns_tmp"
 fi
+# The emergency lockdown helper, root-owned and outside /srv/apx (which apx owns), so a responder never runs code apx could have changed.
+put root:root 755 /usr/local/sbin/apx-lockdown <"$here/lockdown.sh"
 
 # --- services ------------------------------------------------------------------------------------------------------------------------
 if [ "$SKIP_SYSTEMD" != 1 ]; then

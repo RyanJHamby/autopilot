@@ -11,6 +11,12 @@ redirected to a local allowlist resolver, so a name outside the list simply does
 
 Everyone else on the host (the admin, apt, the resolver itself) is untouched: the output hook's policy is accept.
 
+Emergency lockdown: the first output rule drops every packet from a uid in the `lockdown` set, before any lane and before the lanes'
+established-connection accept, so open connections are cut too. The set is rendered empty. The file always ends by including
+LOCKDOWN_DIR/*.nft (root-owned, outside /etc/apx, which the apx account owns); deploy/linux/lockdown.sh writes the set's members there
+and adds them live. So a reload of the file re-applies an active lockdown in the same transaction, and a malformed flag file makes the
+whole load fail, which keeps the old table (or keeps apx from starting). An include pattern that matches nothing is not an error.
+
 This module only renders text. Whether the kernel enforces it is checked by deploy/linux/egress-selftest.sh on a real Linux kernel.
 
     python -m autopilot.apx.nftrules nft --uid apx=1001 --uid apx-ci=1002 --uid apx-agent=1003
@@ -30,6 +36,8 @@ LANE_OF = {"apx": "orch", "apx-ci": "ci", "apx-agent": "exec"}
 LOOPBACK_HIGH_LANES = ("ci", "exec")
 DEFAULT_DNS_PORT = 5354
 SET_TIMEOUT = "1h"
+LOCKDOWN_DIR = "/etc/apx-lockdown"
+_DIR = re.compile(r"(/[A-Za-z0-9_.-]+)+")
 _LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
 
@@ -72,9 +80,17 @@ def _check_uids(uids: dict[str, int]) -> dict[str, int]:
     return uids
 
 
-def render_nft(uids: dict[str, int], dns_port: int = DEFAULT_DNS_PORT) -> str:
+def _lockdown_dir(path: object) -> str:
+    """An absolute directory path that cannot escape the include's quotes or glob into somewhere else."""
+    if not isinstance(path, str) or not _DIR.fullmatch(path) or any(p in (".", "..") for p in path.split("/")):
+        raise ValueError(f"lockdown_dir must be a plain absolute directory path, got {path!r}")
+    return path
+
+
+def render_nft(uids: dict[str, int], dns_port: int = DEFAULT_DNS_PORT, lockdown_dir: str = LOCKDOWN_DIR) -> str:
     uids = _check_uids(uids)
     port = _port(dns_port)
+    lock = _lockdown_dir(lockdown_dir)
     blocked = ", ".join(firewall.BLOCKED_V4)
     lane_names = ("ci", "exec", "orch")
     out = [
@@ -91,7 +107,8 @@ def render_nft(uids: dict[str, int], dns_port: int = DEFAULT_DNS_PORT) -> str:
             "  }",
             "",
         ]
-    out += ["  chain output {", "    type filter hook output priority 0; policy accept;"]
+    out += ["  set lockdown {", "    typeof meta skuid", "  }", ""]
+    out += ["  chain output {", "    type filter hook output priority 0; policy accept;", "    meta skuid @lockdown counter drop"]
     for name in sorted(LANE_OF):
         out.append(f"    meta skuid {uids[name]} jump lane_{LANE_OF[name]}")
     out += ["  }", ""]
@@ -116,6 +133,7 @@ def render_nft(uids: dict[str, int], dns_port: int = DEFAULT_DNS_PORT) -> str:
         f"    meta skuid {{ {members} }} tcp dport 53 redirect to :{port}",
         "  }",
         "}",
+        f'include "{lock}/*.nft"',
     ]
     return "\n".join(out) + "\n"
 
@@ -157,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     n = sub.add_parser("nft", help="print the nftables ruleset")
     n.add_argument("--uid", action="append", type=_uid_arg, default=[], metavar="NAME=UID")
     n.add_argument("--dns-port", type=int, default=DEFAULT_DNS_PORT)
+    n.add_argument("--lockdown-dir", default=LOCKDOWN_DIR)
     d = sub.add_parser("dnsmasq", help="print the allowlist resolver config")
     d.add_argument("--control-host")
     d.add_argument("--upstream", default="9.9.9.9")
@@ -164,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
     try:
         if a.what == "nft":
-            text = render_nft(dict(a.uid), a.dns_port)
+            text = render_nft(dict(a.uid), a.dns_port, a.lockdown_dir)
         else:
             text = render_dnsmasq(a.control_host, a.upstream, a.dns_port)
     except ValueError as e:

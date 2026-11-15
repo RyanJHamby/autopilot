@@ -235,6 +235,30 @@ Do this only after the sandbox account (above) is done. Order:
 
 Agent runs still only start for a repo that is cut over (`APX_CUTOVER` or `APX_SHADOW=0`). Nothing starts until you choose that.
 
+## Spend ceiling across all repos (`global_usd_per_day`, owner sets it)
+
+Three caps already bound agent spend: `defaults.max_budget_usd.<role>` per run, `defaults.runs_per_day.<tier>` per repo, and
+`defaults.global_runs_per_day` across repos. `defaults.global_usd_per_day` adds a **dollar** ceiling for all agent runs in all repos over
+a rolling 24h. Agents cannot edit `policy/`, so you add the line yourself, next to `global_runs_per_day` under `defaults:`:
+
+```yaml
+  global_usd_per_day: 12.00   # PLACEHOLDER, owner to set: dollars per rolling 24h, all repos, all agent runs
+```
+
+12.00 is a placeholder, not a measured number (it is four standard runs at the placeholder 3.00 cap); pick yours from the ledger's
+recorded `cost_usd` once there is a week of it.
+
+- **Not set:** no global dollar ceiling (the behaviour before this key existed). Each pass logs
+  `all repos: spend last 24h $X (global_usd_per_day not set)`.
+- **Set:** each pass logs `all repos: spend last 24h $X of $Y ceiling`. Before any `run-agent` or `fix-ci` action the planner adds the
+  24h `cost_usd` of every run in the ledger, plus the `max_budget_usd` of each run still in flight or finished without a reported
+  cost (an unknown cost is charged at its full cap; a ledger row from before caps were recorded is charged the largest per-role cap),
+  plus the caps of the runs already planned in the same pass. If that plus this run's cap is over the ceiling, no new agent run or
+  fix starts anywhere this pass, and the repo's note says `global spend ceiling: $X of $Y used in 24h`.
+- **Set but invalid** (not a number, negative, NaN/infinity), or the policy file unreadable: fail closed, no agent runs anywhere, and the
+  note says why. `0` is valid and means no agent runs.
+- Checks, branch updates (rebases) and merges are never held by it.
+
 ## Knowing when apx has stopped (owner-only, local)
 
 apx writes `/Users/Shared/apx/status.json` after every pass (world-readable, no secrets). Check it any time, no sudo:

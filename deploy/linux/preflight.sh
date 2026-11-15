@@ -28,6 +28,12 @@ else fail "kernel $(uname -r) is too old for the egress rules (need 5.10 or newe
 
 if [ -d /run/systemd/system ]; then pass "systemd is running"; else fail "systemd is not running; the units need it"; fi
 if command -v nft >/dev/null 2>&1; then pass "nft is installed"; else info "nft not installed yet (bootstrap.sh installs it)"; fi
+# Claude Code will not start without bubblewrap (its sandbox), and Ubuntu 24.04's AppArmor userns restriction can block an installed one.
+# The probe changes nothing; as root it proves little, so it runs only as a normal account (the doctor repeats it as apx-agent).
+if ! command -v bwrap >/dev/null 2>&1; then info "bubblewrap not installed yet (bootstrap.sh installs it; Claude Code needs it)"
+elif [ "$(id -u)" = 0 ]; then info "bwrap found; run this as your admin account to probe it (the doctor probes it as apx-agent)"
+elif err="$(bwrap --ro-bind / / --dev /dev --proc /proc /bin/true 2>&1)"; then pass "bwrap can start a sandbox"
+else fail "bwrap cannot start a sandbox: $(printf '%s' "$err" | head -1). If it says uid map / permission denied, add the AppArmor bwrap profile (docs/apx-linux-host.md, Claude Code sandbox)"; fi
 
 mem_gb=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0) / 1048576))
 if [ "$mem_gb" -ge 15 ]; then pass "about ${mem_gb} GB RAM"

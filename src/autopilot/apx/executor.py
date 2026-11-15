@@ -17,11 +17,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import caps
+from . import caps, journal
 from .checks import post_check, post_pending
 from .github import Api
 from .ledger import Ledger
-from .planner import Action
+from .planner import TRUSTED_PREFIXES, Action
 from .redact import strip_output_blocks
 
 
@@ -303,6 +303,11 @@ def execute(
                 log.append(f"update-branch {a.repo} #{a.ref} ok")
             except Exception as e:  # noqa: BLE001 - a PR that cannot be updated must not stop the loop
                 log.append(f"update-branch {a.repo} #{a.ref} failed: {type(e).__name__}")
+        elif a.kind == journal.KIND:
+            try:
+                log.append(f"{journal.KIND} {a.repo} {journal.resolve(api, a.repo, a.ref, TRUSTED_PREFIXES)}")
+            except Exception as e:  # noqa: BLE001 - a PR that cannot be resolved must not stop the loop; the next pass looks again
+                log.append(f"{journal.KIND} {a.repo} #{a.ref.split(':')[0]} failed: {type(e).__name__}")
         else:
             raise ValueError(f"unknown action {a.kind}")
     return log

@@ -271,6 +271,8 @@ class AgentStub:
             return R(0 if "App key" in self.leak else 1)
         if cmd == "/bin/ls":
             return R(0 if "orchestrator home" in self.leak else 1)
+        if cmd == "/bin/sh" and argv[-1:] == ["bwrap"]:  # the bubblewrap lookup on the agent's PATH (test_apx_doctor_bwrap.py)
+            return R(0, "/usr/bin/bwrap\n")
         if cmd == "/bin/sh":
             return R(1 if self.no_workdir else 0)
         if argv[1:2] == ["-c"]:

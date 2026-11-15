@@ -83,8 +83,8 @@ class Settings:
     oauth_file: str
     kit_repo: str
     kit_ref: str
-    db_path: str = "apx.sqlite"
-    work_dir: Path = field(default_factory=lambda: Path(tempfile.gettempdir()) / "apx-work")
+    db_path: str = field(default_factory=hostenv.default_db_path)  # outside releases/ and /tmp (state must outlive a release)
+    work_dir: Path = field(default_factory=hostenv.default_work_dir)  # the daemon and the updater share it (and its lock)
     shadow: bool = True
     default_branch: str = "main"
     control_url: str = ""
@@ -135,8 +135,8 @@ class Settings:
                 or (f"{hostenv.home_of(e['APX_AGENT_USER'])}/.apx/claude-oauth" if e.get("APX_AGENT_USER") else e["APX_OAUTH_FILE"]),
                 kit_repo=e["APX_KIT_REPO"],
                 kit_ref=e["APX_KIT_REF"],
-                db_path=e.get("APX_DB", "apx.sqlite"),
-                work_dir=Path(e.get("APX_WORK", str(Path(tempfile.gettempdir()) / "apx-work"))),
+                db_path=e.get("APX_DB") or hostenv.default_db_path(e),
+                work_dir=Path(e.get("APX_WORK") or hostenv.default_work_dir(e)),
                 shadow=e.get("APX_SHADOW", "1") != "0",
                 control_url=e.get("APX_CONTROL_URL", ""),
                 webhook_secret_file=e.get("APX_WEBHOOK_SECRET_FILE", ""),
@@ -699,6 +699,10 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
         return [blocked]
     _register_known_secrets(s)
     gitops.prune_work(s.work_dir)
+    if s.db_path == hostenv.default_db_path():  # first pass on the durable default: carry the old per-release ledger over once
+        note = hostenv.adopt_old_ledger(Path(s.db_path), Path.cwd() / "apx.sqlite")
+        if note:
+            print(note)
     really_live = live and os.environ.get("APX_LIVE") == "1"
     cache = TokenCache(s.app_id, s.key_path, s.installations, api_factory=api_factory)
     api = routed_api(cache)

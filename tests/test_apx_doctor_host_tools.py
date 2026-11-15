@@ -157,7 +157,11 @@ def test_the_real_yaml_probe_passes_on_a_python_that_has_it(tmp_path):
     b = tmp_path / "bin"
     for t in ("git", "pawl"):
         fake(b, t)
-    (b / "python3").symlink_to(sys.executable)
+    # A wrapper, not a symlink: a venv interpreter started through a symlink in another directory loses its venv on macOS, so
+    # `import yaml` would fail there even though this interpreter has it.
+    w = b / "python3"
+    w.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+    w.chmod(0o755)
     c = checks(s, b)[f"{CONTROL}: host tool python3"]
     assert c.ok, c.detail
 

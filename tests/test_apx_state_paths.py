@@ -144,8 +144,9 @@ def test_doctor_fails_a_relative_work_dir(tmp_path, linux):
 
 def test_doctor_passes_the_durable_paths_and_shows_them_resolved(tmp_path, linux):
     out = by_name(dr.state_path_checks(_s(tmp_path, "/home/apx/.apx/apx.sqlite", "/home/apx/.apx/work")))
-    assert out[DB].ok and out[DB].detail == "/home/apx/.apx/apx.sqlite"
-    assert out[WORK].ok and out[WORK].detail == "/home/apx/.apx/work"
+    # The doctor reports resolved paths; on macOS /home is itself a symlink, so compare against the same resolution.
+    assert out[DB].ok and out[DB].detail == os.path.realpath("/home/apx/.apx/apx.sqlite")
+    assert out[WORK].ok and out[WORK].detail == os.path.realpath("/home/apx/.apx/work")
 
 
 def test_a_tmp_work_dir_on_the_mac_is_not_a_failure(tmp_path, mac):

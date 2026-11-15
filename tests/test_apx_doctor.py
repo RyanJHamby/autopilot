@@ -415,3 +415,85 @@ def test_without_an_agent_account_the_orchestrators_claude_is_still_required(tmp
         )
     }
     assert not out["tool claude"].ok
+
+
+# --- the global dollar ceiling (policy/portfolio.yaml defaults.global_usd_per_day) ---
+
+SPEND = "global spend ceiling (global_usd_per_day)"
+CAPS = "defaults:\n  max_budget_usd: {standard: 3.00, yolo: 5.00, hard: 8.00, triage: 0.50, reviewer: 1.00}\n"
+
+
+@pytest.fixture
+def policy(tmp_path, monkeypatch):
+    from autopilot.apx import caps
+
+    def write(extra: str = "") -> None:
+        p = tmp_path / "portfolio.yaml"
+        p.write_text(CAPS + extra)
+        monkeypatch.setattr(caps, "PORTFOLIO_FILE", p)
+
+    return write
+
+
+def ledger_settings(tmp_path, **kw):
+    s = settings(tmp_path, ci_user="apx-ci", **kw)
+    s.db_path = str(tmp_path / "apx.sqlite")
+    return s
+
+
+def test_absent_ceiling_is_an_advisory_that_never_fails_the_doctor(tmp_path, policy):
+    policy()
+    out = run(ledger_settings(tmp_path))
+    c = out[SPEND]
+    assert c.ok
+    assert c.detail == (
+        "not set: no daily dollar ceiling across repos (add `global_usd_per_day:` under `defaults:` in policy/portfolio.yaml)"
+    )
+    assert dr.render(list(out.values()))[1]
+
+
+def test_a_valid_ceiling_passes_with_the_value_and_the_ledgers_24h_spend(tmp_path, policy):
+    import datetime as dt
+
+    from autopilot.apx.ledger import Ledger
+
+    policy("  global_usd_per_day: 12\n")
+    s = ledger_settings(tmp_path)
+    led = Ledger(s.db_path)
+    now = dt.datetime.now(dt.timezone.utc)
+    for cost, age in ((1.25, 1), (3.0, 5), (9.0, 30)):  # the 30h-old run is outside the window
+        rid = led.start(REPO, 1, now=now - dt.timedelta(hours=age), budget_usd=3.0)
+        led.finish(rid, "success", cost_usd=cost, now=now - dt.timedelta(hours=age))
+    led.db.close()
+    c = run(s)[SPEND]
+    assert c.ok, c.detail
+    assert "$12.00" in c.detail and "$4.25 used in the last 24h" in c.detail
+
+
+def test_a_valid_ceiling_without_a_ledger_shows_the_value_only_and_creates_nothing(tmp_path, policy):
+    policy("  global_usd_per_day: 12.5\n")
+    s = ledger_settings(tmp_path)
+    c = run(s)[SPEND]
+    assert c.ok, c.detail
+    assert "$12.50" in c.detail and "current spend not shown" in c.detail and s.db_path in c.detail
+    assert not (tmp_path / "apx.sqlite").exists()  # the doctor is read-only: it never creates the ledger
+
+
+@pytest.mark.parametrize("value", ["-1", "twelve", "true", ".nan", ".inf"])
+def test_an_invalid_ceiling_fails_the_doctor_with_the_planners_reason(tmp_path, policy, value):
+    from autopilot.apx import caps
+
+    policy(f"  global_usd_per_day: {value}\n")
+    with pytest.raises(caps.CapError) as planner_reason:
+        caps.global_usd_per_day()
+    out = run(ledger_settings(tmp_path))
+    c = out[SPEND]
+    assert not c.ok
+    assert str(planner_reason.value) in c.detail
+    assert not dr.render(list(out.values()))[1]
+
+
+def test_the_ceiling_is_reported_even_when_app_authentication_fails(tmp_path, policy):
+    policy("  global_usd_per_day: -1\n")
+    out = run(ledger_settings(tmp_path), api_factory=factory(fail_app=True))
+    assert not out["app authentication"].ok and not out[SPEND].ok

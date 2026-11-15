@@ -263,20 +263,30 @@ def repo_tool_checks(s, launcher, *, path_for: Callable[[str], str] | None = Non
     path_for = path_for or (lambda repo: sandbox.job_path(s.ci_home(), toolchains.bin_dirs(repo, toolchain_root)))
     out = [Check(*c) for c in toolchains.owner_checks(sorted(set(s.installations) | set(s.private_ci)), toolchain_root)]
     for repo in sorted(set(s.installations) | set(s.private_ci)):
-        entries = host_tools.declared(repo, s.private_ci, data, specs)
-        if not entries:
-            out.append(Check(f"{repo}: host tools", True, "none declared (src/autopilot/apx/host_tools.json)"))
-            continue
-        env = {"PATH": path_for(repo), "HOME": s.ci_home()}
-
-        def run(argv, stdin=None, env=env):
-            try:
-                return launcher.run(argv, cwd="/", env=env, capture_output=True, text=True, timeout=120, input=stdin)
-            except Exception as e:  # noqa: BLE001 - a broken sudo fails the check, never the doctor
-                return type("R", (), {"returncode": 255, "stdout": "", "stderr": type(e).__name__})()
-
-        out.extend(_tool_check(repo, e, run, data) for e in entries)
+        out.extend(tool_checks_for(s, launcher, repo, repo in s.private_ci, path_for=path_for, data=data, specs=specs))
     return out
+
+
+def tool_checks_for(s, launcher, repo: str, private: bool, *, path_for=None, data=None, specs=None) -> list[Check]:
+    """One repo's declared host tools, checked as the sandbox account (also used to decide a discovered repo's promotion)."""
+    data, specs = data or host_tools.load(), specs if specs is not None else repo_ci.load_specs()
+    path_for = path_for or (lambda r: sandbox.job_path(s.ci_home(), toolchains.bin_dirs(r, toolchains.default_root(s.shared_dir))))
+    entries = host_tools.declared(repo, {repo} if private else set(), data, specs)
+    if not entries:
+        return [Check(f"{repo}: host tools", True, "none declared (src/autopilot/apx/host_tools.json)")]
+    env = {"PATH": path_for(repo), "HOME": s.ci_home()}
+
+    def run(argv, stdin=None, env=env):
+        try:
+            return launcher.run(argv, cwd="/", env=env, capture_output=True, text=True, timeout=120, input=stdin)
+        except Exception as e:  # noqa: BLE001 - a broken sudo fails the check, never the doctor
+            return type("R", (), {"returncode": 255, "stdout": "", "stderr": type(e).__name__})()
+
+    return [_tool_check(repo, e, run, data) for e in entries]
+
+
+def discovered_lines(found: dict) -> list[str]:
+    return [f"{r}: {f.state} ({f.reason})" for r, f in sorted(found.items())]
 
 
 def spend_ceiling_check(db_path: str) -> Check:
@@ -381,7 +391,7 @@ def run_doctor(
         out.append(Check("app authentication", False, f"{type(e).__name__}: key, app id or network"))
         return out
     cache = TokenCache(s.app_id, s.key_path, s.installations, api_factory=api_factory)
-    discovered: dict[str, str] = {}
+    discovered: dict[str, int] = {}
     try:
         held = enroll.held_by_policy() if s.discovery else None
     except enroll.ERRORS:
@@ -394,7 +404,7 @@ def run_doctor(
             if held is not None:  # with discovery on, the owner's unheld repos are discovered (enroll.py), not out of scope
                 for r in sorted(extra):
                     if enroll.why_not(r, s.owner, held) is None:
-                        discovered[r] = "shadow (discovered; checks only)"
+                        discovered[r] = s.installations[repo]
                 extra -= set(discovered)
             out.append(
                 Check(
@@ -406,8 +416,19 @@ def run_doctor(
         except Exception as e:  # noqa: BLE001
             out.append(Check(f"installation for {repo}", False, f"{type(e).__name__}"))
     if s.discovery:
+        found = {r: enroll.Found(r, i, "shadow", "discovered; checks only") for r, i in discovered.items()}
+        cache.installations = {**s.installations, **discovered}
+        try:
+            if s.ci_user:
+                from .runas import Launcher as _CI
+
+                ci = launcher or _CI(s.ci_user)
+                tools = lambda r, p: [f"{c.name}: {c.detail}" for c in tool_checks_for(s, ci, r, p) if not c.ok]  # noqa: E731
+            found, _ = enroll.promote(s, found, cache.api_for, tools if s.ci_user else None)
+        except Exception as e:  # noqa: BLE001 - report, never crash the doctor
+            found = {r: enroll.Found(r, i, "shadow", f"could not check promotion ({type(e).__name__})") for r, i in discovered.items()}
         name = "discovered repos (App installed, not in APX_INSTALLATIONS)"
-        out.append(Check(name, True, "; ".join(f"{r}: {why}" for r, why in sorted(discovered.items())) or "none"))
+        out.append(Check(name, True, "; ".join(discovered_lines(found)) or "none"))
     try:
         ok = s.kit_ref in approved(s.kit_repo)
         out.append(Check("kit sha is approved", ok, s.kit_ref[:7] if ok else f"{s.kit_ref[:7]} is not on the APPROVED list"))

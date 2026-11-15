@@ -14,6 +14,7 @@ APX_DISCOVERY=0 turns discovery off (env repos only). Any error while listing or
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import json
 import re
@@ -22,7 +23,7 @@ from pathlib import Path
 
 import yaml
 
-from . import caps
+from . import caps, cilane, repo_ci
 from .github import GitHubError
 
 TTL = dt.timedelta(hours=1)
@@ -39,8 +40,10 @@ class DiscoveryError(ValueError):
 class Found:
     repo: str
     installation: int
-    state: str  # "shadow" (this module) or "live" (promotion)
+    state: str  # "shadow" or "live" (promote)
     reason: str
+    private_ci: bool = False  # live as a checks-only repo with a repo_ci.json spec (as APX_PRIVATE_CI)
+    contexts: tuple = ()  # live, not private: (guard, ci) as the default branch's ruleset requires them
 
 
 def cache_path(s) -> Path:
@@ -137,9 +140,102 @@ def with_found(s, found: dict[str, Found]):
     if not found:
         return s
     shadow = frozenset(r for r, f in found.items() if f.state == "shadow")
+    live = {r: f for r, f in found.items() if f.state == "live"}
     return replace(
         s,
         installations={**s.installations, **{r: f.installation for r, f in found.items()}},
         discovered=s.discovered | frozenset(found),
         shadow_only=s.shadow_only | shadow,
+        private_ci=s.private_ci | frozenset(r for r, f in live.items() if f.private_ci),
+        cutover=s.cutover | frozenset(r for r, f in live.items() if not f.private_ci),  # the full loop, as APX_CUTOVER
+        live_contexts={**s.live_contexts, **{r: f.contexts for r, f in live.items() if not f.private_ci}},
     )
+
+
+# --- promotion: `apx: live` in the repo's own default-branch .autopilot/repo.yaml ---------------------------------------------------
+
+YAML_PATH = ".autopilot/repo.yaml"
+WEB_FLOW = "web-flow"  # GitHub's committer for web edits; GitHub signs those commits
+
+
+def owner_set_it(api, repo: str, branch: str, owner: str) -> str | None:
+    """None if the latest commit touching repo.yaml on the default branch is Verified and either sits in PRs that the OWNER merged,
+    or (no PR) was authored by the owner and committed by the owner or GitHub's web editor. A forged author alone is not enough:
+    the committer must match too, and an apx lane merge does not count. Else the reason."""
+    commits = api("GET", f"/repos/{repo}/commits?sha={branch}&path={YAML_PATH}&per_page=1")
+    if not commits:
+        return f"no commit touches {YAML_PATH}"
+    c = commits[0]
+    if not ((c.get("commit") or {}).get("verification") or {}).get("verified"):
+        return f"latest {YAML_PATH} commit is not Verified"
+    prs = [p for p in api("GET", f"/repos/{repo}/commits/{c['sha']}/pulls") if p.get("merged_at")]
+    if prs:
+        for p in prs:
+            merger = ((api("GET", f"/repos/{repo}/pulls/{p['number']}").get("merged_by") or {}).get("login") or "").lower()
+            if merger != owner.lower():
+                return f"{YAML_PATH} change merged by someone other than the owner ({merger or 'unknown'})"
+        return None
+    author, committer = ((c.get("author") or {}).get("login") or ""), ((c.get("committer") or {}).get("login") or "")
+    if author.lower() == owner.lower() and committer.lower() in (owner.lower(), WEB_FLOW):
+        return None
+    return f"latest {YAML_PATH} commit is not by the owner (author {author or '?'}, committer {committer or '?'})"
+
+
+def ruleset_contexts(api, repo: str, branch: str) -> tuple[tuple, str | None]:
+    """(guard, ci) from the default branch's required status checks, which must be `guard / guard` and exactly one other."""
+    rules = api("GET", f"/repos/{repo}/rules/branches/{branch}")
+    req = [c["context"] for r in rules if r.get("type") == "required_status_checks" for c in r["parameters"]["required_status_checks"]]
+    others = [c for c in req if c != "guard / guard"]
+    if "guard / guard" not in req or len(others) != 1:
+        return (), f"the {branch} ruleset must require `guard / guard` and exactly one CI check (requires {sorted(req)})"
+    return ("guard / guard", others[0]), None
+
+
+def _decide(api, repo: str, owner: str, tools_for) -> tuple[str | None, bool, tuple]:
+    """(reason it stays shadow or None, private_ci, contexts)."""
+    branch = api("GET", f"/repos/{repo}")["default_branch"]
+    try:
+        f = api("GET", f"/repos/{repo}/contents/{YAML_PATH}?ref={branch}")
+        cfg = yaml.safe_load(base64.b64decode(f["content"])) or {}
+    except GitHubError as e:
+        if e.status == 404:
+            return f"no {YAML_PATH} on {branch}", False, ()
+        raise
+    if not isinstance(cfg, dict) or cfg.get("apx") != "live":
+        return f"{YAML_PATH} does not say `apx: live`", False, ()
+    why = owner_set_it(api, repo, branch, owner)
+    if why:
+        return why, False, ()
+    private, contexts = cfg.get("private_ci") is True, ()
+    if private and repo_ci.spec_for(repo) is None:
+        return "private_ci: true but repo_ci.json has no entry for it", True, ()
+    if not private:
+        if not cilane.parse_ci_steps(cfg):
+            return f"no `ci:` list in {YAML_PATH}", False, ()
+        contexts, why = ruleset_contexts(api, repo, branch)
+        if why:
+            return why, False, ()
+    if tools_for is None:
+        return "host tools cannot be checked without a sandbox account (APX_CI_USER)", private, ()
+    problems = tools_for(repo, private)
+    if problems:
+        return "host tools: " + "; ".join(problems), private, ()
+    return None, private, contexts
+
+
+def promote(s, found: dict[str, Found], api_for, tools_for) -> tuple[dict[str, Found], list[str]]:
+    """Each discovered repo, live if its repo.yaml earns it (see _decide), else shadow with the reason. tools_for(repo, private) returns
+    the failing host-tool checks (the doctor's, as the sandbox account), or is None when there is no sandbox account. Read-only."""
+    out, log = {}, []
+    for r, f in found.items():
+        try:
+            why, private, contexts = _decide(api_for(r), r, s.owner if s else "RyanJHamby", tools_for)
+        except ERRORS as e:
+            why, private, contexts = f"could not read its settings ({type(e).__name__})", False, ()
+        if why is None:
+            out[r] = replace(f, state="live", reason="apx: live set by the owner", private_ci=private, contexts=contexts)
+        else:
+            out[r] = replace(f, state="shadow", reason=why)
+        if out[r].state == "live" or why != f"{YAML_PATH} does not say `apx: live`":
+            log.append(f"enroll: {r} {out[r].state} ({out[r].reason})")
+    return out, log

@@ -22,7 +22,7 @@ from .checks import post_check, post_pending
 from .github import Api
 from .ledger import Ledger
 from .planner import TRUSTED_PREFIXES, Action
-from .redact import strip_output_blocks
+from .redact import WITHHELD, redact, strip_output_blocks
 
 
 @dataclass
@@ -145,35 +145,98 @@ def _flag_needs_human(api: Api, repo: str, issue: int) -> None:
         pass
 
 
-def run_agent(api: Api, ledger: Ledger, deps: Deps, action: Action, *, hard: bool = False) -> str:
+SUMMARY_TAIL = 600  # how much of the model's own summary a private repo's note keeps
+MODEL_WITHHELD = "(model output withheld on public repositories)"
+
+
+def failure_reason(r: "IssueResult | None", *, public: bool, crash: BaseException | None = None) -> str:
+    """Why a run ended without a PR, safe to store and to post. r.problems is apx's own text (guard violations, a runner error); it is
+    redacted, and on a public repo anything after a code fence is dropped (as for check summaries). The model's summary is model output:
+    a private repo keeps its redacted tail, a public repo never stores or posts it."""
+    if crash is not None:
+        return f"apx crashed during the run ({type(crash).__name__})"
+    if r is None:
+        return "no result"
+    why = redact(r.problems or "no reason given")
+    if public:
+        why = strip_output_blocks(why)
+        why = why.replace(WITHHELD, "(raw output withheld on public repositories)")
+    parts = [" ".join(why.split())]
+    if r.summary:
+        parts.append(MODEL_WITHHELD if public else "Model summary (tail): " + " ".join(redact(r.summary[-SUMMARY_TAIL:]).split()))
+    return redact(" ".join(parts))
+
+
+def _detail_turns(detail: str) -> int:
+    """The run's turn cap from the action detail, as daemon.parse_detail reads it (default 25)."""
+    for p in detail.split():
+        if p.startswith("turns="):
+            try:
+                return int(p.split("=", 1)[1])
+            except ValueError:
+                break
+    return 25
+
+
+def _post_failure(api: Api, repo: str, number: int, what: str, reason: str, *, turns, max_turns: int, cost_usd, run_id: int) -> None:
+    """One comment on the issue (or PR) when a run ends without a PR or fix. Best effort, like the label: never breaks the pass."""
+    cost = f"${cost_usd:.2f} (API-equivalent)" if isinstance(cost_usd, (int, float)) else "not reported"
+    body = (
+        f"apx {what} failed: {reason.rstrip('.')}. Turns: {turns if turns is not None else 'unknown'} of {max_turns}. "
+        f"Estimated cost: {cost}. Run id: {run_id}. Remove `needs-human` to retry."
+    )
+    try:
+        api("POST", f"/repos/{repo}/issues/{number}/comments", {"body": body})
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _report(deps: Deps, repo, issue, model, turns, conclusion, started) -> None:
+    if deps.report is not None:
+        try:
+            deps.report(repo, issue, model, turns, conclusion, started)
+        except Exception:  # noqa: BLE001 - reporting must never mask the run's own outcome
+            pass
+
+
+def run_agent(api: Api, ledger: Ledger, deps: Deps, action: Action, *, hard: bool = False, public: bool = True) -> str:
     """Returns 'success' or 'failure'. The ledger row is closed on every path, including a crash (which re-raises)."""
+    return run_agent_outcome(api, ledger, deps, action, hard=hard, public=public)[0]
+
+
+def run_agent_outcome(
+    api: Api, ledger: Ledger, deps: Deps, action: Action, *, hard: bool = False, public: bool = True
+) -> tuple[str, str]:
+    """(conclusion, reason); reason is '' on success. A run that ends without a PR is labelled needs-human, its reason goes into the
+    ledger note and one issue comment. Repos not known to be private are public: the model's output is withheld from both."""
     repo, issue = action.repo, int(action.ref)
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     run_id = ledger.start(repo, issue, hard=hard, budget_usd=caps.detail_budget(action.detail))
-    conclusion, model, turns, model_id, cost_usd = "failure", None, None, None, None
+    conclusion, model, turns, model_id, cost_usd, reason = "failure", None, None, None, None, ""
     try:
         r = deps.work_on_issue(repo, issue, run_id)
         model, turns, model_id, cost_usd = r.model, r.turns, r.model_id, r.cost_usd
         if r.ok and r.pr_number:
             conclusion = "success"
         else:
-            _flag_needs_human(api, repo, issue)  # blocked or rejected: the label the gate already understands
-    except Exception:
-        _flag_needs_human(api, repo, issue)
+            reason = failure_reason(r, public=public)
+    except Exception as e:
+        reason = failure_reason(None, public=public, crash=e)
         raise
     finally:
-        ledger.finish(run_id, conclusion, model=model, turns=turns, model_id=model_id, cost_usd=cost_usd)
-        if deps.report is not None:
-            try:
-                deps.report(repo, issue, model, turns, conclusion, started)
-            except Exception:  # noqa: BLE001 - reporting must never mask the run's own outcome
-                pass
-    return conclusion
+        ledger.finish(run_id, conclusion, model=model, turns=turns, model_id=model_id, cost_usd=cost_usd, note=reason or None)
+        if conclusion != "success":
+            _flag_needs_human(api, repo, issue)  # blocked or rejected: the label the gate already understands
+            _post_failure(api, repo, issue, "agent run", reason, turns=turns, max_turns=_detail_turns(action.detail),
+                          cost_usd=cost_usd, run_id=run_id)
+        _report(deps, repo, issue, model, turns, conclusion, started)
+    return conclusion, reason
 
 
-def run_fix(api: Api, ledger: Ledger, deps: Deps, action: Action) -> str:
+def run_fix(api: Api, ledger: Ledger, deps: Deps, action: Action, *, public: bool = True) -> str:
     """One red-CI retry of an open agent PR. Returns 'success', 'failure' or 'skipped: why'. The PR must still be open, still be at the
-    head the planner saw, and still be an agent/* branch; otherwise nothing runs. The ledger row is closed on every path."""
+    head the planner saw, and still be an agent/* branch; otherwise nothing runs. The ledger row is closed on every path. A failure is
+    recorded like run_agent's: ledger note, needs-human on the PR and one comment there."""
     repo = action.repo
     pr_number, sha = action.ref.split(":", 1)
     pr = api("GET", f"/repos/{repo}/pulls/{int(pr_number)}")
@@ -186,28 +249,26 @@ def run_fix(api: Api, ledger: Ledger, deps: Deps, action: Action) -> str:
     issue = int(m.group(1))
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     run_id = ledger.start(repo, issue, kind="fix", ref=sha, budget_usd=caps.detail_budget(action.detail))
-    conclusion, model, turns, model_id, cost_usd = "failure", None, None, None, None
-    why = ""
+    conclusion, model, turns, model_id, cost_usd, reason = "failure", None, None, None, None, ""
     try:
         r = deps.fix_ci(repo, issue, run_id, int(pr_number), sha, action.detail)
         model, turns, model_id, cost_usd = r.model, r.turns, r.model_id, r.cost_usd
         if r.ok:
             conclusion = "success"
         else:
-            why = " ".join((r.problems or "no reason given").split())[:160]
-            # the PR is an issue too: the label stops further retries and tells the owner
-            _flag_needs_human(api, repo, int(pr_number))
-    except Exception:
-        _flag_needs_human(api, repo, int(pr_number))
+            reason = failure_reason(r, public=public)
+    except Exception as e:
+        reason = failure_reason(None, public=public, crash=e)
         raise
     finally:
-        ledger.finish(run_id, conclusion, model=model, turns=turns, model_id=model_id, cost_usd=cost_usd)
-        if deps.report is not None:
-            try:
-                deps.report(repo, issue, model, turns, conclusion, started)
-            except Exception:  # noqa: BLE001 - reporting must never mask the run's own outcome
-                pass
-    return f"{conclusion}: {why}" if why else conclusion
+        ledger.finish(run_id, conclusion, model=model, turns=turns, model_id=model_id, cost_usd=cost_usd, note=reason or None)
+        if conclusion != "success":
+            # the PR is an issue too: the label stops further retries and tells the owner
+            _flag_needs_human(api, repo, int(pr_number))
+            _post_failure(api, repo, int(pr_number), "CI fix run", reason, turns=turns, max_turns=_detail_turns(action.detail),
+                          cost_usd=cost_usd, run_id=run_id)
+        _report(deps, repo, issue, model, turns, conclusion, started)
+    return f"{conclusion}: {reason[:160]}" if reason else conclusion
 
 
 def execute(
@@ -279,12 +340,14 @@ def execute(
                 log.append(f"check-main {a.repo} {a.ref[:7]} crashed: {type(e).__name__}")
         elif a.kind == "run-agent":
             try:
-                log.append(f"run-agent {a.repo} #{a.ref} {run_agent(api, ledger, deps, a)}")
+                public = a.repo not in (private_repos or frozenset())
+                concl, why = run_agent_outcome(api, ledger, deps, a, public=public)
+                log.append(f"run-agent {a.repo} #{a.ref} {concl}: {why[:200]}" if why else f"run-agent {a.repo} #{a.ref} {concl}")
             except Exception as e:  # noqa: BLE001 - one bad issue must not stop the loop
                 log.append(f"run-agent {a.repo} #{a.ref} crashed: {type(e).__name__}")
         elif a.kind == "fix-ci":
             try:
-                log.append(f"fix-ci {a.repo} {a.ref[:12]} {run_fix(api, ledger, deps, a)}")
+                log.append(f"fix-ci {a.repo} {a.ref[:12]} {run_fix(api, ledger, deps, a, public=a.repo not in (private_repos or frozenset()))}")
             except Exception as e:  # noqa: BLE001 - one bad PR must not stop the loop
                 log.append(f"fix-ci {a.repo} {a.ref[:12]} crashed: {type(e).__name__}: {' '.join(str(e).split())[:160]}")
         elif a.kind == "automerge":

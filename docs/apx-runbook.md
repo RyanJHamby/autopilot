@@ -324,6 +324,16 @@ A repo can ask for less in its default-branch `.autopilot/repo.yaml`, e.g. `spri
 policy's is ignored (the note names it). An invalid value in either file (not a positive number, `runs` not a whole number, an unknown
 key, `per_run_usd` above 50) refuses the sprint, and the normal caps apply.
 
+## When an agent run fails
+
+A run that ends without a PR (or a CI fix that does not land) gets `needs-human` and one comment on the issue (the PR, for a fix):
+"apx agent run failed: <reason>. Turns: N of M. Estimated cost: $X (API-equivalent). Run id: <id>. Remove needs-human to retry."
+The same reason is kept in the ledger's `note` column and in the executor log line (`run-agent <repo> #<n> failure: <first 200
+chars>`). The reason is apx's own text (guard violations, a runner error), redacted for secrets and cut to 2000 characters. On a repo
+not confirmed private, output after a code fence is dropped and the model's summary is withheld, in the comment and in the ledger alike;
+a private repo also keeps the redacted tail of the model's summary. Successful runs post nothing (the PR is the record). To read the
+last runs with their reasons on the host: `python -m autopilot.apx.daemon --runs 5` (read-only).
+
 ## Knowing when apx has stopped (owner-only, local)
 
 apx writes `/Users/Shared/apx/status.json` after every pass (world-readable, no secrets). Check it any time, no sudo:

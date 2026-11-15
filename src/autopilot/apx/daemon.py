@@ -39,6 +39,7 @@ from . import (  # noqa: E402
     repo_ci,
     report,
     spend,
+    sprint,
     status,
     toolchains,
     window,
@@ -719,9 +720,14 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     ledger.abandon_stale(dt.timedelta(hours=2))
     repos = plan_repos(s)
     planned = plan(api, ledger, repos, s.owner)
+    sprint_log = []
+    try:
+        sprint.record(ledger, planned, dt.datetime.now(dt.timezone.utc))  # active sprints for the doctor; ended ones with their summary
+    except Exception as e:  # noqa: BLE001 - the notes already carry each sprint's state; recording must not break a pass
+        sprint_log.append(f"sprint ledger record failed: {type(e).__name__}")
     actions: list[Action] = [a for r in planned.values() for a in r["actions"]]
     log = [f"{repo}: {len(r['actions'])} action(s) - {r['note']}" for repo, r in planned.items()]
-    log += usage_lines(ledger, s.installations) + spend_lines(ledger)
+    log += usage_lines(ledger, s.installations) + spend_lines(ledger) + sprint_log
     if not really_live:
         return log + execute(api, ledger, None, actions, contexts={}, head_refs={}, dry_run=True)  # type: ignore[arg-type]
     details = {f"{a.repo}#{a.ref}": a.detail for a in actions if a.kind == "run-agent"}

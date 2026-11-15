@@ -7,6 +7,7 @@ mis-click in the GitHub UI cannot silently widen what a leaked key could do.
 
 from __future__ import annotations
 
+import datetime as dt
 import os
 import re
 import shutil
@@ -21,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import automerge as kit_automerge  # noqa: E402
 
 from .. import claude_floor  # noqa: E402
-from . import caps, host_tools, hostenv, repo_ci, sandbox, spend, toolchains  # noqa: E402
+from . import caps, host_tools, hostenv, repo_ci, sandbox, spend, sprint, toolchains  # noqa: E402
 from .app_auth import TokenCache, make_jwt  # noqa: E402
 from .github import make_api  # noqa: E402
 from .ledger import Ledger  # noqa: E402
@@ -304,6 +305,21 @@ def spend_ceiling_check(db_path: str) -> Check:
     return Check(name, True, f"${ceiling:.2f} per rolling 24h; ${used:.2f} used in the last 24h (ledger {db_path}){full}")
 
 
+def sprint_check(db_path: str, now=None) -> Check:
+    """Active sprints (sprint.py) with the runs, dollars and time each has left, read-only from the ledger. Advisory: never fails."""
+    name = "sprints (yolo repos, owner `sprint` label)"
+    now = now or dt.datetime.now(dt.timezone.utc)
+    try:
+        led = Ledger.read_only(db_path)
+        try:
+            lines = sprint.doctor_lines(led, now)
+        finally:
+            led.db.close()
+    except sqlite3.Error as e:
+        return Check(name, True, f"none active (ledger {db_path} unreadable or has no sprints yet: {type(e).__name__})")
+    return Check(name, True, "; ".join(lines) if lines else "none active")
+
+
 def run_doctor(
     s,
     *,
@@ -354,6 +370,7 @@ def run_doctor(
 
         out.extend(agent_checks(s, agent_launcher or _L(s.agent_user)))
     out.append(spend_ceiling_check(s.db_path))
+    out.append(sprint_check(s.db_path))
     out.append(Check("installations within scope", set(s.installations) <= ALLOWED_REPOS, ", ".join(sorted(s.installations))))
     try:
         jwt_api = api_factory(make_jwt(s.app_id, s.key_path))
@@ -396,7 +413,3 @@ def render(checks: list[Check]) -> tuple[str, bool]:
         else f"doctor: {sum(not c.ok for c in checks)} check(s) failed; fix before any --live run"
     )
     return "\n".join(lines), ok
-
-
-def sprint_check(db_path: str, now=None) -> Check:  # stub: tests first
-    raise NotImplementedError

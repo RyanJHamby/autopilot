@@ -257,6 +257,23 @@ If the new server misbehaves: `sudo DO=1 bash deploy/linux/retire.sh` stops its 
   version of [apx-compromise.md](apx-compromise.md) (stop, contain egress, revoke, preserve evidence, investigate, rebuild), with a rehearsal section for a
   dry run on this host.
 
+## Adding a repo
+
+Nothing changes on the server. Install the GitHub App on the repo (GitHub > Settings > Applications > the apx App > Configure >
+add the repository). Within an hour (the listing is cached up to 1h, in `apx-discovered.json` next to the ledger) apx discovers it and
+posts **shadow** checks on its trusted PRs: `apx / guard` and `apx / build`, which can neither block nor satisfy a merge. No agent runs,
+merges or branch updates, even with `APX_SHADOW=0` (src/autopilot/apx/enroll.py).
+
+- Discovered means: listed by an installation apx.env already names, owned by `APX_OWNER`, not archived, and not held back by
+  policy/portfolio.yaml (`excluded:`, or a `repos:` entry with `mode: dormant` or `enabled: false`). Anything else stays out of scope
+  and still fails the doctor's installation check.
+- `apx / build` runs the repo's default-branch `.autopilot/repo.yaml` `ci:` list; a repo without one gets a failed `apx / build` that
+  says so.
+- `--doctor` lists each discovered repo and its state. Repos named in `APX_INSTALLATIONS`, `APX_CUTOVER` or `APX_PRIVATE_CI` are
+  never "discovered": the env entry wins.
+- Off switch: `APX_DISCOVERY=0` in apx.env (env repos only). A listing that fails, or that has more than 100 repositories, means env
+  repos only for that pass.
+
 ## Emergency lockdown
 
 One command cuts all outbound traffic for `apx`, `apx-ci`, `apx-agent` and `apx-dns` (IPv4 and IPv6, loopback included, open connections

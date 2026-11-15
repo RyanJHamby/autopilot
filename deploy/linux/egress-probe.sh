@@ -9,6 +9,8 @@
 # Loopback: the probe opens its own throwaway listeners (as root, on 127.0.0.1 and ::1; they accept and close, they serve nothing) and removes them on
 # exit. ci and agent must reach the unprivileged IPv4 port, the orchestrator account must not, nobody may reach the privileged port or ::1.
 # Each loopback refusal is paired with a control: root must be able to connect first, otherwise the case is reported BROKEN, not ok.
+# During an emergency lockdown (apx-lockdown on) run it with --expect-lockdown: then every path, the allowed ones included, must fail for
+# the four accounts (apx-dns too), and root must still reach github on 443, so "all refused" cannot just mean the host is offline.
 # The helpers below are called indirectly, through must_fail and must_pass.
 # shellcheck disable=SC2329
 set -u
@@ -16,6 +18,12 @@ set -u
 problems=0
 [ "$(id -u)" = 0 ] || { echo "run as root (it switches to each sandbox account itself)"; exit 2; }
 if ! { command -v nft >/dev/null 2>&1 && nft list table inet apx >/dev/null 2>&1; }; then echo "table inet apx is not loaded: run bootstrap.sh and start apx-nft.service first"; exit 2; fi
+lockdown=0
+case "${1:-}" in --expect-lockdown) lockdown=1 ;; "") ;; *) echo "usage: egress-probe.sh [--expect-lockdown]"; exit 2 ;; esac
+locked=0
+nft list set inet apx lockdown 2>/dev/null | grep -q 'elements = ' && locked=1
+if [ "$lockdown" = 1 ] && [ "$locked" = 0 ]; then echo "--expect-lockdown, but the lockdown set is empty (or missing): run apx-lockdown on first"; exit 2; fi
+if [ "$lockdown" = 0 ] && [ "$locked" = 1 ]; then echo "the lockdown is on: run with --expect-lockdown, or apx-lockdown off first"; exit 2; fi
 
 work="$(mktemp -d)"
 lpid=""
@@ -62,7 +70,8 @@ tcp() { as "$WHO" nc -z -w 4 "$@" >/dev/null 2>&1; }
 # shellcheck disable=SC2317  # shellcheck 0.9 (Ubuntu 24.04) wrongly calls helpers defined after an early exit unreachable; 0.10+ does not
 tcp6() { as "$WHO" nc -6 -z -w 4 "$@" >/dev/null 2>&1; }
 must_fail() { local name="$1"; shift; if "$@"; then echo "LEAK    $WHO: $name"; problems=$((problems + 1)); else echo "ok      $WHO: $name"; fi; }
-must_pass() { local name="$1"; shift; if "$@"; then echo "ok      $WHO: $name"; else echo "BROKEN  $WHO: $name (the allowed path is down, so the probe proves nothing)"; problems=$((problems + 1)); fi; }
+# under --expect-lockdown an allowed path is a must-fail too
+must_pass() { local name="$1"; shift; if [ "$lockdown" = 1 ]; then must_fail "$name [lockdown]" "$@"; return; fi; if "$@"; then echo "ok      $WHO: $name"; else echo "BROKEN  $WHO: $name (the allowed path is down, so the probe proves nothing)"; problems=$((problems + 1)); fi; }
 # control_ok HOST PORT [6]: root (no restrictions) must reach the listener, or a refusal for a sandbox account proves nothing
 control_ok() {
   if nc ${3:+-6} -z -w 4 "$1" "$2" >/dev/null 2>&1; then return 0; fi
@@ -88,7 +97,9 @@ if struct.unpack("!H", r[6:8])[0]:
 dns_works() { [ -n "$(ask "$1" "$2")" ]; }
 
 gw="$(ip -4 route show default 2>/dev/null | awk '{print $3; exit}')"
-for WHO in apx-ci apx-agent apx; do
+extra=""
+[ "$lockdown" = 0 ] || extra=apx-dns
+for WHO in apx-ci apx-agent apx $extra; do
   echo "--- $WHO   gateway: ${gw:-unknown}"
   for ip in ${gw:-} 10.0.0.1 192.168.0.1 192.168.1.1 172.16.0.1 100.64.0.1 169.254.169.254 127.0.0.53; do
     must_fail "private/metadata $ip:80" tcp "$ip" 80
@@ -98,7 +109,7 @@ for WHO in apx-ci apx-agent apx; do
   if [ "$WHO" = apx ]; then
     control_ok 127.0.0.1 "$lo_high" && must_fail "loopback tcp to an unprivileged port ($lo_high): the orchestrator lane has no such rule" tcp 127.0.0.1 "$lo_high"
   else
-    must_pass "loopback tcp to an unprivileged port ($lo_high): ci and agent need it to run test suites" tcp 127.0.0.1 "$lo_high"
+    control_ok 127.0.0.1 "$lo_high" && must_pass "loopback tcp to an unprivileged port ($lo_high): ci and agent need it to run test suites" tcp 127.0.0.1 "$lo_high"
   fi
   if [ "${lo_v6:-0}" != 0 ]; then
     control_ok ::1 "$lo_v6" 6 && must_fail "loopback tcp to ::1 on an unprivileged port ($lo_v6): IPv6 stays refused" tcp6 ::1 "$lo_v6"
@@ -114,8 +125,14 @@ for WHO in apx-ci apx-agent apx; do
   must_pass "an allowlisted name resolves through the redirected resolver" dns_works 9.9.9.9 github.com
   must_pass "github over 443 still works" tcp api.github.com 443
 done
+if [ "$lockdown" = 1 ]; then
+  WHO=root
+  echo "--- root (control: the lockdown must not touch anyone else)"
+  if nc -z -w 4 api.github.com 443 >/dev/null 2>&1; then echo "ok      root: github over 443"; else echo "BROKEN  root: github over 443 failed, so the refusals above may only mean the host is offline"; problems=$((problems + 1)); fi
+fi
 
 echo
 echo "known gaps: names the allowlist permits are reachable on 443 by design; their addresses are shared with other customers of the same hosts"
-if [ "$problems" = 0 ]; then echo "sealed: every must-fail failed, every allowed path worked"; else echo "$problems problem(s)"; fi
+if [ "$problems" = 0 ] && [ "$lockdown" = 1 ]; then echo "locked down: every attempt by the four apx accounts failed, and root still reaches github"
+elif [ "$problems" = 0 ]; then echo "sealed: every must-fail failed, every allowed path worked"; else echo "$problems problem(s)"; fi
 exit "$problems"

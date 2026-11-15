@@ -253,8 +253,44 @@ If the new server misbehaves: `sudo DO=1 bash deploy/linux/retire.sh` stops its 
   bootstrap without `APX_SHA` (it re-renders the rules and checks the updater out at the same commit), and the probe. On the first host
   (2026-11-14) skipping a fetch stopped bootstrap with `reference is not a tree`, and pointing `current` at a release directory before it
   existed left the host broken until the link was put back.
-- Compromise: follow [apx-compromise.md](apx-compromise.md). Where it says `launchctl bootout`, use `systemctl disable --now apx.timer apx-updater.timer`; where it names `/Users/apx/...`,
+- Compromise: contain first with the [emergency lockdown](#emergency-lockdown), then follow [apx-compromise.md](apx-compromise.md). Where it says `launchctl bootout`, use `systemctl disable --now apx.timer apx-updater.timer`; where it names `/Users/apx/...`,
   the paths here are `/home/apx/...`, `/home/apx-agent/...` and `/srv/apx`. It has not been rewritten for Linux yet, and its steps have never been drilled.
+
+## Emergency lockdown
+
+One command cuts all outbound traffic for `apx`, `apx-ci`, `apx-agent` and `apx-dns` (IPv4 and IPv6, loopback included, open connections
+too) without removing the firewall, and one command undoes it. Bootstrap installs the helper root-owned as `/usr/local/sbin/apx-lockdown`;
+run that copy, not one under `/srv/apx`, which the apx account can write.
+
+```
+sudo apx-lockdown on
+sudo systemctl disable --now apx.timer apx-updater.timer
+sudo apx-lockdown status
+sudo bash deploy/linux/egress-probe.sh --expect-lockdown
+```
+
+and to undo it:
+
+```
+sudo apx-lockdown off
+sudo bash deploy/linux/egress-probe.sh
+```
+
+How it works: the first rule of the `output` hook in `table inet apx` drops every packet from a uid in the `lockdown` set, before any lane.
+`on` writes those uids to `/etc/apx-lockdown/lockdown.nft` (root-only) and adds them to the live set; `off` removes the file and empties
+the set. The helper never deletes, flushes or reloads the table. The rules file always includes `/etc/apx-lockdown/*.nft`, so
+`systemctl reload apx-nft`, a restart or a reboot keeps an active lockdown; a broken flag file makes the load fail, which keeps the old
+table and keeps apx from starting. Lockdown is network only: it does not stop apx, which is why the timers are disabled next to it.
+
+It cannot lock you out: the rules only match locally generated packets from those four uids. Inbound SSH, your account, root and apt are
+not matched, and the helper refuses uid 0 and the account that ran `sudo`.
+
+`systemctl stop apx-nft` now has the same effect as a live lockdown (no flag): it keeps the table and puts the four accounts in the set,
+instead of deleting the table and leaving their egress open. `start` reloads the file and empties the set unless the flag exists. To
+remove the rules on purpose, run `sudo nft delete table inet apx` yourself.
+
+If the loaded rules predate the lockdown (`apx-lockdown status` says the set is not loaded), re-run bootstrap first. The probe with
+`--expect-lockdown` refuses to run while the set is empty, and the plain probe refuses while it is not.
 
 ## Not built yet
 

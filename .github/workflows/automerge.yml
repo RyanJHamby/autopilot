@@ -20,7 +20,7 @@ jobs:
       pull-requests: write
       issues: write
       checks: read
-    uses: RyanJHamby/autopilot-kit/.github/workflows/automerge.yml@590d25455099df04dfc7011399c4646e5c408e79
+    uses: RyanJHamby/autopilot-kit/.github/workflows/automerge.yml@c5f0fd0cf391dac3005af06b18035311cb2f1339
     with:
       kit_repo: RyanJHamby/autopilot-kit
-      kit_ref: 590d25455099df04dfc7011399c4646e5c408e79
+      kit_ref: c5f0fd0cf391dac3005af06b18035311cb2f1339

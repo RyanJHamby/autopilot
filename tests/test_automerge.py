@@ -37,6 +37,31 @@ def test_not_tier0_or_not_enabled_or_demoted():
     assert not ok and "demoted" in why
 
 
+T1 = {"tier": 1, "class": "", "reasons": ["ordinary code change"]}
+T2 = {"tier": 2, "class": "", "reasons": ["protected path: .github/workflows/x.yml"]}
+
+
+def test_yolo_merges_green_tier1_agent_prs_only():
+    assert automerge.decide(PR, GREEN, T1, [], {}, "yolo") == (True, "yolo-code")
+    assert not automerge.decide(PR, GREEN, T1, [], {}, "standard")[0]
+    assert not automerge.decide(PR, GREEN, T1, [], {}, "dormant")[0]
+    assert not automerge.decide(PR, GREEN, T2, [], {}, "yolo")[0]  # protected paths are always the owner's
+    assert not automerge.decide(PR, [{"name": "build", "conclusion": "failure"}], T1, [], {}, "yolo")[0]
+    dep = {**PR, "headRefName": "dependabot/npm/x", "author": {"login": "app/dependabot"}}
+    assert not automerge.decide(dep, GREEN, T1, [], {}, "yolo")[0]  # yolo widens agent work, not dependency bumps
+    ok, why = automerge.decide(PR, GREEN, T1, [], {"yolo-code": "reverted"}, "yolo")
+    assert not ok and "demoted" in why
+
+
+def test_repo_mode_reads_base_branch_file_and_fails_to_standard(tmp_path):
+    f = tmp_path / "repo.yaml"
+    f.write_text("tier: A\nmode: yolo              # comment\n")
+    assert automerge.repo_mode(str(f)) == "yolo"
+    f.write_text("mode: [\n")
+    assert automerge.repo_mode(str(f)) == "standard"
+    assert automerge.repo_mode(str(tmp_path / "missing.yaml")) == "standard"
+
+
 def test_draft_or_closed():
     assert not d(pr={**PR, "isDraft": True})[0]
     assert not d(pr={**PR, "state": "MERGED"})[0]
@@ -200,3 +225,33 @@ def test_main_skips_when_a_check_is_red(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(automerge, "fetch_approved", lambda k: [])
     automerge.main(["--pr", "9", "--head-sha", sha, "--policy", str(pol)])
     assert "SKIP checks not green" in capsys.readouterr().out
+
+
+def test_main_merges_a_green_code_pr_in_yolo_even_with_no_classes_enabled(tmp_path, monkeypatch, capsys):
+    (tmp_path / ".autopilot").mkdir()
+    (tmp_path / ".autopilot" / "repo.yaml").write_text("mode: yolo\n")
+    monkeypatch.chdir(tmp_path)
+    pol = tmp_path / "p.yaml"
+    pol.write_text("auto_merge_classes: []\n")
+    sha = "c" * 40
+    calls = []
+
+    def gh(*a):
+        calls.append(a)
+        path = a[1] if a[0] == "api" else ""
+        if path.endswith("/pulls/9"):
+            return {"state": "open", "draft": False, "head": {"ref": "agent/9-1", "sha": sha}, "user": {"login": "x[bot]"}}
+        if "check-runs" in path:
+            return {"check_runs": [{"name": "build", "conclusion": "success"}]}
+        if "pulls?state=closed" in path:
+            return []
+        return {}
+
+    diff = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-x\n+y\n"
+    monkeypatch.setattr(automerge, "_gh", gh)
+    monkeypatch.setattr(automerge, "_git", lambda *a: diff if a[0] == "diff" else "")
+    monkeypatch.setattr(automerge, "fetch_approved", lambda k: [])
+    monkeypatch.setattr(automerge.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 0})())
+    assert automerge.main(["--pr", "9", "--head-sha", sha, "--policy", str(pol)]) == 0
+    assert "MERGE yolo-code" in capsys.readouterr().out
+    assert [c for c in calls if c[:3] == ("api", "-X", "PUT")]

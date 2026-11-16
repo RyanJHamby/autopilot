@@ -23,6 +23,9 @@
 /apps/control-plane/supabase/ @RyanJHamby
 /apps/control-plane/github-app/ @RyanJHamby
 /src/autopilot/picker.py @RyanJHamby
+/src/autopilot/standard/ @RyanJHamby
+/src/autopilot/trace.py @RyanJHamby
+/src/autopilot/drill.py @RyanJHamby
 # END autopilot
 
 # owner-managed, outside the autopilot block: export_kit and its pinned SHAs live here, so changes need your review

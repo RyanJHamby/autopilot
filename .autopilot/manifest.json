@@ -7,16 +7,17 @@
     ".claude/agents/reviewer.md": "b87d59f6e3d49ef01707f818f7deb67cd80371146d62af1abf3989e930bbdcbd",
     ".claude/agents/triage.md": "56358627525211c4db2212d7faae64e8f32de0fa0e272fee221540a8411b4bd8",
     ".claude/settings.json": "e16bdedfeca83b3df2d6d5e776e9af101c181393e260f7b6c78633847674f716",
+    ".github/CODEOWNERS": "430775beb4e0ea20bddad6f9ddf9941665bb517483294591e38f63b04a31a83f",
     ".github/ISSUE_TEMPLATE/agent-task.md": "9c1d25f7995517b1f8286fa0d5342b873c2dbf94eef99eff22cb6100d92852e4",
     ".github/pull_request_template.md": "6b1c5e0f7e6a2bb50068c4b710f147ec9f8a0d251eac53ad9619bfeefcfa1249",
-    ".github/workflows/agent-dispatch.yml": "016d091a340f675e242326ca52fcc3169b38d607f119c628ce0e916043c59267",
-    ".github/workflows/agent-exec.yml": "2d67671962cf84d9f94e2ee9f55226314b5083afc46fc82d61d548abbd7ae94f",
-    ".github/workflows/audit.yml": "77e2305fa0c77e86b9a5d769a5cde2805d2cd577a585035511ca344a94f246a6",
-    ".github/workflows/automerge.yml": "900e632bc7f69e2d2b2f7eb8478a5ab756bc6a3b22096722094adeb7c4d5fe60",
-    ".github/workflows/guard.yml": "41633fe8a8e93b4e6c8ff74aec79d70f87323fdc84c958e65e96120f9897cc46",
-    ".github/workflows/handshake.yml": "0c97c7495beb432d52b3183cdb42c3345358cb3f0e9185372fd1a0b931111a03",
-    ".github/workflows/improve.yml": "6257c413002566a92ba5a719e18b7ff393b2619078686ceff08d18f3aaab8adc",
-    ".github/workflows/rebase.yml": "980e190eaa3229859c764677dabf4461746530513a46f746a16d4b10e2025028"
+    ".github/workflows/agent-dispatch.yml": "ce2e52f9915aebb457783b530637766e3b6b0d0a061cec80f2e071eec3669460",
+    ".github/workflows/agent-exec.yml": "6f06a5566bfb0b9c25f50e19649f8ab888128b21133252e56fc861d80f92a9c8",
+    ".github/workflows/audit.yml": "64cb4ec1b5cf10d17ea604f1937afb68acd25d62d14be4404bff1e34acf7873b",
+    ".github/workflows/automerge.yml": "8e5a334d5c25428d3301fe0a77e0fcdbcdf57814e986eba150e4594c0561ff45",
+    ".github/workflows/guard.yml": "8ff703a3ae72125f16ee2ec9f6ee6a3ddf7c892029c67b14d0c8b54ee31c4b5f",
+    ".github/workflows/handshake.yml": "ce2bd14d7b9f01e9181f1cd5eb97b1c101bfb6127728b7295609e982c2d766c2",
+    ".github/workflows/improve.yml": "bd30bee25e74660f06a2ff82bccbedf039314121639e9e480a9bf02f90bca034",
+    ".github/workflows/rebase.yml": "4398cd416e7ea5493a6d6553cbeca72ea1407ff8b1cf7d7878bf2b275bda586b"
   },
   "kit_version": "0.1.0"
 }

@@ -140,7 +140,11 @@ class Settings:
                 installations={k: int(v) for k, v in inst.items()},
                 # with a dedicated agent account the token lives in ITS home and the orchestrator never reads it
                 oauth_file=e.get("APX_OAUTH_FILE")
-                or (f"{hostenv.home_of(e['APX_AGENT_USER'])}/.apx/claude-oauth" if e.get("APX_AGENT_USER") else e["APX_OAUTH_FILE"]),
+                or (
+                    f"{hostenv.home_of(e['APX_AGENT_USER'])}/.apx/claude-oauth"
+                    if e.get("APX_AGENT_USER")
+                    else e["APX_OAUTH_FILE"]
+                ),
                 kit_repo=e["APX_KIT_REPO"],
                 kit_ref=e["APX_KIT_REF"],
                 db_path=e.get("APX_DB") or hostenv.default_db_path(e),
@@ -534,6 +538,19 @@ def select_automerge(s: Settings, merge):
     return merge if (not s.shadow or s.cutover) else None
 
 
+def ci_steps_for(api: Api, repo: str, branch: str) -> list[list[str]]:
+    """The repo's `ci:` steps from .autopilot/repo.yaml on `branch`. A repo with no repo.yaml (a discovered repo in shadow, such
+    as a private repo checked through repo_ci.json) has no steps: the guard still runs and the CI lane reports "nothing was
+    checked" instead of the whole check-pr crashing on the 404. Any other GitHub error still raises."""
+    try:
+        cfg = load_cfg(api, repo, branch)
+    except GitHubError as e:
+        if e.status == 404:
+            return []
+        raise
+    return [list(x) for x in cilane.parse_ci_steps(cfg)]
+
+
 def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_token_for=None) -> Deps:
     # with a sandbox account the kit lives where that account can read it; otherwise next to the rest of the work
     kit_root = Path(s.shared_dir) / "kit" if s.ci_user else s.work_dir / "kit"
@@ -551,7 +568,7 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_t
             code_dir=s.code_dir(),
             home=s.ci_home(),
             token_for=read_token_for,
-            steps_for=lambda repo: [list(x) for x in cilane.parse_ci_steps(load_cfg(api, repo, s.default_branch))],
+            steps_for=lambda repo: ci_steps_for(api, repo, s.default_branch),
             toolchain_links=list(s.ci_toolchain_links),
             toolchain_dirs_for=lambda repo: toolchains.bin_dirs(repo, toolchains.default_root(s.shared_dir)),
         )
@@ -725,7 +742,9 @@ def tools_for(s: Settings):
 
 
 def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
-    blocked = freeze_gate.pass_blocked(s.active_window)  # the work-hours freeze: no polling, no checks, no runs (also checked per action)
+    blocked = freeze_gate.pass_blocked(
+        s.active_window
+    )  # the work-hours freeze: no polling, no checks, no runs (also checked per action)
     if blocked:
         return [blocked]
     _register_known_secrets(s)
@@ -748,7 +767,9 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     planned = plan(api, ledger, repos, s.owner)
     sprint_log = []
     try:
-        sprint.record(ledger, planned, dt.datetime.now(dt.timezone.utc))  # active sprints for the doctor; ended ones with their summary
+        sprint.record(
+            ledger, planned, dt.datetime.now(dt.timezone.utc)
+        )  # active sprints for the doctor; ended ones with their summary
     except Exception as e:  # noqa: BLE001 - the notes already carry each sprint's state; recording must not break a pass
         sprint_log.append(f"sprint ledger record failed: {type(e).__name__}")
     actions: list[Action] = [a for r in planned.values() for a in r["actions"]]
@@ -788,8 +809,10 @@ def print_runs(n: int) -> int:
         return 1
     for r in rows:
         cost = f"${r['cost_usd']:.2f}" if r["cost_usd"] is not None else "cost n/a"
-        print(f"{r['id']} {r['created_at']} {r['kind']} {r['repo']} #{r['issue']} {r['conclusion'] or r['status']} "
-              f"turns={r['turns'] if r['turns'] is not None else '?'} {cost}")
+        print(
+            f"{r['id']} {r['created_at']} {r['kind']} {r['repo']} #{r['issue']} {r['conclusion'] or r['status']} "
+            f"turns={r['turns'] if r['turns'] is not None else '?'} {cost}"
+        )
         if r["note"]:
             print(f"    {r['note']}")
     return 0
@@ -804,7 +827,9 @@ def main(argv: list[str] | None = None) -> int:
         "--spike-check", metavar="OWNER/REPO#PR", help="after the spike, verify what it was meant to prove (read-only)"
     )
     ap.add_argument("--app-slug", default="autopilot-apx")
-    ap.add_argument("--runs", type=int, metavar="N", help="print the last N runs from the ledger with their failure notes (read-only)")
+    ap.add_argument(
+        "--runs", type=int, metavar="N", help="print the last N runs from the ledger with their failure notes (read-only)"
+    )
     ns = ap.parse_args(argv)
     if ns.runs:
         return print_runs(ns.runs)

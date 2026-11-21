@@ -361,10 +361,32 @@ remove the rules on purpose, run `sudo nft delete table inet apx` yourself.
 If the loaded rules predate the lockdown (`apx-lockdown status` says the set is not loaded), re-run bootstrap first. The probe with
 `--expect-lockdown` refuses to run while the set is empty, and the plain probe refuses while it is not.
 
+## Alert if apx stops (dead-man heartbeat)
+
+The owner chose (2026-11-21) to point the agent-kit watcher's dead-man at this host instead of the laptop. `apx-beat.timer` runs
+`/usr/local/sbin/apx-beat` (deploy/linux/beat.sh) every five minutes. It POSTs a heartbeat to the watcher only while apx is alive: a pass
+finished in the last 15 minutes (idle freeze-time passes count) or a pass is running now. When heartbeats stop for 45 minutes the
+watcher sends one Telegram alert, and one more when they resume. So a dead host, a stopped timer, or apx crashing every pass all alert;
+a pass that keeps reporting problems does not (that is the status file's job).
+
+It runs under its own DynamicUser account, outside the three apx egress lanes, with no capabilities. The beat secret sits in a root-only
+file that systemd hands to the run as a credential; the script is a root-owned copy outside /srv/apx, so apx cannot change it.
+
+Turn it on (bootstrap installs it but does not enable it):
+
+```
+sudo install -d -m 700 /etc/apx-beat
+sudo sh -c 'umask 077; printf "WATCHER_URL=%s\nWATCHER_BEAT_SECRET=%s\n" "https://agent-kit-watcher.<subdomain>.workers.dev" "<BEAT_SECRET>" > /etc/apx-beat/watcher'
+sudo systemctl enable --now apx-beat.timer
+journalctl -u apx-beat.service -n 5      # expect "apx-beat: heartbeat sent (...)"
+```
+
+Do this only after the laptop stops sending heartbeats (agent-kit: remove WATCHER_BEAT_SECRET from the laptop's env file), or the laptop's
+beats would hide a silent host. Stopping apx on purpose (`systemctl disable --now apx.timer`) produces one alert after about an hour;
+that is expected.
+
 ## Not built yet
 
-- **An alert if apx stops.** The Mac's notifier is a local `osascript` popup and does nothing here. A dead-man's-switch (the host pings a service on every good pass; the service alerts you
-  when pings stop) needs an outside service, so it is your choice and not assumed.
 - **Stage 2 isolation:** a per-job rootless podman or gVisor sandbox, and moving the CI half to hosted runners (which would take all PR code off this host, at the cost of the Actions spending limit).
 - **A hard-capped API key** for the executor instead of your plan's token.
 - **The Mac host's own cleanup:** personal files on it are a separate job; this migration only retires its access.

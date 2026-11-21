@@ -1,0 +1,13 @@
+[Unit]
+Description=Send the apx dead-man heartbeat every five minutes
+# Installed but NOT enabled by bootstrap. First write /etc/apx-beat/watcher (root:root 600, see deploy/linux/beat.sh), then:
+#   systemctl enable --now apx-beat.timer
+# Stop: systemctl disable --now apx-beat.timer (the watcher then alerts once after 45 minutes; that is expected)
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

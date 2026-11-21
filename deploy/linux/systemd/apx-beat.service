@@ -1,0 +1,25 @@
+[Unit]
+Description=apx dead-man heartbeat to the agent-kit watcher (sent only while apx is passing)
+Documentation=https://github.com/RyanJHamby/autopilot/blob/main/docs/apx-linux-host.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Its own throwaway account: not apx, apx-ci or apx-agent, so it is outside their egress lanes and they cannot read the credential.
+DynamicUser=yes
+# Root-only file (root:root 600) with WATCHER_URL= and WATCHER_BEAT_SECRET=; systemd hands it to this run only.
+LoadCredential=watcher:/etc/apx-beat/watcher
+ExecStart=/usr/local/sbin/apx-beat
+TimeoutStartSec=30s
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+MemoryMax=64M

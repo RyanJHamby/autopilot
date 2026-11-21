@@ -185,10 +185,12 @@ else
 fi
 # The emergency lockdown helper, root-owned and outside /srv/apx (which apx owns), so a responder never runs code apx could have changed.
 put root:root 755 /usr/local/sbin/apx-lockdown <"$here/lockdown.sh"
+# The dead-man heartbeat, root-owned and outside /srv/apx for the same reason: it holds the watcher's beat secret.
+put root:root 755 /usr/local/sbin/apx-beat <"$here/beat.sh"
 
 # --- services ------------------------------------------------------------------------------------------------------------------------
 if [ "$SKIP_SYSTEMD" != 1 ]; then
-  for unit in apx-nft.service apx-dns.service apx.service apx.timer apx-updater.service apx-updater.timer; do
+  for unit in apx-nft.service apx-dns.service apx.service apx.timer apx-updater.service apx-updater.timer apx-beat.service apx-beat.timer; do
     put root:root 644 "/etc/systemd/system/$unit" <"$here/systemd/$unit"
   done
   # The unit's MemoryMax is a fallback. Cap the whole apx cgroup (sandboxed children included) at about 75% of RAM, never below 4 GB,
@@ -207,6 +209,7 @@ EOF
   run systemctl reload apx-nft.service
   run systemctl restart apx-dns.service  # a changed config is only read on start
   say "NOT enabled (you do this after the doctor passes): apx.timer, apx-updater.timer"
+  say "NOT enabled (needs /etc/apx-beat/watcher first, see deploy/linux/beat.sh): apx-beat.timer"
 fi
 
 # --- ssh -------------------------------------------------------------------------------------------------------------------------------

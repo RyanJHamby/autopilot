@@ -534,6 +534,19 @@ def select_automerge(s: Settings, merge):
     return merge if (not s.shadow or s.cutover) else None
 
 
+def ci_steps_for(api: Api, repo: str, branch: str) -> list[list[str]]:
+    """The repo's `ci:` steps from .autopilot/repo.yaml on `branch`. A repo with no repo.yaml (a discovered repo in shadow, such
+    as a private repo checked through repo_ci.json) has no steps: the guard still runs and the CI lane reports "nothing was
+    checked" instead of the whole check-pr crashing on the 404. Any other GitHub error still raises."""
+    try:
+        cfg = load_cfg(api, repo, branch)
+    except GitHubError as e:
+        if e.status == 404:
+            return []
+        raise
+    return [list(x) for x in cilane.parse_ci_steps(cfg)]
+
+
 def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_token_for=None) -> Deps:
     # with a sandbox account the kit lives where that account can read it; otherwise next to the rest of the work
     kit_root = Path(s.shared_dir) / "kit" if s.ci_user else s.work_dir / "kit"
@@ -551,7 +564,7 @@ def build_deps(s: Settings, api: Api, token_for, details: dict[str, str], read_t
             code_dir=s.code_dir(),
             home=s.ci_home(),
             token_for=read_token_for,
-            steps_for=lambda repo: [list(x) for x in cilane.parse_ci_steps(load_cfg(api, repo, s.default_branch))],
+            steps_for=lambda repo: ci_steps_for(api, repo, s.default_branch),
             toolchain_links=list(s.ci_toolchain_links),
             toolchain_dirs_for=lambda repo: toolchains.bin_dirs(repo, toolchains.default_root(s.shared_dir)),
         )

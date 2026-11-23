@@ -21,7 +21,7 @@ from . import caps, journal
 from .checks import post_check, post_pending
 from .github import Api
 from .ledger import Ledger
-from .planner import TRUSTED_PREFIXES, Action
+from .planner import MAIN_CTX_SEP, TRUSTED_PREFIXES, Action
 from .redact import WITHHELD, redact, strip_output_blocks
 
 
@@ -323,6 +323,17 @@ def execute(
                 log.append(f"check-pr {a.repo} {a.ref[:7]} {r}")
             except Exception as e:  # noqa: BLE001 - e.g. a network error posting a check; the next pass retries this PR
                 log.append(f"check-pr {a.repo} {a.ref[:7]} failed: {type(e).__name__}")
+        elif a.kind == "check-main" and "checks" in contexts[a.repo]:
+            # spec repo: the spec lane, narrowed to the one context this action names (no second lane)
+            ctx_name = a.detail.partition(MAIN_CTX_SEP)[2]
+            try:
+                one = [c for c in contexts[a.repo]["checks"] if c["context"] == ctx_name]
+                if not one:
+                    raise LookupError("context not in spec")
+                r = run_check_pr_spec(api, deps, a, checks=one, public=a.repo not in (private_repos or frozenset()))
+                log.append(f"check-main {a.repo} {a.ref[:7]} {ctx_name} {'green' if all(r.values()) else 'failed (main is red)'}")
+            except Exception as e:  # noqa: BLE001 - the next pass retries this head
+                log.append(f"check-main {a.repo} {a.ref[:7]} {ctx_name} crashed: {type(e).__name__}")
         elif a.kind == "check-main":
             try:
                 r = run_check_main(

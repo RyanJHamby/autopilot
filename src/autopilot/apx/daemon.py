@@ -234,7 +234,7 @@ def plan_repos(s: Settings) -> dict[str, dict]:
                 "loop": False,
                 "merge": False,
                 "agents": False,
-                "main_check": False,
+                "main_check": True,  # checks only: the default-branch head is checked per context, nothing else changes
                 "journal": False,
                 "spec_ci": True,
             }

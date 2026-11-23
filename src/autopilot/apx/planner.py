@@ -180,11 +180,16 @@ def main_ci(api: Api, repo: str, default_branch: str, ci_ctx: str, app_slug: str
     return sha, "red" if any(c.get("conclusion") == "failure" for c in ours) else "ok"
 
 
-def plan_main_check(sha: str, state: str, repo: str, default_branch: str) -> list[Action]:
-    """The default branch is only ever checked when it moves, and only if nobody has checked this head yet."""
+MAIN_CTX_SEP = " :: "  # a spec repo's check-main detail carries the one context it runs: "main head not yet checked :: build"
+
+
+def plan_main_check(sha: str, state: str, repo: str, default_branch: str, context: str | None = None) -> list[Action]:
+    """The default branch is only ever checked when it moves, and only if nobody has checked this head yet.
+    context is set for a repo with a CI spec (several checks, each its own context): one action per unchecked context."""
     if state != "none":
         return []
-    return [Action("check-main", repo, sha, f"{default_branch} head not yet checked")]
+    detail = f"{default_branch} head not yet checked" + (f"{MAIN_CTX_SEP}{context}" if context else "")
+    return [Action("check-main", repo, sha, detail)]
 
 
 def _owner_vouches(api: Api, repo: str, issue: dict, owner: str) -> bool:
@@ -429,7 +434,16 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
                 now=now,
             )
             main_state = "off"
-            if meta.get("main_check") and meta.get("ci_contexts"):
+            spec_red: list[str] = []
+            if meta.get("main_check") and meta.get("spec_ci"):
+                # spec repo: each repo_ci.json context is checked on the default-branch head on its own; a red one is only reported
+                branch = meta.get("default_branch", "main")
+                for ctx_name in meta.get("contexts", []):
+                    main_sha, st = main_ci(api, repo, branch, ctx_name)
+                    actions += plan_main_check(main_sha, st, repo, branch, context=ctx_name)
+                    if st == "red":
+                        spec_red.append(ctx_name)
+            elif meta.get("main_check") and meta.get("ci_contexts"):
                 branch = meta.get("default_branch", "main")
                 main_sha, main_state = main_ci(api, repo, branch, meta["ci_contexts"][0])
                 actions += plan_main_check(main_sha, main_state, repo, branch)
@@ -437,6 +451,8 @@ def plan(api: Api, ledger: Ledger, repos: dict[str, dict], owner: str = "RyanJHa
                 # shadow mode: Actions is still the system of record, so apx only reports checks. Updating branches or
                 # running agents here would race the Actions jobs and open duplicate PRs.
                 note = "shadow: checks only"
+                if spec_red:
+                    note += f"; main is red: {', '.join(spec_red)}"
                 if meta.get("journal"):  # journal conflicts: say what would be done, do nothing
                     j_acts, j_notes = plan_journal(api, repo, meta.get("default_branch", "main"))
                     note += "".join(f"; would resolve journal conflict on #{a.ref.split(':')[0]}" for a in j_acts)

@@ -51,7 +51,7 @@ def test_planner_input_for_a_private_repo_is_checks_only(tmp_path):
     assert meta[ADMIN]["contexts"] == ["ci"] and meta[CONTROL]["contexts"] == ["check", "plan-coverage"]
     for r in (ADMIN, CONTROL):
         assert meta[r]["loop"] is False and meta[r]["merge"] is False and meta[r]["agents"] is False
-        assert meta[r]["main_check"] is False and meta[r]["spec_ci"] is True
+        assert meta[r]["main_check"] is True and meta[r]["spec_ci"] is True  # #291: main is checked; still no loop, merge or agents
     assert meta[REPO]["contexts"] == ["guard / guard", "build"] and "spec_ci" not in meta[REPO]
     ctx = dm.check_contexts(s)
     assert ctx[ADMIN]["checks"][0]["context"] == "ci" and ctx[REPO] == {"guard": "guard / guard", "ci": "build"}

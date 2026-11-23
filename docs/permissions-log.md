@@ -19,6 +19,21 @@ How to read the table: **Layer** is where the denial came from, if known. "Unkno
 | `gh release view`, `curl` | pin lookups | unknown | `Bash(gh release view*)`, `Bash(gh release list*)` | read-only |
 | compound commands (`a && b`) | many | unknown | allow rules match per-command; splitting is more reliable than one long line | none |
 
+## Denials in the drillpad session of 2026-10-30
+
+Denied and not routed around (from issue #165). "Run instead" is what the owner ran by hand. A `?` means the
+repo does not record it yet; the owner fills it in. The live site redirects to `https://ryanjhamby.dev/drillpad/`,
+so any curl of it needs `curl -sL`.
+
+| Command (shape) | Why it was needed | Run instead |
+|---|---|---|
+| `curl` of the live site's `data/ramp.json` | check what the published site serves | ? (shape per the issue: `curl -sL https://ryanjhamby.dev/drillpad/data/ramp.json`) |
+| `gh api repos/RyanJHamby/drillpad/pages` | see how GitHub Pages is configured | ? (handed over as `gh api repos/RyanJHamby/drillpad/pages --jq '{source,build_type}'`, see the 2026-10-30 log line) |
+| `curl` of the local app port | smoke-check the running app | ? |
+| `gh api repos/<owner>/<repo>/commits/<sha>/statuses` on a PR head | read CI statuses for the PR | ? |
+| a batch script that filed these issues | file the follow-up issues in one go | ? |
+| compounds that mixed `curl` with a `sed` of the goals file | edit the goals file and check the result in one line | ? |
+
 ## Root cause (found 2026-10-21)
 
 The project's `.claude/settings.json` has a `deny` list, and a deny rule beats any allow rule, including ones in

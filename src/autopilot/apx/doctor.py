@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "kit" / "runtime"))
 import automerge as kit_automerge  # noqa: E402
 
 from .. import claude_floor  # noqa: E402
-from . import caps, enroll, host_tools, hostenv, repo_ci, sandbox, spend, sprint, toolchains  # noqa: E402
+from . import caps, enroll, host_tools, hostenv, redteam, repo_ci, sandbox, spend, sprint, toolchains  # noqa: E402
 from .app_auth import TokenCache, make_jwt  # noqa: E402
 from .github import make_api  # noqa: E402
 from .ledger import Ledger  # noqa: E402
@@ -456,6 +456,7 @@ def run_doctor(
             out.append(socat_check(s, agent))
     out.append(spend_ceiling_check(s.db_path))
     out.append(sprint_check(s.db_path))
+    out.append(redteam.doctor_check(s.db_path))
     out.append(Check("installations within scope", set(s.installations) <= ALLOWED_REPOS, ", ".join(sorted(s.installations))))
     try:
         jwt_api = api_factory(make_jwt(s.app_id, s.key_path))

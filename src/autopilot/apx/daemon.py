@@ -40,6 +40,7 @@ from . import (  # noqa: E402
     redteam,
     repo_ci,
     report,
+    rev2lane,
     spend,
     sprint,
     status,
@@ -796,7 +797,7 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     actions = readable_only(actions, unreadable)
     deps = build_deps(s, api, cache.token_for, details, read_token_for=cache.read_token_for)
     ctx = check_contexts(s)
-    return log + execute(
+    log += execute(
         api,
         ledger,
         deps,
@@ -808,6 +809,11 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
         gate=freeze_gate.action_gate,
         check_parallel=s.check_parallel,
     )
+    try:
+        log += rev2lane.run_pass(api, s.owner, dict(os.environ))  # Rev 2 required checks; off unless APX_REV2 names repos
+    except Exception as e:  # noqa: BLE001 - the lane must never break a pass
+        log.append(f"rev2 lane failed: {type(e).__name__}")
+    return log
 
 
 def print_runs(n: int) -> int:

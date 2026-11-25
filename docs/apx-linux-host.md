@@ -266,6 +266,7 @@ If the new server misbehaves: `sudo DO=1 bash deploy/linux/retire.sh` stops its 
 - Stop immediately: `sudo systemctl disable --now apx.timer apx-updater.timer` (or `retire.sh`). Status: `systemctl list-timers 'apx*'`, `journalctl -u apx.service`.
 - Fail closed: `apx.service` and `apx-updater.service` `Require=` the rules and the resolver, so if the rules fail to load, apx does not run.
 - Egress rules changed? Re-run `bootstrap.sh`; it re-renders, checks with `nft -c`, and reloads. The resolver config is only read on start, so the script restarts it.
+- The allowlist resolver forwards to `DNS_UPSTREAM` (default `9.9.9.9`). If the doctor's app authentication fails with `URLError` and a direct query to the upstream returns REFUSED (rcode 5), the provider's address is refused there: re-run bootstrap with `DNS_UPSTREAM=1.1.1.1` (or another resolver that answers) and keep passing it on later runs. Seen 2026-11-25 on the Contabo host: Quad9 refused both 9.9.9.9 and 149.112.112.112.
 - Moving to a newer release by hand (while the updater is still in dry-run), with `SHA` set to the full commit id of a commit on `main`:
 
   ```

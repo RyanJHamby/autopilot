@@ -10,4 +10,4 @@ effective_from: 2026-11-16   # no blackout before this date
 wind_down_minutes: 20        # background sessions get a checkpoint prompt this long before the window
 fail_closed: true            # unreadable clock or file means the default window applies
 lift:
-  dates: ["2026-11-25"]                  # ET dates (YYYY-MM-DD) on which the window is lifted, e.g. a holiday; nothing else lifts it
+  dates: [2026-11-25]                  # ET dates (YYYY-MM-DD) on which the window is lifted, e.g. a holiday; nothing else lifts it

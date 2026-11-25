@@ -18,7 +18,7 @@
 # It does NOT install any secret (the GitHub App key and the Claude token are copied in by you afterwards, see docs/apx-linux-host.md),
 # it installs no uv/node/claude toolchain (see the doc: those are owner decisions), and it deletes nothing.
 #
-# Knobs (environment): ADMIN_USER (required), DRY_RUN, APX_CODE_URL, APX_SHA, CONTROL_HOST, PIP_PACKAGES,
+# Knobs (environment): ADMIN_USER (required), DRY_RUN, APX_CODE_URL, APX_SHA, CONTROL_HOST, DNS_UPSTREAM, PIP_PACKAGES,
 #   SKIP_PACKAGES / SKIP_SYSTEMD / SKIP_SSHD (=1, for testing in a container that has no systemd or sshd).
 set -euo pipefail
 
@@ -28,6 +28,7 @@ DRY_RUN="${DRY_RUN:-0}"
 CODE_URL="${APX_CODE_URL:-https://github.com/RyanJHamby/autopilot.git}"
 WANT_SHA="${APX_SHA:-}"
 CONTROL_HOST="${CONTROL_HOST:-}"
+DNS_UPSTREAM="${DNS_UPSTREAM:-9.9.9.9}"  # the allowlist resolver's upstream; some providers' addresses are refused by Quad9
 PIP_PACKAGES="${PIP_PACKAGES:-pyyaml pytest}"
 SKIP_PACKAGES="${SKIP_PACKAGES:-0}"
 SKIP_SYSTEMD="${SKIP_SYSTEMD:-0}"
@@ -177,6 +178,7 @@ else
   "${render_env[@]}" python3 -m autopilot.apx.nftrules nft --uid "apx=$(id -u apx)" --uid "apx-ci=$(id -u apx-ci)" --uid "apx-agent=$(id -u apx-agent)" >"$nft_tmp"
   dns_args=(dnsmasq)
   [ -z "$CONTROL_HOST" ] || dns_args+=(--control-host "$CONTROL_HOST")
+  dns_args+=(--upstream "$DNS_UPSTREAM")
   "${render_env[@]}" python3 -m autopilot.apx.nftrules "${dns_args[@]}" >"$dns_tmp"
   nft -c -f "$nft_tmp" || { say "nft rejected the generated rules; nothing installed"; exit 1; }
   dnsmasq --test --conf-file="$dns_tmp" 2>&1 | grep -qi 'syntax check OK' || { say "dnsmasq rejected the generated config; nothing installed"; exit 1; }

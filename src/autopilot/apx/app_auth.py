@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,8 +49,17 @@ class TokenCache:
         self.clock, self.api_factory = clock, api_factory
         self._tokens: dict[str, Token] = {}
         self._read_tokens: dict[str, Token] = {}
+        self._lock = threading.Lock()  # check jobs run in parallel threads (executor.run_check_jobs): mint one token per repo, not two
 
     def read_token_for(self, repo: str) -> str:
+        with self._lock:
+            return self._read_token_for(repo)
+
+    def token_for(self, repo: str) -> str:
+        with self._lock:
+            return self._token_for(repo)
+
+    def _read_token_for(self, repo: str) -> str:
         """A token for the account that runs the MODEL: read-only (contents + metadata) and limited to this one repository. Even if the
         model leaks it, it can read one repo for an hour and can write nothing. GitHub lets an App request a token with fewer
         permissions than the installation has."""
@@ -65,7 +75,7 @@ class TokenCache:
         register(r["token"])  # type: ignore[index]
         return r["token"]  # type: ignore[index]
 
-    def token_for(self, repo: str) -> str:
+    def _token_for(self, repo: str) -> str:
         t = self._tokens.get(repo)
         if t and t.expires_at - self.clock() > REFRESH_MARGIN:
             return t.value

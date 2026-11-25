@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -271,6 +272,55 @@ def run_fix(api: Api, ledger: Ledger, deps: Deps, action: Action, *, public: boo
     return f"{conclusion}: {reason[:160]}" if reason else conclusion
 
 
+# Order inside one pass (backlog O5): PR checks first, so a PR's first result never waits behind a slow main suite, an agent run or
+# a merge; then default-branch checks; then every other action (merges, branch updates, journal fixes, agent runs, CI fixes) in the
+# planner's own order. The sort is stable, so the planner's order is kept inside each phase.
+PHASES = {"check-pr": 0, "check-main": 1}
+LAST_PHASE = 2
+CHECK_JOB_KINDS = frozenset({"check-pr", "check-main"})  # the only kinds that may run in parallel
+DEFAULT_CHECK_PARALLEL = 2  # the daemon's default (APX_CHECK_PARALLEL); execute() itself defaults to 1, one job at a time
+MAX_CHECK_PARALLEL = 4  # each job is a checkout plus a full test suite under the same apx cgroup (MemoryMax): keep it small
+
+
+def order_actions(actions: list[Action]) -> list[Action]:
+    return sorted(actions, key=lambda a: PHASES.get(a.kind, LAST_PHASE))
+
+
+def valid_parallel(n: object) -> int:
+    """The check-job cap: a whole number from 1 to MAX_CHECK_PARALLEL. Anything else is refused (ValueError), never clamped."""
+    if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= MAX_CHECK_PARALLEL:
+        raise ValueError(f"check parallelism must be a whole number from 1 to {MAX_CHECK_PARALLEL}, got {n!r}")
+    return n
+
+
+def run_check_jobs(jobs: list[tuple[str, Callable[[], list[str]]]], cap: int) -> list[list[str]]:
+    """Run (repo, job) pairs with at most `cap` jobs at once and never two for the same repo: each repo's jobs form one lane that
+    runs in order, and `cap` workers take lanes. Results come back in the jobs' original order. A job that raises costs only
+    itself: its slot gets a crash line and the lane goes on."""
+    cap = valid_parallel(cap)
+    results: list[list[str]] = [[] for _ in jobs]
+    lanes: dict[str, list[int]] = {}
+    for i, (repo, _) in enumerate(jobs):
+        lanes.setdefault(repo, []).append(i)
+
+    def run_lane(idx: list[int]) -> None:
+        for i in idx:
+            repo, job = jobs[i]
+            try:
+                results[i] = job()
+            except Exception as e:  # noqa: BLE001 - one bad job must not stop its lane or the others
+                results[i] = [f"check job {repo} crashed: {type(e).__name__}"]
+
+    if cap == 1 or len(lanes) == 1:
+        for idx in lanes.values():
+            run_lane(idx)
+        return results
+    with ThreadPoolExecutor(max_workers=min(cap, len(lanes)), thread_name_prefix="apx-check") as pool:
+        for f in [pool.submit(run_lane, idx) for idx in lanes.values()]:
+            f.result()  # run_lane catches everything; this only re-raises a bug in the scheduler itself
+    return results
+
+
 def execute(
     api: Api,
     ledger: Ledger,
@@ -282,106 +332,135 @@ def execute(
     dry_run: bool = True,
     private_repos: frozenset | None = None,
     gate: Callable[[str], str | None] | None = None,
+    check_parallel: int = 1,
 ) -> list[str]:
     """contexts: {repo: {"guard": "guard / guard", "ci": "build"}}; head_refs: {(repo, sha): head branch name}.
     private_repos: repos known to be private. Everything else is treated as PUBLIC (fail closed), and a public repo's check
     summary gets step names and durations only, never the raw tail of a failing command.
     gate(kind) is asked before EACH live action and returns a reason to hold it (the work-hours freeze) or None. A gate that raises
-    holds the action. Held actions touch nothing and open no ledger row; the planner offers them again on the next pass."""
-    log = []
-    for a in actions:
-        if dry_run:
-            log.append(f"DRY-RUN {a.kind} {a.repo} {a.ref} {a.detail}")
-            continue
-        if gate is not None:
+    holds the action. Held actions touch nothing and open no ledger row; the planner offers them again on the next pass.
+    Actions run in PHASES order. PR and main checks run first, up to `check_parallel` at once and at most one per repo; every
+    other action runs after them, one at a time. The log keeps the phase order whatever order the checks finish in."""
+    actions = order_actions(actions)
+    if dry_run:
+        return [f"DRY-RUN {a.kind} {a.repo} {a.ref} {a.detail}" for a in actions]
+    cap = valid_parallel(check_parallel)
+    checks = [a for a in actions if a.kind in CHECK_JOB_KINDS]
+    rest = [a for a in actions if a.kind not in CHECK_JOB_KINDS]
+
+    def one(a: Action) -> list[str]:
+        return _execute_one(api, ledger, deps, a, contexts=contexts, head_refs=head_refs, private_repos=private_repos, gate=gate)
+
+    log: list[str] = []
+    for lines in run_check_jobs([(a.repo, (lambda a=a: one(a))) for a in checks], cap):
+        log += lines
+    for a in rest:
+        log += one(a)
+    return log
+
+
+def _execute_one(
+    api: Api,
+    ledger: Ledger,
+    deps: Deps,
+    a: Action,
+    *,
+    contexts: dict[str, dict],
+    head_refs: dict[tuple[str, str], str],
+    private_repos: frozenset | None,
+    gate: Callable[[str], str | None] | None,
+) -> list[str]:
+    """One live action; returns its log lines."""
+    log: list[str] = []
+    if gate is not None:
+        try:
+            held = gate(a.kind)
+        except Exception as e:  # noqa: BLE001 - a gate that cannot answer holds the action
+            held = f"gate failed ({type(e).__name__})"
+        if held:
+            log.append(f"held {a.kind} {a.repo} {a.ref[:12]}: {held}")
+            return log
+    if a.kind == "check-pr":
+        ctx = contexts[a.repo]
+        if "checks" in ctx:
             try:
-                held = gate(a.kind)
-            except Exception as e:  # noqa: BLE001 - a gate that cannot answer holds the action
-                held = f"gate failed ({type(e).__name__})"
-            if held:
-                log.append(f"held {a.kind} {a.repo} {a.ref[:12]}: {held}")
-                continue
-        if a.kind == "check-pr":
-            ctx = contexts[a.repo]
-            if "checks" in ctx:
-                try:
-                    r = run_check_pr_spec(api, deps, a, checks=ctx["checks"], public=a.repo not in (private_repos or frozenset()))
-                    log.append(f"check-pr {a.repo} {a.ref[:7]} {r}")
-                except Exception as e:  # noqa: BLE001 - the next pass retries this PR
-                    log.append(f"check-pr {a.repo} {a.ref[:7]} failed: {type(e).__name__}")
-                continue
-            try:
-                r = run_check_pr(
-                    api,
-                    deps,
-                    a,
-                    guard_ctx=ctx["guard"],
-                    ci_ctx=ctx["ci"],
-                    head_ref=head_refs[(a.repo, a.ref)],
-                    public=a.repo not in (private_repos or frozenset()),
-                )
+                r = run_check_pr_spec(api, deps, a, checks=ctx["checks"], public=a.repo not in (private_repos or frozenset()))
                 log.append(f"check-pr {a.repo} {a.ref[:7]} {r}")
-            except Exception as e:  # noqa: BLE001 - e.g. a network error posting a check; the next pass retries this PR
+            except Exception as e:  # noqa: BLE001 - the next pass retries this PR
                 log.append(f"check-pr {a.repo} {a.ref[:7]} failed: {type(e).__name__}")
-        elif a.kind == "check-main" and "checks" in contexts[a.repo]:
-            # spec repo: the spec lane, narrowed to the one context this action names (no second lane)
-            ctx_name = a.detail.partition(MAIN_CTX_SEP)[2]
-            try:
-                one = [c for c in contexts[a.repo]["checks"] if c["context"] == ctx_name]
-                if not one:
-                    raise LookupError("context not in spec")
-                r = run_check_pr_spec(api, deps, a, checks=one, public=a.repo not in (private_repos or frozenset()))
-                log.append(f"check-main {a.repo} {a.ref[:7]} {ctx_name} {'green' if all(r.values()) else 'failed (main is red)'}")
-            except Exception as e:  # noqa: BLE001 - the next pass retries this head
-                log.append(f"check-main {a.repo} {a.ref[:7]} {ctx_name} crashed: {type(e).__name__}")
-        elif a.kind == "check-main":
-            try:
-                r = run_check_main(
-                    api,
-                    deps,
-                    a,
-                    ci_ctx=contexts[a.repo]["ci"],
-                    head_ref=a.detail.split()[0],
-                    public=a.repo not in (private_repos or frozenset()),
-                )
-                log.append(
-                    f"check-main {a.repo} {a.ref[:7]} {'green' if r else 'failed (main is red)' if r is False else 'could not run'}"
-                )
-            except Exception as e:  # noqa: BLE001
-                log.append(f"check-main {a.repo} {a.ref[:7]} crashed: {type(e).__name__}")
-        elif a.kind == "run-agent":
-            try:
-                public = a.repo not in (private_repos or frozenset())
-                concl, why = run_agent_outcome(api, ledger, deps, a, public=public)
-                log.append(f"run-agent {a.repo} #{a.ref} {concl}: {why[:200]}" if why else f"run-agent {a.repo} #{a.ref} {concl}")
-            except Exception as e:  # noqa: BLE001 - one bad issue must not stop the loop
-                log.append(f"run-agent {a.repo} #{a.ref} crashed: {type(e).__name__}")
-        elif a.kind == "fix-ci":
-            try:
-                log.append(f"fix-ci {a.repo} {a.ref[:12]} {run_fix(api, ledger, deps, a, public=a.repo not in (private_repos or frozenset()))}")
-            except Exception as e:  # noqa: BLE001 - one bad PR must not stop the loop
-                log.append(f"fix-ci {a.repo} {a.ref[:12]} crashed: {type(e).__name__}: {' '.join(str(e).split())[:160]}")
-        elif a.kind == "automerge":
-            if deps.automerge is None:
-                log.append(f"automerge {a.repo} {a.ref}: lane not enabled")
-                continue
-            num, sha = a.ref.split(":", 1)
-            try:
-                rc, out = deps.automerge(a.repo, int(num), sha)
-                log.append(f"automerge {a.repo} #{num} rc={rc} {out.splitlines()[-1] if out else ''}")
-            except Exception as e:  # noqa: BLE001
-                log.append(f"automerge {a.repo} #{num} failed: {type(e).__name__}")
-        elif a.kind == "update-branch":
-            try:
-                api("PUT", f"/repos/{a.repo}/pulls/{int(a.ref)}/update-branch", {})
-                log.append(f"update-branch {a.repo} #{a.ref} ok")
-            except Exception as e:  # noqa: BLE001 - a PR that cannot be updated must not stop the loop
-                log.append(f"update-branch {a.repo} #{a.ref} failed: {type(e).__name__}")
-        elif a.kind == journal.KIND:
-            try:
-                log.append(f"{journal.KIND} {a.repo} {journal.resolve(api, a.repo, a.ref, TRUSTED_PREFIXES)}")
-            except Exception as e:  # noqa: BLE001 - a PR that cannot be resolved must not stop the loop; the next pass looks again
-                log.append(f"{journal.KIND} {a.repo} #{a.ref.split(':')[0]} failed: {type(e).__name__}")
-        else:
-            raise ValueError(f"unknown action {a.kind}")
+            return log
+        try:
+            r = run_check_pr(
+                api,
+                deps,
+                a,
+                guard_ctx=ctx["guard"],
+                ci_ctx=ctx["ci"],
+                head_ref=head_refs[(a.repo, a.ref)],
+                public=a.repo not in (private_repos or frozenset()),
+            )
+            log.append(f"check-pr {a.repo} {a.ref[:7]} {r}")
+        except Exception as e:  # noqa: BLE001 - e.g. a network error posting a check; the next pass retries this PR
+            log.append(f"check-pr {a.repo} {a.ref[:7]} failed: {type(e).__name__}")
+    elif a.kind == "check-main" and "checks" in contexts[a.repo]:
+        # spec repo: the spec lane, narrowed to the one context this action names (no second lane)
+        ctx_name = a.detail.partition(MAIN_CTX_SEP)[2]
+        try:
+            one = [c for c in contexts[a.repo]["checks"] if c["context"] == ctx_name]
+            if not one:
+                raise LookupError("context not in spec")
+            r = run_check_pr_spec(api, deps, a, checks=one, public=a.repo not in (private_repos or frozenset()))
+            log.append(f"check-main {a.repo} {a.ref[:7]} {ctx_name} {'green' if all(r.values()) else 'failed (main is red)'}")
+        except Exception as e:  # noqa: BLE001 - the next pass retries this head
+            log.append(f"check-main {a.repo} {a.ref[:7]} {ctx_name} crashed: {type(e).__name__}")
+    elif a.kind == "check-main":
+        try:
+            r = run_check_main(
+                api,
+                deps,
+                a,
+                ci_ctx=contexts[a.repo]["ci"],
+                head_ref=a.detail.split()[0],
+                public=a.repo not in (private_repos or frozenset()),
+            )
+            log.append(
+                f"check-main {a.repo} {a.ref[:7]} {'green' if r else 'failed (main is red)' if r is False else 'could not run'}"
+            )
+        except Exception as e:  # noqa: BLE001
+            log.append(f"check-main {a.repo} {a.ref[:7]} crashed: {type(e).__name__}")
+    elif a.kind == "run-agent":
+        try:
+            public = a.repo not in (private_repos or frozenset())
+            concl, why = run_agent_outcome(api, ledger, deps, a, public=public)
+            log.append(f"run-agent {a.repo} #{a.ref} {concl}: {why[:200]}" if why else f"run-agent {a.repo} #{a.ref} {concl}")
+        except Exception as e:  # noqa: BLE001 - one bad issue must not stop the loop
+            log.append(f"run-agent {a.repo} #{a.ref} crashed: {type(e).__name__}")
+    elif a.kind == "fix-ci":
+        try:
+            log.append(f"fix-ci {a.repo} {a.ref[:12]} {run_fix(api, ledger, deps, a, public=a.repo not in (private_repos or frozenset()))}")
+        except Exception as e:  # noqa: BLE001 - one bad PR must not stop the loop
+            log.append(f"fix-ci {a.repo} {a.ref[:12]} crashed: {type(e).__name__}: {' '.join(str(e).split())[:160]}")
+    elif a.kind == "automerge":
+        if deps.automerge is None:
+            log.append(f"automerge {a.repo} {a.ref}: lane not enabled")
+            return log
+        num, sha = a.ref.split(":", 1)
+        try:
+            rc, out = deps.automerge(a.repo, int(num), sha)
+            log.append(f"automerge {a.repo} #{num} rc={rc} {out.splitlines()[-1] if out else ''}")
+        except Exception as e:  # noqa: BLE001
+            log.append(f"automerge {a.repo} #{num} failed: {type(e).__name__}")
+    elif a.kind == "update-branch":
+        try:
+            api("PUT", f"/repos/{a.repo}/pulls/{int(a.ref)}/update-branch", {})
+            log.append(f"update-branch {a.repo} #{a.ref} ok")
+        except Exception as e:  # noqa: BLE001 - a PR that cannot be updated must not stop the loop
+            log.append(f"update-branch {a.repo} #{a.ref} failed: {type(e).__name__}")
+    elif a.kind == journal.KIND:
+        try:
+            log.append(f"{journal.KIND} {a.repo} {journal.resolve(api, a.repo, a.ref, TRUSTED_PREFIXES)}")
+        except Exception as e:  # noqa: BLE001 - a PR that cannot be resolved must not stop the loop; the next pass looks again
+            log.append(f"{journal.KIND} {a.repo} #{a.ref.split(':')[0]} failed: {type(e).__name__}")
+    else:
+        raise ValueError(f"unknown action {a.kind}")
     return log

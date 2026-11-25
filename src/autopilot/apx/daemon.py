@@ -37,6 +37,7 @@ from . import (  # noqa: E402
     guardlane,
     hostenv,
     mergelane,
+    redteam,
     repo_ci,
     report,
     spend,
@@ -767,6 +768,11 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
     actions: list[Action] = [a for r in planned.values() for a in r["actions"]]
     log = discovery_log + [f"{repo}: {len(r['actions'])} action(s) - {r['note']}" for repo, r in planned.items()]
     log += usage_lines(ledger, s.installations) + spend_lines(ledger) + sprint_log
+    if really_live:
+        try:
+            log += redteam.run_weekly(s, ledger)  # weekly; holds itself back inside the freeze
+        except Exception as e:  # noqa: BLE001 - a red-team crash must not break a pass, but it must show
+            log.append(f"redteam check failed: crashed ({type(e).__name__})")
     if not really_live:
         return log + execute(api, ledger, None, actions, contexts={}, head_refs={}, dry_run=True)  # type: ignore[arg-type]
     details = {f"{a.repo}#{a.ref}": a.detail for a in actions if a.kind == "run-agent"}

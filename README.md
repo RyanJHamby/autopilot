@@ -90,8 +90,11 @@ Triage/fixer/reviewer/auditor workflows (role files exist), the `autopilot-hq` d
 
 ## How this was built
 
-Design, experiments, and analysis are mine. I used AI coding assistants for
-parts of the implementation, tests, and documentation, and reviewed every change.
-The [engineering journal](docs/journal.md) records decisions and dead ends as
-they happened, and [`results/`](results/) holds the raw output behind every
-number quoted here.
+I designed autopilot, set its rules, and review and merge changes. Much of the code,
+tests, and docs were written with Claude Code, both in interactive sessions and as
+agent PRs opened by `anthropics/claude-code-action` on `agent/*` branches; the git
+history shows this in commits authored by Claude or `claude[bot]` and in
+`Co-Authored-By` trailers. Agent runs are gated by this repo's own `guard`,
+`handshake`, and `automerge` workflows. The [engineering journal](docs/journal.md)
+records decisions and dead ends as they happened, and [`results/`](results/) holds
+the raw output behind the numbers quoted here.

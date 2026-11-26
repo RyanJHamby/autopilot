@@ -231,3 +231,11 @@ def test_daemon_setting_defaults_to_two_and_refuses_bad_values():
     for bad in ("0", "9", "two", "1.5"):
         with pytest.raises(ValueError):
             daemon._parallel(bad)
+
+
+def test_no_check_jobs_runs_nothing_and_does_not_crash():
+    # Regression: a pass with no check jobs built a thread pool of 0 workers and crashed every idle pass.
+    from autopilot.apx.executor import run_check_jobs
+
+    assert run_check_jobs([], 2) == []
+    assert run_check_jobs([], 1) == []

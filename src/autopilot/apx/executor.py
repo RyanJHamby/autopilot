@@ -311,7 +311,7 @@ def run_check_jobs(jobs: list[tuple[str, Callable[[], list[str]]]], cap: int) ->
             except Exception as e:  # noqa: BLE001 - one bad job must not stop its lane or the others
                 results[i] = [f"check job {repo} crashed: {type(e).__name__}"]
 
-    if cap == 1 or len(lanes) == 1:
+    if cap == 1 or len(lanes) <= 1:  # no check jobs means no lanes, and a pool of 0 workers is an error
         for idx in lanes.values():
             run_lane(idx)
         return results

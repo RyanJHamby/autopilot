@@ -185,6 +185,16 @@ loop (cut over, or shadow off), apx resolves that one kind of conflict on its ow
 - **Turn it off:** `APX_JOURNAL_AUTORESOLVE=0` in apx.env (default on). A malformed `journal_files.json` also turns it
   off for that pass, with a note; the repo's checks still run.
 
+## Order and parallelism inside a pass (backlog O5)
+
+- **Order:** each pass runs PR checks first, then default-branch checks, then everything else (merges, branch updates,
+  journal fixes, agent runs, CI fixes) in the planner's order. A slow main suite or an agent run no longer delays a PR's
+  first result.
+- **Parallel checks:** up to `APX_CHECK_PARALLEL` check jobs run at once (default 2, allowed 1 to 4; anything else is a
+  config error), and never two for the same repo. A job that crashes posts its own failure and the others go on.
+- **Memory:** all jobs share the apx cgroup's `MemoryMax` (about 75% of RAM, set by `deploy/linux/bootstrap.sh`), which is
+  unchanged. If two suites together run the box short, set `APX_CHECK_PARALLEL=1` to go back to one job at a time.
+
 ## Sandbox account: keep PR code away from the secrets (backlog S1)
 
 The App key and the Claude token are files owned by `apx`. Anything that runs as `apx` can read them, including a PR's tests. With a

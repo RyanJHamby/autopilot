@@ -48,7 +48,7 @@ from . import (  # noqa: E402
     window,
 )
 from .app_auth import TokenCache  # noqa: E402
-from .executor import Deps, IssueResult, execute  # noqa: E402
+from .executor import DEFAULT_CHECK_PARALLEL, Deps, IssueResult, execute, valid_parallel  # noqa: E402
 from .github import Api, GitHubError, make_api  # noqa: E402
 from .ledger import Ledger  # noqa: E402
 from .planner import ALLOWED_REPOS, Action, load_cfg, plan  # noqa: E402
@@ -69,6 +69,18 @@ REQUIRED_CONTEXTS = {
     "RyanJHamby/stencil": ("guard / guard", "build"),
     "RyanJHamby/drillpad-workspace": ("guard / guard", "test"),
 }
+
+
+def _parallel(text: str) -> int:
+    """APX_CHECK_PARALLEL: unset or empty means the default; anything that is not a whole number from 1 to 4 is a config error
+    (ValueError, which from_env reports), never silently clamped."""
+    if not text.strip():
+        return DEFAULT_CHECK_PARALLEL
+    try:
+        n = int(text.strip())
+    except ValueError:
+        raise ValueError(f"APX_CHECK_PARALLEL must be a whole number, got {text!r}") from None
+    return valid_parallel(n)
 
 
 def read_secret_file(path: str) -> str:
@@ -112,6 +124,7 @@ class Settings:
     shadow_only: frozenset = frozenset()  # discovered repos that get shadow checks only, whatever APX_SHADOW says
     live_contexts: dict = field(default_factory=dict)  # discovered repos promoted live: (guard, ci) from their ruleset
     journal_autoresolve: bool = True  # APX_JOURNAL_AUTORESOLVE=0 turns off resolving append-only journal conflicts (journal.py)
+    check_parallel: int = DEFAULT_CHECK_PARALLEL  # APX_CHECK_PARALLEL: check jobs at once (1-4), never two for one repo (executor.py)
 
     def ci_home(self) -> str:
         return hostenv.home_of(self.ci_user)
@@ -165,6 +178,7 @@ class Settings:
                     e.get("APX_ACTIVE_WINDOW", ""), e.get("APX_ACTIVE_TZ", ""), e.get("APX_ACTIVE_WEEKENDS", "1")
                 ),
                 discovery=e.get("APX_DISCOVERY", "1") != "0",
+                check_parallel=_parallel(e.get("APX_CHECK_PARALLEL", "")),
             )
         except ValueError as ex:
             raise ConfigError(str(ex)) from None
@@ -793,6 +807,7 @@ def _run_once_locked(s: Settings, *, live: bool, api_factory) -> list[str]:
         dry_run=False,
         private_repos=private_repos(api, s.installations),
         gate=freeze_gate.action_gate,
+        check_parallel=s.check_parallel,
     )
     try:
         log += rev2lane.run_pass(api, s.owner, dict(os.environ))  # Rev 2 required checks; off unless APX_REV2 names repos

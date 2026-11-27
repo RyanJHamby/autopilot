@@ -73,7 +73,8 @@ def test_prompt_demands_autofix_and_format_on_the_changed_files_only():
 def test_env_is_scrubbed_and_token_only_in_agent_env(tmp_path):
     src = {"PATH": "/usr/bin", "GITHUB_TOKEN": "gh-secret", "GH_TOKEN": "x", "AWS_SECRET_ACCESS_KEY": "y", "LANG": "C"}
     env = cr.build_env("tok", tmp_path, src)
-    assert set(env) == {"PATH", "LANG", "HOME", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"}
+    assert set(env) == {"PATH", "LANG", "HOME", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"}
+    assert env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "200000"
     assert env["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"] == "1"
 
 

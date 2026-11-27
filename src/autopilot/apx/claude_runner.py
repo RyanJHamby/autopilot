@@ -96,6 +96,9 @@ DENY_TOOLS = [
 ]
 # The only environment the agent process sees. Notably absent: GITHUB_TOKEN/GH_TOKEN, App keys, cloud credentials.
 ENV_ALLOW = ("PATH", "LANG", "LC_ALL", "TERM", "TMPDIR")
+# Compact at 200k instead of the model's full window (Sonnet 5.5 defaults to 1M), so a long run stops re-reading a huge
+# history on every turn. A token count: a bare "200" would mean 200 tokens.
+AUTO_COMPACT_WINDOW = "200000"
 
 
 def allowed_tools(commands: list[str]) -> list[str]:
@@ -170,6 +173,7 @@ def build_env(token: str, home: Path, source: dict | None = None) -> dict:
     src = os.environ if source is None else source
     env = {k: src[k] for k in ENV_ALLOW if k in src}
     env.update({"HOME": str(home), "CLAUDE_CODE_OAUTH_TOKEN": token, "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"})
+    env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = AUTO_COMPACT_WINDOW
     return env
 
 

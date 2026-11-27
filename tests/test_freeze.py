@@ -36,7 +36,9 @@ def test_real_policy_file_matches_the_plan():
     assert p.days == (0, 1, 2, 3, 4)
     assert (p.start, p.end) == (dt.time(8, 30), dt.time(18, 30))
     assert p.effective_from == dt.date(2026, 11, 16)
-    assert p.wind_down_minutes == 20 and p.fail_closed is True and p.lift_dates == frozenset()
+    assert p.wind_down_minutes == 20 and p.fail_closed is True
+    # lift.dates is the owner's holiday knob (e.g. a day off): any well-formed ET dates are allowed in the real file.
+    assert all(isinstance(d, dt.date) for d in p.lift_dates)
 
 
 def test_real_policy_file_has_no_unknown_keys_and_is_quoted_times():
@@ -47,8 +49,9 @@ def test_real_policy_file_has_no_unknown_keys_and_is_quoted_times():
 
 def test_default_policy_equals_the_real_file():
     real = freeze.load(REAL)
-    d = freeze.default_policy()
+    d = freeze.default_policy(lift_dates=real.lift_dates)  # everything but the owner's lift dates must match the plan
     assert d == real
+    assert freeze.default_policy().lift_dates == frozenset()  # the fallback never lifts anything
 
 
 # --- before and after effective_from --------------------------------------------------------------------------

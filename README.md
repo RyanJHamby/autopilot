@@ -85,6 +85,32 @@ Validated on a private sandbox repo: guard and handshake pass on a PR; dispatch 
 config, branch creation and cleanup, and stops at the agent step only because the Claude App was not installed there.
 Not yet validated live: the setup-node branch in central mode and a full agent run through the reusable workflow.
 
+### Secret scan (`secrets`)
+`kit/workflows/secrets.yml` runs `kit/runtime/secretscan.py` from the pinned kit: stdlib only, no network, zero tokens.
+It scans only the lines a PR adds (`base...head`) for high-confidence shapes, each with a rule id: `aws-access-key-id`,
+`github-token`, `anthropic-key`, `openai-key`, `slack-token`, `google-api-key`, `private-key`, `stripe-live`,
+`huggingface-token`, plus `env-file` for any newly added `.env` or `.env.*` other than `.env.example`, `.env.sample` and
+`.env.template`. A finding prints `path:line: rule-id` and never the matched value; any finding fails the check.
+History is not scanned. Known false positives go in `.autopilot/secretscan-allow.txt`, one `path-glob:rule-id` per line
+(`#` comments; `dir/**` or fnmatch globs). The file is read from the base branch only, so a PR cannot allowlist what it
+adds; a missing file means no allowlist, and a malformed line fails the check with its line number.
+`ap init --kit` does not write a caller for it yet. A consumer adds `.github/workflows/secrets.yml` by hand:
+```yaml
+name: secrets
+on:
+  pull_request:
+  push:
+    branches: ["agent/**"]
+permissions: {}
+jobs:
+  secrets:
+    permissions:
+      contents: read
+    uses: OWNER/autopilot-kit/.github/workflows/secrets.yml@<kit sha>
+    with: {kit_repo: OWNER/autopilot-kit, kit_ref: <kit sha>}
+```
+and requires the status check context `secrets / secrets` in its ruleset (`ap ruleset` does not add it yet).
+
 ## Not built yet
 Triage/fixer/reviewer/auditor workflows (role files exist), the `autopilot-hq` daily digest, `ap upgrade` as a PR.
 

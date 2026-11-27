@@ -119,3 +119,21 @@ def test_lane_off_without_repos():
 def test_fingerprint_hides_terms():
     fp = rev2lane.fingerprint(pr(), [], ["acmecorp"], "w")
     assert "acmecorp" not in fp and len(fp) == 40
+
+
+def test_work_hours_honors_lift_days():
+    import datetime as dt
+
+    lifted = frozenset({dt.date(2026, 11, 24)})
+    in_window = [commit(date="2026-11-24T15:00:00Z")]  # Tue 10:00 ET
+    p = pr()
+    assert rev2lane.evaluate(p, [], [], in_window, ["x"], rev2lane.rules.DEFAULT_WINDOW)["rev2 / work-hours"][0] is False
+    assert rev2lane.evaluate(p, [], [], in_window, ["x"], rev2lane.rules.DEFAULT_WINDOW, lifted)["rev2 / work-hours"][0] is True
+    other_day = [commit(date="2026-11-25T15:00:00Z")]  # Wed 10:00 ET, not lifted
+    assert rev2lane.evaluate(p, [], [], other_day, ["x"], rev2lane.rules.DEFAULT_WINDOW, lifted)["rev2 / work-hours"][0] is False
+
+
+def test_fingerprint_changes_when_lifts_change():
+    import datetime as dt
+
+    assert rev2lane.fingerprint(pr(), [], [], "w") != rev2lane.fingerprint(pr(), [], [], "w", frozenset({dt.date(2026, 11, 26)}))

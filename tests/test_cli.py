@@ -424,6 +424,7 @@ def test_kit_export_tree_and_leak_check(tmp_path):
         "runtime/rebase.py",
         "runtime/retro.py",
         "runtime/runner.py",
+        "runtime/secretscan.py",
         "runtime/tier.py",
     ]
     blob = "".join(p.read_text() for p in (tmp_path / "kit").rglob("*") if p.is_file())

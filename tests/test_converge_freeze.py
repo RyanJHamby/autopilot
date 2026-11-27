@@ -208,7 +208,7 @@ def test_dst_and_the_edges_follow_new_york_time(clock, status, utc_iso, held):
 
 def test_lift_dates_from_time_yaml_let_that_day_run(clock, status, tmp_path, monkeypatch):
     p = tmp_path / "time.yaml"
-    p.write_text(freeze.DEFAULT_FILE.read_text().replace("dates: []", "dates: [2026-11-17]"))
+    p.write_text(re.sub(r"dates: \[[^\]]*\]", "dates: [2026-11-17]", freeze.DEFAULT_FILE.read_text(), count=1))
     monkeypatch.setattr(command, "POLICY_FILE", p)
     clock(et(2026, 11, 17, 9))
     with pytest.raises(AssertionError, match="portfolio was read"):

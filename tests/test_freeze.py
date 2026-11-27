@@ -7,6 +7,7 @@ import datetime as dt
 import subprocess
 import sys
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 import yaml
@@ -36,7 +37,14 @@ def test_real_policy_file_matches_the_plan():
     assert p.days == (0, 1, 2, 3, 4)
     assert (p.start, p.end) == (dt.time(8, 30), dt.time(18, 30))
     assert p.effective_from == dt.date(2026, 11, 16)
-    assert p.wind_down_minutes == 20 and p.fail_closed is True and p.lift_dates == frozenset()
+    assert p.wind_down_minutes == 20 and p.fail_closed is True
+
+
+def test_real_policy_file_has_no_stale_lifts():
+    # A lift is for a day off: today or a coming day is fine, but one left behind after the day has passed must be removed.
+    today = dt.datetime.now(dt.timezone.utc).astimezone(ZoneInfo("America/New_York")).date()
+    stale = sorted(d for d in freeze.load(REAL).lift_dates if d < today - dt.timedelta(days=1))
+    assert not stale, f"remove past lift dates from policy/time.yaml: {stale}"
 
 
 def test_real_policy_file_has_no_unknown_keys_and_is_quoted_times():
@@ -47,7 +55,7 @@ def test_real_policy_file_has_no_unknown_keys_and_is_quoted_times():
 
 def test_default_policy_equals_the_real_file():
     real = freeze.load(REAL)
-    d = freeze.default_policy()
+    d = freeze.default_policy(lift_dates=real.lift_dates)  # lifts are day-to-day; everything else must match the default
     assert d == real
 
 

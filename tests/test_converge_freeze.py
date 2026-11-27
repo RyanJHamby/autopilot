@@ -208,7 +208,11 @@ def test_dst_and_the_edges_follow_new_york_time(clock, status, utc_iso, held):
 
 def test_lift_dates_from_time_yaml_let_that_day_run(clock, status, tmp_path, monkeypatch):
     p = tmp_path / "time.yaml"
-    p.write_text(freeze.DEFAULT_FILE.read_text().replace("dates: []", "dates: [2026-11-17]"))
+    text = freeze.DEFAULT_FILE.read_text()
+    # Rewrite whatever lift list the real file holds (it may carry a live lift), so the test never depends on today's policy.
+    text, n = re.subn(r"(?m)^(\s*dates:\s*)\[[^\]]*\]", r"\g<1>[2026-11-17]", text)
+    assert n == 1, "time.yaml should have exactly one lift dates line"
+    p.write_text(text)
     monkeypatch.setattr(command, "POLICY_FILE", p)
     clock(et(2026, 11, 17, 9))
     with pytest.raises(AssertionError, match="portfolio was read"):

@@ -412,6 +412,7 @@ def test_kit_export_tree_and_leak_check(tmp_path):
         ".github/workflows/handshake.yml",
         ".github/workflows/improve.yml",
         ".github/workflows/rebase.yml",
+        ".github/workflows/secrets.yml",
         "README.md",
         "runtime/automerge.py",
         "runtime/charter.py",
